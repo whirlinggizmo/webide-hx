@@ -20,22 +20,25 @@ exit code, time and output size. Without a browser:
 
     node tests/browserlike.js
 
-runs the same bundle in node as a page would. `web/haxe.js` is generated (ignored by
-git); `python3 build.py --hotreload ../../github/whirlinggizmo/hotreload-hx` makes it,
-see below.
+runs the same bundle in node as a page would. `web/haxe.js` and `web/std/` are generated (ignored
+by git); `python3 build.py --hotreload ../../github/whirlinggizmo/hotreload-hx` makes
+them, see below.
 
 ## What was measured
 
-Both browsers on the development box, in a Web Worker, 2026-10-18:
+Both browsers on the development box, in a Web Worker, standard library fetched on
+demand, 2026-10-18:
 
-| build | Brave 155 | Firefox | native Haxe |
-|---|---|---|---|
-| hello world (one class) | 0.50s | 0.57s | 0.05s |
-| parity program + hotreload build macro | 1.46s | 1.56s | 0.20s |
+| build | Brave 155 | Firefox | native Haxe | std files fetched |
+|---|---|---|---|---|
+| hello world (one class) | 0.64s | 0.66s (1.07s cold) | 0.05s | 72 |
+| parity program + hotreload build macro | 1.82s | 1.89s | 0.20s | 152 |
 
-Output is byte-identical to native Haxe's in both cases. Every compile is a cold start
-of the compiler (no compilation server), and macro code is an interpreter running inside
-an interpreter, so the gap is widest there.
+With the library embedded in the bundle instead (`--embed-std`) the compiles are about
+0.1 to 0.3 s faster and the bundle is 7.8 MB instead of 3.8 MB. Output is byte-identical
+to native Haxe's in both cases. Every compile is a cold start of the compiler (no
+compilation server), and macro code is an interpreter running inside an interpreter, so
+the gap is widest there.
 
 ## How it's built
 
@@ -52,11 +55,13 @@ an interpreter, so the gap is widest there.
      can't take (main threads have the stack for it). As arrays the bundle's deepest
      nesting is 42. Same data; a candidate upstream patch.
 3. **dune** builds `haxe.bc`, 41 MB of bytecode.
-4. **js_of_ocaml** compiles it to `web/haxe.js` with `stubs.js` linked in and the
-   JS-relevant standard library embedded in the pseudo filesystem at `/haxe/std`
-   (the root classes plus `haxe/`, `js/`, `sys/` and `eval/`: 6.6 MB of `.hx`, so the
-   bundle is 7.8 MB). `--embed SRC:DEST` adds more; `--hotreload DIR` embeds hotreload-hx
-   at `/lib/hotreload` for the page's parity test.
+4. **js_of_ocaml** compiles it to `web/haxe.js` (3.8 MB) with `stubs.js` linked in.
+   The JS-relevant standard library (the root classes plus `haxe/`, `js/`, `sys/` and
+   `eval/`, 1297 files) is copied to `web/std/` with a `manifest.json` listing it; the
+   bundle fetches a file the first time the compiler opens it (below). `--embed-std`
+   embeds it in the bundle instead (7.8 MB, no server needed for it). `--embed SRC:DEST`
+   embeds other files; `--hotreload DIR` embeds hotreload-hx at `/lib/hotreload` for the
+   page's parity test.
 
 wasm_of_ocaml compiles the same bytecode in 13 seconds, but it doesn't take JavaScript
 primitives directly: each one needs a WebAssembly text shim importing the JS function.
@@ -85,6 +90,17 @@ throws when called, which tells you exactly which ones a plain JS build reaches:
 `globalThis.hx_read_file(path)` so the page can read the output. Every run of the bundle
 is a new runtime with its own filesystem, so a page must not hold on to it across runs:
 a Worker per compile is the design.
+
+## The standard library on demand
+
+`/haxe/std/` in the bundle's filesystem is a device of its own (`hx_std_device` in
+`stubs.js`). It reads `manifest.json` once, so directory listings and existence checks
+need no network, and fetches a file's bytes the first time the compiler opens it with a
+synchronous `XMLHttpRequest`, which a Web Worker may use. The browser's HTTP cache makes
+the second compile cheaper. The page turns it on by setting
+`globalThis.HX_STD = {url: ".../std/"}` before loading the bundle; the node test gives it a
+`read` function over `web/std/` instead. Without `HX_STD` the device isn't mounted and the
+bundle expects the library embedded (`--embed-std`).
 
 ## The page's contract with the bundle
 

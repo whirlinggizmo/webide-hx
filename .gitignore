@@ -4,3 +4,4 @@ web/report*.json
 build/
 __pycache__/
 build-log.txt
+web/std/

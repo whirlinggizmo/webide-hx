@@ -44,7 +44,7 @@ async function fetchAll(paths) {
   var report = {};
   var hello = await fetchAll(["Hello.hx"]);
   report.hello = await compileAnywhere(hello, ["-cp", "/static", "--main", "Hello", "--js", "/static/out/hello.js"], "/static/out/hello.js");
-  say("hello (" + report.hello.where + "): exit " + report.hello.code + " in " + Math.round(report.hello.ms) + "ms, " + (report.hello.output ? report.hello.output.length + " bytes" : "no output"));
+  say("hello (" + report.hello.where + "): exit " + report.hello.code + " in " + Math.round(report.hello.ms) + "ms, " + (report.hello.output ? report.hello.output.length + " bytes" : "no output") + (report.hello.stdFiles != null ? ", " + report.hello.stdFiles + " std files fetched" : ""));
   // the same compiler, warm: a second worker loads haxe.js from cache
   report.hello2 = await compileAnywhere(hello, ["-cp", "/static", "--main", "Hello", "--js", "/static/out/hello.js"], "/static/out/hello.js");
   say("hello again: exit " + report.hello2.code + " in " + Math.round(report.hello2.ms) + "ms");

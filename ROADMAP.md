@@ -18,13 +18,15 @@ changed.
       (`patches/`). 2026-10-18.
 - [x] Reproducible from nothing: `build.py` installs opam, OCaml, the libraries, mbedtls
       and Haxe under `build/`. 2026-10-18.
-- [ ] Send the case-table change upstream to Haxe (same arrays, as literals). Harmless;
-      makes the stock compiler worker-safe under js_of_ocaml.
-- [ ] Standard library on demand: fetch `.hx` files as the compiler asks for them instead
-      of embedding 6.6 MB in the bundle. Needs the pseudo filesystem to call back out,
-      synchronously, which in a worker means either preloading a manifest of what a
-      project imports or `Atomics.wait` on a SharedArrayBuffer (cross-origin isolation
-      headers, as Godot's web editor needs).
+- [~] Send the case-table change upstream to Haxe (same arrays, as literals). Harmless;
+      makes the stock compiler worker-safe under js_of_ocaml. Branch
+      `eval-case-tables-array-literals` on Rob's fork, off upstream `development`,
+      type-checked; PR not yet opened. 2026-10-18.
+- [x] Standard library on demand: `web/std/` + `manifest.json`, fetched by synchronous
+      XHR from the worker the first time the compiler opens a file (72 files for hello
+      world, 152 for the parity program). Bundle 7.8 MB → 3.8 MB; compiles 0.1–0.3 s
+      slower than embedded, less once the HTTP cache is warm. No shared memory or
+      special headers needed after all. 2026-10-18.
 
 ## 2. A resident compiler
 
@@ -92,9 +94,9 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 ## 7. Hosting
 
 - [ ] A static page is the point: GitHub Pages or any file server, with the bundle
-      cached by the browser. If item 1's std-on-demand or item 2's option A lands,
+      cached by the browser. If item 2's option A lands,
       the host must send the cross-origin isolation headers; GitHub Pages can't, so
-      note that when choosing.
+      note that when choosing. (Std on demand turned out not to need them.)
 - [ ] A Docker image is the alternative shape for a team's shared instance, with the
       real `haxe` behind it; same page, different compiler endpoint.
 

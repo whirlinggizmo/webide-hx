@@ -13,6 +13,8 @@ onmessage = function (ev) {
     cwd: function () { return "/static"; },
     exit: function (c) { code = c; throw { hx_exit: c }; },
   };
+  // the standard library, fetched as the compiler opens its files (see stubs.js)
+  globalThis.HX_STD = { url: new URL("std/", location.href).href };
   console.log = function () { out.push(Array.prototype.join.call(arguments, " ")); };
   console.error = function () { err.push(Array.prototype.join.call(arguments, " ")); };
   var result = null;
@@ -26,5 +28,6 @@ onmessage = function (ev) {
   if (msg.output) {
     try { result = globalThis.hx_read_file(msg.output); } catch (e) { err.push("no output: " + (e && e.message ? e.message : String(e))); }
   }
-  postMessage({ stdout: out.join("\n"), stderr: err.join("\n"), code: code, ms: ms, output: result });
+  var stdLoaded = globalThis.hx_std_loaded ? globalThis.hx_std_loaded() : null;
+  postMessage({ stdout: out.join("\n"), stderr: err.join("\n"), code: code, ms: ms, output: result, stdFiles: stdLoaded });
 };

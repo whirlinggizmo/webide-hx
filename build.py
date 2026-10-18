@@ -8,13 +8,15 @@ Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
     python3 build.py --hotreload ~/projects/github/whirlinggizmo/hotreload-hx
                                              embed hotreload-hx at /lib/hotreload (the page's
                                              parity test needs it)
+    python3 build.py --embed-std             the standard library inside the bundle (7.8 MB)
+                                             instead of fetched on demand from web/std
 
 Self-contained: opam, OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml are
 installed under build/ the first time (about ten minutes). From the system it needs
 git, cmake, make, a C compiler, libpcre2-dev and zlib1g-dev (and bubblewrap, or opam's
 sandboxing is turned off).
 """
-import argparse, glob, os, re, shutil, subprocess, sys, tarfile, urllib.request
+import argparse, glob, json, os, re, shutil, subprocess, sys, tarfile, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(HERE, "build")
@@ -130,15 +132,46 @@ def haxe_bytecode(src, env, prefix):
     return bc
 
 
-def bundle(src, bc, env, embeds):
-    """web/haxe.js: js_of_ocaml over the bytecode, with stubs.js for the C libraries and the
-    JS-relevant standard library in the pseudo filesystem at /haxe/std"""
+STD_DIRS = ["haxe", "js", "sys", "eval"]  # the standard library's JS-relevant part, plus its root classes
+
+
+def std_files(std):
+    """the standard library's files for a JS build, relative to std/"""
+    out = [os.path.basename(f) for f in sorted(glob.glob(os.path.join(std, "*.hx")))]
+    for d in STD_DIRS:
+        for root, _, names in os.walk(os.path.join(std, d)):
+            for n in sorted(names):
+                if n.endswith(".hx"):
+                    out.append(os.path.relpath(os.path.join(root, n), std))
+    return sorted(out)
+
+
+def std_on_demand(src):
+    """web/std/: the standard library's files next to the page, and manifest.json listing
+    them, for the bundle to fetch one by one as the compiler opens them"""
+    std = os.path.join(src, "std")
+    dst = os.path.join(HERE, "web", "std")
+    shutil.rmtree(dst, ignore_errors=True)
+    names = std_files(std)
+    for n in names:
+        os.makedirs(os.path.dirname(os.path.join(dst, n)), exist_ok=True)
+        shutil.copy2(os.path.join(std, n), os.path.join(dst, n))
+    with open(os.path.join(dst, "manifest.json"), "w") as f:
+        json.dump(names, f)
+    print(f"  web/std: {len(names)} files")
+
+
+def bundle(src, bc, env, embeds, embed_std):
+    """web/haxe.js: js_of_ocaml over the bytecode, with stubs.js for the C libraries. The
+    standard library is fetched on demand from web/std (see stubs.js), or embedded in the
+    pseudo filesystem at /haxe/std with --embed-std"""
     std = os.path.join(src, "std")
     files = []
-    for f in sorted(glob.glob(os.path.join(std, "*.hx"))):
-        files.append(f"--file={f}:/haxe/std/{os.path.basename(f)}")
-    for d in ["haxe", "js", "sys", "eval"]:
-        files.append(f"--file={os.path.join(std, d)}:/haxe/std/{d}")
+    if embed_std:
+        for n in std_files(std):
+            files.append(f"--file={os.path.join(std, n)}:/haxe/std/{n}")
+    else:
+        std_on_demand(src)
     for e in embeds:
         s, _, d = e.partition(":")
         files.append(f"--file={os.path.abspath(os.path.expanduser(s))}:{d}")
@@ -153,6 +186,7 @@ def main():
     ap.add_argument("--haxe-src", help="a local Haxe checkout to copy instead of cloning the tag")
     ap.add_argument("--embed", action="append", default=[], metavar="SRC:DEST", help="a file or directory to embed in the bundle's filesystem")
     ap.add_argument("--hotreload", metavar="DIR", help="embed hotreload-hx from DIR at /lib/hotreload")
+    ap.add_argument("--embed-std", action="store_true", help="embed the standard library in the bundle instead of serving it from web/std")
     args = ap.parse_args()
     if args.hotreload:
         d = os.path.expanduser(args.hotreload)
@@ -162,7 +196,7 @@ def main():
     print("mbedtls"); prefix = mbedtls(env)
     print("haxe source"); src = haxe_source(args)
     print("haxe bytecode"); bc = haxe_bytecode(src, env, prefix)
-    print("bundle"); bundle(src, bc, env, args.embed)
+    print("bundle"); bundle(src, bc, env, args.embed, args.embed_std)
     print("done: python3 web/serve.py 8765 web/report.json, then http://127.0.0.1:8765/")
 
 

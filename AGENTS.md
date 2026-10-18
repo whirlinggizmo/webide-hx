@@ -17,7 +17,8 @@ consumer of it, not part of it.
 - The build is self-contained under `build/`: opam, OCaml, the libraries, mbedtls, Haxe.
   Never install opam or OCaml into the user's home for this project, and never run
   `opam` against `~/.opam`. `build.py` sets `OPAMROOT` to `build/opam`; follow it.
-- `web/haxe.js` is generated and ignored by git. So is `build/` (2 GB) and `build-log.txt`.
+- `web/haxe.js` and `web/std/` are generated and ignored by git. So are `build/` (2 GB)
+  and `build-log.txt`.
 - Haxe changes go in `patches/` as diffs against the 4.3.7 tag, applied by `build.py`.
   Don't edit `build/haxe` and leave it there: regenerate the patch (`git -C build/haxe
   diff`) and commit that.

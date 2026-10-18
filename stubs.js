@@ -73,7 +73,7 @@ function hx_resolve_path(p) {
 }
 // a page reads the compiler's output back out of the pseudo filesystem through this
 //Provides: hx_expose
-//Requires: caml_read_file_content, caml_jsbytes_of_string
+//Requires: caml_read_file_content, caml_jsbytes_of_string, hx_std_device
 function hx_expose() {
   // every run of the bundle is a new runtime with its own filesystem: always the current one
   globalThis.hx_read_file = function (name) { return caml_jsbytes_of_string(caml_read_file_content(name)); };
@@ -1069,3 +1069,61 @@ function hx_get_ssl_endpoint_flags(u) { return [0]; }
 function hx_get_ssl_preset_flags(u) { return [0]; }
 //Provides: hx_get_ssl_transport_flags
 function hx_get_ssl_transport_flags(u) { return [0]; }
+
+// The standard library on demand. When a page sets globalThis.HX_STD before the bundle
+// loads, /haxe/std/ is a device that knows the library's file list (its manifest) and
+// fetches a file's text the first time the compiler opens it: a synchronous XHR, which a
+// Web Worker is allowed. Nothing is embedded in the bundle then.
+//   HX_STD = { url: "std/" }                      fetch url + "manifest.json", then files
+//   HX_STD = { read: path => text|null, manifest: [paths] }   your own loader (node tests)
+//Provides: hx_std_device
+//Always
+//Requires: jsoo_mount_point, MlFakeDevice, caml_string_of_jsbytes, caml_string_of_jsstring
+var hx_std_device = (function () {
+  var cfg = globalThis.HX_STD;
+  if (!cfg) return null;
+  function fetchText(url) {
+    var xhr = new XMLHttpRequest();
+    xhr.open("GET", url, false);
+    xhr.overrideMimeType("text/plain; charset=x-user-defined"); // bytes, as latin1 chars
+    xhr.send(null);
+    return xhr.status === 200 ? xhr.responseText : null;
+  }
+  var read = cfg.read || function (path) { return fetchText(cfg.url + path); };
+  var manifest = cfg.manifest || JSON.parse(cfg.url ? fetchText(cfg.url + "manifest.json") : "[]");
+  var files = new Set(manifest), dirs = new Set([""]);
+  manifest.forEach(function (p) {
+    var parts = p.split("/");
+    for (var i = 1; i < parts.length; i++) dirs.add(parts.slice(0, i).join("/") + "/");
+  });
+  var missing = new Set();
+  var dev = new MlFakeDevice("/haxe/std/", function (root, name) {
+    var path = name.c !== undefined ? name.c : String(name); // an OCaml string's bytes
+    if (!files.has(path) || missing.has(path)) return 0;
+    var text = read(path);
+    if (text === null) { missing.add(path); return 0; }
+    return [0, caml_string_of_jsbytes(text)];
+  });
+  var slash = function (n) { return /\/$/.test(n) ? n : n + "/"; };
+  dev.is_dir = function (name) { return name === "" || dirs.has(slash(name)) || (this.content[slash(name)] ? 1 : 0); };
+  var exists = dev.exists;
+  dev.exists = function (name, do_not_lookup) {
+    if (name === "" || dirs.has(slash(name))) return 1;
+    if (files.has(name) && !missing.has(name)) return 1;
+    return exists.call(this, name, do_not_lookup);
+  };
+  dev.readdir = function (name) {
+    var prefix = name === "" ? "" : slash(name), seen = new Set(), out = [];
+    manifest.concat(Object.keys(this.content)).forEach(function (p) {
+      if (!p.startsWith(prefix) || p === prefix) return;
+      var rest = p.slice(prefix.length), cut = rest.indexOf("/");
+      var entry = cut < 0 ? rest : rest.slice(0, cut);
+      if (entry && !seen.has(entry)) { seen.add(entry); out.push(entry); }
+    });
+    return out;
+  };
+  dev.loaded = function () { return Object.keys(this.content).filter(function (k) { return !/\/$/.test(k); }).length; };
+  jsoo_mount_point.push({ path: "/haxe/std/", device: dev });
+  globalThis.hx_std_loaded = function () { return dev.loaded(); };
+  return dev;
+})();
