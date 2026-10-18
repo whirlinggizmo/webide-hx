@@ -20,7 +20,16 @@ exit code, time and output size. Without a browser:
 
     node tests/browserlike.js
 
-runs the same bundle in node as a page would. `web/haxe.js` and `web/std/` are generated (ignored
+runs the same bundle in node as a page would.
+
+For another device on the LAN, serve HTTPS: `play.html`'s service worker needs a secure
+page, and only `localhost` counts as one over plain HTTP.
+
+    python3 web/serve.py --tls cert.pem key.pem      # or TLS_CERT and TLS_KEY in the environment
+
+That listens on every interface, on port 8443, and prints the LAN address. The
+certificate has to name that address and be trusted by the device (a local development
+CA, as mkcert makes). `web/haxe.js` and `web/std/` are generated (ignored
 by git); `python3 build.py --hotreload ../../github/whirlinggizmo/hotreload-hx` makes
 them, see below.
 
