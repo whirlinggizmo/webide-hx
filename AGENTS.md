@@ -36,6 +36,11 @@ consumer of it, not part of it.
   (the quickest check that a stub change didn't break startup); `node tests/resident.js`
   drives the resident compiler through edits; `node tests/run.js DIR args...` runs any
   build in the in-memory filesystem (add `--times` for a phase breakdown).
+- Over HTTPS (another device, or to test the page as a LAN visitor sees it): on Rob's
+  machine `coinspinner` the certificate is `~/keys/coinspinner/cert.pem` with
+  `privkey.pem` (names localhost, coinspinner(.local), 192.168.1.200/.201; CA in
+  `~/keys/ca`, which Brave trusts). `python3 web/serve.py --tls` with those, then
+  `https://192.168.1.200:8443/play.html?test`. `~/keys/localdev` is expired; don't use it.
 - Debugging: start Brave with `--remote-debugging-port=P` on `play.html` (no `?test`),
   then `node tests/devtools.js P`: breakpoints by source map in the first and a
   reloaded bundle. Node 24's built-in WebSocket; no packages.
