@@ -1,7 +1,8 @@
 # Working in this repo
 
 Read `README.md` first: what this is, how it's built, what was measured, what each stub
-does. This file is the conventions and the traps.
+does. `ROADMAP.md` is the plan and the status of each piece; update its marks when you
+finish or start one. This file is the conventions and the traps.
 
 ## What it is, in one line
 

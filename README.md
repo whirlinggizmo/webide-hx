@@ -110,10 +110,5 @@ route later, binaryen (>= 119) and `wasm_of_ocaml-compiler` would be added.
 
 ## Next
 
-- Load the bundle once and keep the worker warm; the runtime isn't built to compile
-  twice in one process, so this means a compilation-server-like restart inside it, or
-  accepting ~0.4s of startup per compile.
-- Fetch standard library files on demand instead of embedding 6.6 MB.
-- A stand-in for hotreload-hx's DevServer in the page (serve the bundle, say when a new
-  one exists), which is all the JS reload path needs; then the editor.
-- wasm_of_ocaml with wat shims, if speed matters.
+`ROADMAP.md` has the pieces in order with their status: a resident compiler, the
+in-page hot reload loop, the editor, a language server, wasm, hosting.
