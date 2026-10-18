@@ -34,6 +34,9 @@ consumer of it, not part of it.
   (the quickest check that a stub change didn't break startup); `node tests/resident.js`
   drives the resident compiler through edits; `node tests/run.js DIR args...` runs any
   build in the in-memory filesystem (add `--times` for a phase breakdown).
+- Debugging: start Brave with `--remote-debugging-port=P` on `play.html` (no `?test`),
+  then `node tests/devtools.js P`: breakpoints by source map in the first and a
+  reloaded bundle. Node 24's built-in WebSocket; no packages.
 - In a browser: `python3 web/serve.py`, open `http://127.0.0.1:8765/`.
   The page compiles hello world (and runs it), compiles it again, then compiles the
   parity program with the hotreload build macro, and POSTs a JSON report the server
@@ -64,6 +67,9 @@ consumer of it, not part of it.
   State that must survive between calls lives there, not in its closures.
 - In node the runtime uses the real filesystem, so `--js out.js` writes a real file
   there; in a page it writes to the in-memory tree at the same path.
+- Strings in the compiler's filesystem are bytes, one per char. Text from the page is
+  UTF-16: encode to UTF-8 bytes going in, decode coming out (`resident-worker.js`).
+  A sync XHR with `x-user-defined` gives bytes over 0x7F as U+F780..U+F7FF; mask them.
 - pcre2 is emulated on JS RegExp over latin1 byte strings. Regex differences in macros
   are a known gap, not a bug to chase in the compiler.
 - A directory named `install` on PATH (`~/.bun` has one on the development box) makes

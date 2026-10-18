@@ -1,0 +1,133 @@
+// Checks debugging in DevTools against a running play.html, over the DevTools protocol
+// (Chromium-based browsers: Brave, Chrome). For the first bundle and then a reloaded one:
+// reads the bundle's source map from inside the program's frame, sets a breakpoint where
+// the map puts a line of Hello.hx, waits for it to hit, and checks the pause maps back to
+// that line, with the program's state readable there.
+//     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
+//     node tests/devtools.js 9333
+// Prints each step; exits 1 if one fails.
+var port = process.argv[2] || "9333";
+var LINE_TEXT = "ticks++;";
+
+function vlq(str) {
+  var chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+  var out = [], value = 0, shift = 0;
+  for (var i = 0; i < str.length; i++) {
+    var d = chars.indexOf(str[i]);
+    value += (d & 31) << shift;
+    if (d & 32) { shift += 5; continue; }
+    out.push(value & 1 ? -(value >>> 1) : value >>> 1);
+    value = 0; shift = 0;
+  }
+  return out;
+}
+// every mapping: {gl, gc, src, sl, sc}, lines and columns from 0
+function decode(map) {
+  var out = [], src = 0, sl = 0, sc = 0;
+  map.mappings.split(";").forEach(function (line, gl) {
+    var gc = 0;
+    line.split(",").forEach(function (seg) {
+      if (!seg) return;
+      var v = vlq(seg);
+      gc += v[0];
+      if (v.length >= 4) { src += v[1]; sl += v[2]; sc += v[3]; out.push({ gl: gl, gc: gc, src: src, sl: sl, sc: sc }); }
+    });
+  });
+  return out;
+}
+
+var ws, nextId = 1, waiting = new Map(), listeners = [];
+function send(method, params) {
+  return new Promise(function (resolve, reject) {
+    var id = nextId++;
+    waiting.set(id, { resolve: resolve, reject: reject });
+    ws.send(JSON.stringify({ id: id, method: method, params: params || {} }));
+  });
+}
+function on(method, f) { listeners.push({ method: method, f: f }); }
+function next(method, test, ms) {
+  return new Promise(function (resolve) {
+    var done = false;
+    var l = { method: method, f: function (p) { if (!done && (!test || test(p))) { done = true; resolve(p); } } };
+    listeners.push(l);
+    setTimeout(function () { if (!done) { done = true; resolve(null); } }, ms || 15000);
+  });
+}
+async function evaluate(expr) {
+  var r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
+  if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception ? r.exceptionDetails.exception.description : r.exceptionDetails.text);
+  return r.result.value;
+}
+
+var failures = 0;
+function step(name, ok, detail) {
+  if (!ok) failures++;
+  console.log((ok ? "  ok   " : "  FAIL ") + name + (detail !== undefined ? "  " + JSON.stringify(detail) : ""));
+}
+
+var scripts = new Map(); // scriptId -> {url, sourceMapURL}
+
+async function checkBundle(label) {
+  // the newest bundle the frame loaded, and its map, fetched where the service worker answers
+  var bundle = [...scripts.entries()].filter(function (e) { return /\/run\/hello\.js/.test(e[1].url) && e[1].sourceMapURL; }).pop();
+  step(label + ": the bundle names a source map", !!bundle, bundle && bundle[1].sourceMapURL);
+  if (!bundle) return;
+  var mapUrl = new URL(bundle[1].sourceMapURL, bundle[1].url).href;
+  var map = JSON.parse(await evaluate("document.getElementById('run').contentWindow.fetch(" + JSON.stringify(mapUrl) + ").then(r => r.text())"));
+  var srcIndex = map.sources.findIndex(function (s) { return /Hello\.hx$/.test(s); });
+  step(label + ": the map carries Hello.hx's text", srcIndex >= 0 && map.sourcesContent && !!map.sourcesContent[srcIndex], map.sources[srcIndex]);
+  if (srcIndex < 0) return;
+  var lines = map.sourcesContent[srcIndex].split("\n");
+  var hxLine = lines.findIndex(function (l) { return l.indexOf(LINE_TEXT) >= 0; });
+  var mappings = decode(map);
+  var target = mappings.find(function (m) { return m.src === srcIndex && m.sl === hxLine; });
+  step(label + ": Hello.hx:" + (hxLine + 1) + " (" + LINE_TEXT + ") has generated code", !!target, target && { line: target.gl + 1, column: target.gc });
+  if (!target) return;
+  var bp = await send("Debugger.setBreakpoint", { location: { scriptId: bundle[0], lineNumber: target.gl, columnNumber: target.gc } });
+  var paused = await next("Debugger.paused", null, 10000);
+  step(label + ": the breakpoint hits", !!paused);
+  if (paused) {
+    var loc = paused.callFrames[0].location;
+    var back = mappings.filter(function (m) { return m.gl === loc.lineNumber && m.gc <= loc.columnNumber; }).pop();
+    step(label + ": the pause is at Hello.hx:" + (hxLine + 1), back && back.src === srcIndex && back.sl === hxLine,
+         back && { source: map.sources[back.src], line: back.sl + 1, fn: paused.callFrames[0].functionName });
+    var v = await send("Debugger.evaluateOnCallFrame", { callFrameId: paused.callFrames[0].callFrameId, expression: "Hello.ticks", returnByValue: true });
+    step(label + ": state is readable there (Hello.ticks)", v.result && typeof v.result.value === "number", v.result && v.result.value);
+  }
+  await send("Debugger.removeBreakpoint", { breakpointId: bp.breakpointId });
+  if (paused) await send("Debugger.resume");
+}
+
+(async function () {
+  var targets = await (await fetch("http://127.0.0.1:" + port + "/json")).json();
+  var page = targets.find(function (t) { return t.type === "page" && /play\.html/.test(t.url); });
+  if (!page) { console.log("no play.html page among the targets"); process.exit(1); }
+  ws = new WebSocket(page.webSocketDebuggerUrl);
+  ws.onmessage = function (ev) {
+    var m = JSON.parse(ev.data);
+    if (m.id && waiting.has(m.id)) {
+      var w = waiting.get(m.id); waiting.delete(m.id);
+      if (m.error) w.reject(new Error(m.error.message)); else w.resolve(m.result);
+    } else if (m.method) {
+      listeners.forEach(function (l) { if (l.method === m.method) l.f(m.params); });
+    }
+  };
+  await new Promise(function (r) { ws.onopen = r; });
+  on("Debugger.scriptParsed", function (p) { scripts.set(p.scriptId, { url: p.url, sourceMapURL: p.sourceMapURL }); });
+  await send("Runtime.enable");
+  await send("Debugger.enable");
+  // the program running: its first bundle loaded
+  for (var i = 0; i < 100 && ![...scripts.values()].some(function (s) { return /\/run\/hello\.js/.test(s.url); }); i++)
+    await new Promise(function (r) { setTimeout(r, 200); });
+  await checkBundle("first bundle");
+  // a reload: an edit, built and swapped in by the page
+  var before = scripts.size;
+  await evaluate("(async () => { show('src/Hello.hx'); files['src/Hello.hx'] = files['src/Hello.hx'].replace('ticks % 4', 'ticks % 2'); const b = await save(); return b.ok; })()");
+  for (var j = 0; j < 100 && ![...scripts.values()].some(function (s) { return /\/run\/hello\.js\?v=2/.test(s.url); }); j++)
+    await new Promise(function (r) { setTimeout(r, 200); });
+  step("the edit reloaded (bundle 2 loaded)", [...scripts.values()].some(function (s) { return /\/run\/hello\.js\?v=2/.test(s.url); }));
+  await checkBundle("reloaded bundle");
+  ws.close();
+  console.log(failures ? failures + " failed" : "all ok");
+  process.exit(failures ? 1 : 0);
+})().catch(function (e) { console.log("error: " + e.message); process.exit(1); });

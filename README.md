@@ -120,6 +120,19 @@ instead of a blocking loop. Each build is one request (`hx_request(hxml)`), afte
 didn't change stays parsed and typed, so a reload build takes about 0.1 s instead of 2.5.
 `node tests/resident.js` drives it the same way.
 
+## Debugging
+
+`play.html` builds with `-debug -D source-map-content`, so each bundle has a source map
+with the `.hx` text in it, and the service worker serves build N's map as
+`run/hello.js.map?v=N`, the one that bundle names. Open DevTools on the page, find
+`Hello.hx` among the sources, and set breakpoints; they keep working across reloads.
+`node tests/devtools.js PORT` checks this against a Chromium-based browser started with
+`--remote-debugging-port=PORT` on `play.html`.
+
+Text crosses between the page and the compiler as UTF-8: the compiler's filesystem holds
+bytes, so `resident-worker.js` encodes sources and decodes output, and the standard
+library's on-demand fetch keeps bytes as bytes.
+
 ## The page's contract with the bundle
 
 - sources go in before the runtime starts: `globalThis.jsoo_fs_tmp = [{name, content}]`

@@ -1,5 +1,5 @@
 // A resident compiler: the bundle runs once, as Haxe's compilation server (--wait stdio,
-// HAXE_RESIDENT=1; see patches/), and each build is a request to it, so what didn't
+// HAXE_RESIDENT=1; a commit on the fork branch build.py uses), and each build is a request to it, so what didn't
 // change stays parsed and typed between builds.
 //
 // The page sends:
@@ -7,13 +7,26 @@
 //       files: those that changed since the last build (all of them the first time)
 //   {type: "warm", id, args}    a build whose output is thrown away: the cache for a set
 //                               of defines (a reload's) is made before it's needed
-// and gets back {id, code, ms, stdout, stderr, output}: code 0 or 1, the compiler's
-// messages in stderr, the output file's text.
+// and gets back {id, code, ms, stdout, stderr, output, map}: code 0 or 1, the compiler's
+// messages in stderr, the output file's text, and its source map's when there is one.
 var started = false, startMs = 0;
+
+// the compiler's filesystem holds bytes, one per char (latin1); the page has text: UTF-8 between
+var encoder = new TextEncoder(), decoder = new TextDecoder();
+function toBytes(text) {
+  var b = encoder.encode(text), out = "";
+  for (var i = 0; i < b.length; i += 0x8000) out += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return out;
+}
+function fromBytes(bytes) {
+  var b = new Uint8Array(bytes.length);
+  for (var i = 0; i < bytes.length; i++) b[i] = bytes.charCodeAt(i);
+  return decoder.decode(b);
+}
 
 function start(files) {
   var t0 = performance.now();
-  globalThis.jsoo_fs_tmp = Object.keys(files).map(function (k) { return { name: k, content: files[k] }; });
+  globalThis.jsoo_fs_tmp = Object.keys(files).map(function (k) { return { name: k, content: toBytes(files[k]) }; });
   globalThis.process = {
     argv: ["node", "haxe", "--wait", "stdio"],
     env: { HAXE_STD_PATH: "/haxe/std", HAXE_RESIDENT: "1" },
@@ -37,7 +50,7 @@ function request(args) {
     else if (line.charAt(0) === "\x01") stdout.push(line.slice(1).split("\x01").join("\n"));
     else if (line !== "") stderr.push(line);
   });
-  return { code: failed ? 1 : 0, ms: performance.now() - t0, stdout: stdout.join("\n"), stderr: stderr.join("\n") };
+  return { code: failed ? 1 : 0, ms: performance.now() - t0, stdout: fromBytes(stdout.join("\n")), stderr: fromBytes(stderr.join("\n")) };
 }
 
 onmessage = function (ev) {
@@ -46,12 +59,15 @@ onmessage = function (ev) {
     if (!started) {
       start(msg.files || {});
     } else {
-      for (var name in msg.files || {}) globalThis.hx_write_file(name, msg.files[name]);
+      for (var name in msg.files || {}) globalThis.hx_write_file(name, toBytes(msg.files[name]));
     }
     r = request(msg.args);
     r.output = null;
+    r.map = null;
     if (msg.type === "build" && r.code === 0 && msg.output) {
-      try { r.output = globalThis.hx_read_file(msg.output); } catch (e) { r.code = 1; r.stderr += "\nno output: " + e.message; }
+      try { r.output = fromBytes(globalThis.hx_read_file(msg.output)); } catch (e) { r.code = 1; r.stderr += "\nno output: " + e.message; }
+      // its source map, when the build made one (-debug)
+      try { r.map = fromBytes(globalThis.hx_read_file(msg.output + ".map")); } catch (e) {}
     }
     if (startMs) { r.startMs = startMs; startMs = 0; }
   } catch (e) {

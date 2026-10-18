@@ -69,11 +69,15 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 ## 4. The editor
 
-- [ ] Debugging in the browser's DevTools: build with `-debug -D source-map-content` (the
-      sources live only in the in-memory filesystem, so the map must carry them), have
-      the service worker serve each bundle's `.map` beside it, and check that a
-      breakpoint in a `.hx` file hits, in the first bundle and in a reloaded one, in
-      Brave and Firefox. No debug adapter: DevTools is the debugger for a page.
+- [x] Debugging in the browser's DevTools: builds use `-debug -D source-map-content` (the
+      sources live only in the in-memory filesystem, so the map carries them); the
+      service worker keeps each build's map and each bundle names its own
+      (`hello.js.map?v=N`). `node tests/devtools.js PORT` checks it in Brave over the
+      DevTools protocol: a breakpoint on a Hello.hx line hits at that line, with state
+      readable, in the first bundle and in a reloaded one. Firefox: not checked (no
+      such protocol headless); try it by hand. No debug adapter. 2026-10-18.
+- [ ] Sources show in DevTools as `file:////static/src/...`: give the map a sourceRoot
+      or rewrite its sources so the tree reads as the project's.
 - [ ] CodeMirror 6 with Haxe highlighting, a file tree over the project's files, save
       triggers a compile.
 - [ ] Compiler errors from stderr mapped to the editor's diagnostics

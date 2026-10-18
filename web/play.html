@@ -91,7 +91,10 @@ async function serviceWorker() {
 }
 
 function buildArgs(reload) {
-  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "--js", "/static/out/" + BUNDLE]);
+  // -debug and the sources in the map: DevTools shows and steps the .hx files, which live
+  // only in the compiler's in-memory filesystem
+  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "-debug", "-D", "source-map-content",
+                                 "--js", "/static/out/" + BUNDLE]);
   if (reload) args.push("-D", "hotreload_reload");
   return args;
 }
@@ -108,7 +111,7 @@ async function build() {
     return { ok: false, r };
   }
   version++;
-  await tell({ type: "build", name: BUNDLE, version, js: r.output });
+  await tell({ type: "build", name: BUNDLE, version, js: r.output, map: r.map });
   status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
   out(r.stdout.trim());
   return { ok: true, r };
@@ -178,6 +181,11 @@ async function test() {
   step("since-reload started over (plain static)", after && before && after.since < after.ticks, { before, after });
   const log = frameLog();
   step("reload hooks ran", log.includes("hello: reloading...") && log.includes("hello: reloaded"));
+  // text that isn't ASCII, through the compiler and back: UTF-8 both ways
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace("hello: reloaded", "hello: reloaded ¡olé! ✓");
+  const bu = await save();
+  const ole = await until(() => frameLog().includes("hello: reloaded ¡olé! ✓"), 15000);
+  step("non-ASCII source text reaches the program intact", bu.ok && ole, bu.ok ? null : bu.r.stderr);
   // an asset edit: nothing is built, the program reads it again
   show("assets/greeting.txt");
   files["assets/greeting.txt"] = "Howdy\n";

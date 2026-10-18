@@ -2,6 +2,7 @@
 // (the run/ scope), so every request the program makes comes here:
 //   run/            the program's page: a log, and the bundle
 //   run/<bundle>    the latest build (any ?v=), stamped with its number as the DevServer does
+//   run/<bundle>.map?v=N  build N's source map (a -debug build), which the bundle names
 //   run/assets/...  files the page gave it
 //   /__hotreload?since=N         held until there's a build newer than N (or 20 s), then
 //                                {version, url}: the JS reloader imports url next
@@ -14,6 +15,7 @@ const state = {
   name: "main.js",       // the bundle's file name, as the program's page loads it
   version: 0,
   js: null,
+  maps: new Map(),       // build number -> its source map (each bundle names its own)
   assets: new Map(),     // path under run/ -> {text, type}
   assetVersion: 0,
   assetChanges: [],      // {version, urls}
@@ -36,7 +38,13 @@ self.addEventListener("message", (e) => {
   if (m.type === "build") {
     state.name = m.name || state.name;
     state.version = m.version;
-    state.js = "globalThis.__hotreload_built = " + m.version + "; " + m.js;
+    let js = m.js;
+    if (m.map) {
+      // the bundle names its own build's map, so a reloaded one never gets a newer map
+      state.maps.set(m.version, m.map);
+      js = js.replace(/\n\/\/# sourceMappingURL=[^\n]*\s*$/, "") + "\n//# sourceMappingURL=" + state.name + ".map?v=" + m.version + "\n";
+    }
+    state.js = "globalThis.__hotreload_built = " + m.version + "; " + js;
     wake();
   } else if (m.type === "assets") {
     const urls = [];
@@ -50,7 +58,7 @@ self.addEventListener("message", (e) => {
       wake();
     }
   } else if (m.type === "reset") {
-    state.version = 0; state.js = null; state.assets.clear();
+    state.version = 0; state.js = null; state.assets.clear(); state.maps.clear();
     state.assetVersion = 0; state.assetChanges = [];
   }
   if (port) port.postMessage({ ok: true, version: state.version, assetVersion: state.assetVersion });
@@ -114,6 +122,11 @@ self.addEventListener("fetch", (e) => {
       '<style>body{margin:0;font:13px/1.4 ui-monospace,monospace;background:#fff;color:#111}' +
       '@media (prefers-color-scheme: dark){body{background:#111;color:#ddd}}pre{margin:8px}</style></head>' +
       '<body><pre id="log"></pre><script src="' + state.name + '"></script></body></html>', "text/html"));
+    return;
+  }
+  if (rest === state.name + ".map") {
+    const map = state.maps.get(parseInt(url.searchParams.get("v"), 10) || state.version);
+    e.respondWith(map ? respond(map, "application/json") : respond("no map", "text/plain", 404));
     return;
   }
   if (rest === state.name) {

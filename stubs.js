@@ -1119,7 +1119,9 @@ var hx_std_device = (function () {
     xhr.open("GET", url, false);
     xhr.overrideMimeType("text/plain; charset=x-user-defined"); // bytes, as latin1 chars
     xhr.send(null);
-    return xhr.status === 200 ? xhr.responseText : null;
+    if (xhr.status !== 200) return null;
+    // x-user-defined gives bytes 0x80-0xFF as U+F780-U+F7FF: back to one byte per char
+    return xhr.responseText.replace(/[\uF780-\uF7FF]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) & 0xff); });
   }
   var read = cfg.read || function (path) { return fetchText(cfg.url + path); };
   var manifest = cfg.manifest || JSON.parse(cfg.url ? fetchText(cfg.url + "manifest.json") : "[]");
