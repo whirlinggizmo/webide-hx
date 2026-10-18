@@ -72,11 +72,39 @@ function hx_resolve_path(p) {
   return "/" + out.join("/");
 }
 // a page reads the compiler's output back out of the pseudo filesystem through this
+// set up once per runtime: each run of the bundle is a new one, with its own copy of this
+//Provides: hx_exposed
+var hx_exposed = { done: false, clock: 1 };
 //Provides: hx_expose
-//Requires: caml_read_file_content, caml_jsbytes_of_string, hx_std_device
+//Requires: hx_exposed, caml_read_file_content, caml_jsbytes_of_string, hx_std_device
+//Requires: caml_string_of_jsbytes, caml_string_of_jsstring, caml_named_value, caml_callback
+//Requires: resolve_fs_device, caml_create_file, hx_mtimes, hx_fake_stat
 function hx_expose() {
-  // every run of the bundle is a new runtime with its own filesystem: always the current one
+  if (hx_exposed.done) return;
+  hx_exposed.done = true;
   globalThis.hx_read_file = function (name) { return caml_jsbytes_of_string(caml_read_file_content(name)); };
+  // a file written (or replaced) in the in-memory filesystem, with a new modification
+  // time, so a resident compiler sees it changed. `text` is a string of bytes (latin1)
+  globalThis.hx_write_file = function (name, text) {
+    var root = resolve_fs_device(caml_string_of_jsstring(name));
+    var dev = root.device, rest = root.rest;
+    var isNew = !(dev.content && dev.content[rest]);
+    if (!isNew) delete dev.content[rest];
+    caml_create_file(caml_string_of_jsstring(name), caml_string_of_jsbytes(text));
+    // a time that only goes up, one step per write: two saves in the same second differ
+    var t = hx_exposed.clock = Math.max(hx_exposed.clock + 1, Math.floor(Date.now() / 1000));
+    hx_mtimes[name] = t;
+    // a new file changes its directory, which is how the server notices it
+    if (isNew) hx_mtimes[name.replace(/\/[^\/]*$/, "")] = t;
+  };
+  // one request to a resident compiler (started with --wait stdio and HAXE_RESIDENT=1):
+  // the hxml, and what a connection would be sent back (\x01 before stdout lines, a
+  // \x02 line when the build failed, messages otherwise)
+  globalThis.hx_request = function (hxml) {
+    var f = caml_named_value("haxe_resident_request");
+    if (!f) throw new Error("no resident compiler: start it with --wait stdio and HAXE_RESIDENT=1");
+    return caml_jsbytes_of_string(caml_callback(f, [caml_string_of_jsbytes(hxml)]));
+  };
 }
 //Provides: get_full_path
 //Requires: caml_string_of_jsstring, caml_jsstring_of_string, hx_resolve_path, hx_expose
@@ -90,13 +118,17 @@ function executable_path(unit) { hx_expose(); return caml_string_of_jsstring("/h
 //Provides: sys_time
 //Requires: hx_expose
 function sys_time(unit) { hx_expose(); return Date.now() / 1000; }
+//Provides: hx_mtimes
+var hx_mtimes = {};
 //Provides: sys_filetime
-//Requires: caml_jsstring_of_string
+//Requires: caml_jsstring_of_string, hx_mtimes
 function sys_filetime(p) {
-  if (typeof require === "function") {
-    try { return require("fs").statSync(caml_jsstring_of_string(p)).mtimeMs / 1000; } catch (e) { return 0; }
+  var path = caml_jsstring_of_string(p);
+  if (Object.prototype.hasOwnProperty.call(hx_mtimes, path)) return hx_mtimes[path];
+  if (typeof require === "function" && globalThis.process && globalThis.process.versions) {
+    try { return require("fs").statSync(path).mtimeMs / 1000; } catch (e) {}
   }
-  return 0;
+  return 1;
 }
 //Provides: sys_getch
 function sys_getch(echo) { return 0; }
@@ -1126,4 +1158,28 @@ var hx_std_device = (function () {
   jsoo_mount_point.push({ path: "/haxe/std/", device: dev });
   globalThis.hx_std_loaded = function () { return dev.loaded(); };
   return dev;
+})();
+
+// Unix.stat on the in-memory filesystem, which js_of_ocaml leaves out. The compilation
+// server stats class-path directories to notice new files, and files for their size.
+// Times come from hx_mtimes (hx_write_file stamps what it writes), else 1.
+//Provides: hx_fake_stat
+//Always
+//Requires: MlFakeDevice, caml_raise_no_such_file, caml_int64_of_float, hx_mtimes
+var hx_fake_stat = (function () {
+  function stat(name, large, raise_unix) {
+    if (!this.exists(name)) caml_raise_no_such_file(this.nm(name), raise_unix, "stat");
+    var dir = this.is_dir(name) ? true : false, size = 0;
+    if (!dir) {
+      if (this.lookup) this.lookup(name);
+      var f = this.content[name];
+      size = f ? f.length() : 0;
+    }
+    var full = this.nm(name).replace(/\/+$/, "");
+    var t = Object.prototype.hasOwnProperty.call(hx_mtimes, full) ? hx_mtimes[full] : 1;
+    return [0, 0, 0, dir ? 1 : 0, dir ? 493 : 420, 1, 0, 0, 0, large ? caml_int64_of_float(size) : size, t, t, t];
+  }
+  MlFakeDevice.prototype.stat = stat;
+  MlFakeDevice.prototype.lstat = stat;
+  return stat;
 })();

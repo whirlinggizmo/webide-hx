@@ -102,6 +102,16 @@ the second compile cheaper. The page turns it on by setting
 `read` function over `web/std/` instead. Without `HX_STD` the device isn't mounted and the
 bundle expects the library embedded (`--embed-std`).
 
+## A resident compiler
+
+`play.html` doesn't start the compiler for each build. Its worker
+(`web/resident-worker.js`) starts the bundle once as Haxe's compilation server,
+`--wait stdio` with `HAXE_RESIDENT=1`, which the patch turns into a registered callback
+instead of a blocking loop. Each build is one request (`hx_request(hxml)`), after
+`hx_write_file` puts the changed sources in place with a new modification time. What
+didn't change stays parsed and typed, so a reload build takes about 0.1 s instead of 2.5.
+`node tests/resident.js` drives it the same way.
+
 ## The page's contract with the bundle
 
 - sources go in before the runtime starts: `globalThis.jsoo_fs_tmp = [{name, content}]`

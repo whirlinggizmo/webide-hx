@@ -58,13 +58,20 @@ const $ = (id) => document.getElementById(id);
 const status = (s) => { $("status").textContent = s; };
 const out = (s) => { $("out").textContent = s; };
 
+// the compiler stays resident in one worker (resident-worker.js): a build sends only the
+// files that changed since the last one, and what didn't change stays typed
+const compiler = new Worker("resident-worker.js");
+const pending = new Map();
+let nextId = 1, sent = {};
+compiler.onmessage = (ev) => { const r = ev.data; pending.get(r.id)(r); pending.delete(r.id); };
+compiler.onerror = (e) => { for (const [, resolve] of pending) resolve({ code: -2, stderr: "worker error: " + e.message, stdout: "", ms: 0 }); pending.clear(); };
+function ask(msg) {
+  return new Promise((resolve) => { msg.id = nextId++; pending.set(msg.id, resolve); compiler.postMessage(msg); });
+}
 function compile(args, sources, output) {
-  return new Promise((resolve) => {
-    const w = new Worker("worker.js");
-    w.onmessage = (ev) => { w.terminate(); resolve(ev.data); };
-    w.onerror = (e) => { w.terminate(); resolve({ code: -2, stderr: "worker error: " + e.message, stdout: "", ms: 0 }); };
-    w.postMessage({ files: sources, args, output });
-  });
+  const changed = {};
+  for (const [k, v] of Object.entries(sources)) if (sent[k] !== v) changed[k] = sent[k] = v;
+  return ask({ type: "build", files: changed, args, output });
 }
 
 function tell(msg) {
@@ -83,11 +90,16 @@ async function serviceWorker() {
   await tell({ type: "reset" });
 }
 
+function buildArgs(reload) {
+  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "--js", "/static/out/" + BUNDLE]);
+  if (reload) args.push("-D", "hotreload_reload");
+  return args;
+}
+
 async function build() {
   const sources = {};
   for (const f of FILES) if (f.endsWith(".hx")) sources["/static/" + f] = files[f];
-  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "--js", "/static/out/" + BUNDLE]);
-  if (version > 0) args.push("-D", "hotreload_reload");
+  const args = buildArgs(version > 0);
   status("building");
   const r = await compile(args, sources, "/static/out/" + BUNDLE);
   if (r.code !== 0 || !r.output) {
@@ -97,7 +109,7 @@ async function build() {
   }
   version++;
   await tell({ type: "build", name: BUNDLE, version, js: r.output });
-  status(`build ${version}: ${Math.round(r.ms)} ms` + (version > 1 ? ", reloading" : ""));
+  status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
   out(r.stdout.trim());
   return { ok: true, r };
 }
@@ -159,6 +171,7 @@ async function test() {
   before = lastTicks(frameLog(), "Hello");
   const b2 = await save();
   step("v2 builds", b2.ok, b2.ok ? Math.round(b2.r.ms) + " ms" : b2.r.stderr);
+  report.reloadMs = [Math.round(b2.r.ms)];
   const after = await until(() => lastTicks(frameLog(), "Hello again"), 15000);
   step("v2 runs the new code", after, after);
   step("ticks carried over (@:hot)", after && before && after.ticks > before.ticks, { before, after });
@@ -183,7 +196,17 @@ async function test() {
        { error: (b3.r.stderr || "").split("\n")[0], still, later });
   files["src/Hello.hx"] = good;
   const b4 = await save();
-  step("the fixed edit builds and reloads", b4.ok);
+  step("the fixed edit builds and reloads", b4.ok, b4.ok ? Math.round(b4.r.ms) + " ms" : b4.r.stderr);
+  report.reloadMs.push(Math.round(b4.r.ms));
+  // a few more edits in a row: each is a build of one changed file
+  for (let i = 0; i < 3; i++) {
+    files["src/Hello.hx"] = good.replace("ticks % 4", "ticks % " + (2 + i));
+    const b = await save();
+    report.reloadMs.push(b.ok ? Math.round(b.r.ms) : -1);
+  }
+  files["src/Hello.hx"] = good;
+  const bl = await save();
+  step("a run of edits builds", report.reloadMs.every((ms) => ms >= 0) && bl.ok, report.reloadMs);
   report.ms = Math.round(performance.now() - t0);
   report.log = frameLog().split("\n").slice(-12);
   report.ok = report.steps.every((s) => s.ok);
@@ -206,6 +229,9 @@ async function test() {
   const first = await build();
   if (!first.ok) return;
   $("run").src = "run/";
+  // a reload's build has its own defines, so its own cache: make it now, not at the first save
+  const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
+  status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
   if (location.search.includes("test")) test();
 })();
 </script>

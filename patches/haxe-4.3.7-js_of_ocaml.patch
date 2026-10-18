@@ -1,5 +1,57 @@
+diff --git a/src/compiler/server.ml b/src/compiler/server.ml
+index a4b2f06..8ceba09 100644
+--- a/src/compiler/server.ml
++++ b/src/compiler/server.ml
+@@ -1001,6 +1001,39 @@ and wait_loop verbose accept =
+ 		end;
+ 		heap_stats_start := heap_stats_now;
+ 	in
++	if Sys.getenv_opt "HAXE_RESIDENT" = Some "1" then begin
++		(* Resident mode, for a host that can't block on a socket or stdin (a browser's
++		   worker): instead of looping, register one request's handling under a name and
++		   return. The host calls it with the request (hxml, optionally \001 and the display
++		   file's contents) and gets back what a connection would have been sent. *)
++		let request s =
++			let out = Buffer.create 0 in
++			let write = Buffer.add_string out in
++			begin try
++				let hxml =
++					try
++						let idx = String.index s '\001' in
++						current_stdin := Some (String.sub s (idx + 1) ((String.length s) - idx - 1));
++						(String.sub s 0 idx)
++					with Not_found ->
++						s
++				in
++				let data = Helper.parse_hxml_data hxml in
++				process sctx (Communication.create_pipe sctx write) data
++			with e ->
++				let estr = Printexc.to_string e in
++				ServerMessage.uncaught_error estr;
++				write ("\x02\n" ^ estr)
++			end;
++			current_stdin := None;
++			cleanup();
++			update_heap();
++			while cs#has_task do cs#get_task#run done;
++			Buffer.contents out
++		in
++		Callback.register "haxe_resident_request" request;
++		0
++	end else begin
+ 	(* Main loop: accept connections and process arguments *)
+ 	while true do
+ 		let support_nonblock, read, write, close = accept() in
+@@ -1054,6 +1087,7 @@ and wait_loop verbose accept =
+ 			cs#add_task (new Tasks.server_exploration_task cs)
+ 	done;
+ 	0
++	end
+ 
+ (* Connect to given host/port and return accept function for communication *)
+ and init_wait_connect host port =
 diff --git a/src/dune b/src/dune
-index f0175d635..d9b8d7c45 100644
+index f0175d6..d9b8d7c 100644
 --- a/src/dune
 +++ b/src/dune
 @@ -29,6 +29,7 @@
@@ -14,7 +66,7 @@ index f0175d635..d9b8d7c45 100644
  )
 \ No newline at end of file
 diff --git a/src/macro/eval/bytes/evalBytesLower.ml b/src/macro/eval/bytes/evalBytesLower.ml
-index 4bef53089..3eed1c2f2 100644
+index 4bef530..3eed1c2 100644
 --- a/src/macro/eval/bytes/evalBytesLower.ml
 +++ b/src/macro/eval/bytes/evalBytesLower.ml
 @@ -20,4 +20,4 @@
@@ -26,7 +78,7 @@ index 4bef53089..3eed1c2f2 100644
 +let _LOWER = [|_E;_L1;_E;_L3;_L4;_L5;_L6;_L7;_L8;_L9;_E;_E;_E;_L13;_L14;_L15;_L16;_L17;_L18;_L19;_L20;_L21;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_L66;_L67;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_L78;_L79;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_L120;_L121;_L122;_L123;_L124;_L125;_L126;_L127;_E;_E;_E;_E;_L132;_L133;_L134;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_L146;_L147;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_L176;_L177;_L178;_L179;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_L665;_L666;_E;_L668;_L669;_L670;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_L1020|]
 \ No newline at end of file
 diff --git a/src/macro/eval/bytes/evalBytesUpper.ml b/src/macro/eval/bytes/evalBytesUpper.ml
-index d826e2c27..adfb3d0e8 100644
+index d826e2c..adfb3d0 100644
 --- a/src/macro/eval/bytes/evalBytesUpper.ml
 +++ b/src/macro/eval/bytes/evalBytesUpper.ml
 @@ -21,4 +21,4 @@ open EvalBytes_E_L79
@@ -38,7 +90,7 @@ index d826e2c27..adfb3d0e8 100644
 +let _UPPER = [|_E;_U1;_U2;_U3;_U4;_U5;_U6;_U7;_U8;_U9;_U10;_E;_E;_U13;_U14;_U15;_U16;_U17;_U18;_U19;_U20;_U21;_U22;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_U79;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_U117;_E;_E;_U120;_U121;_U122;_U123;_U124;_U125;_U126;_U127;_E;_E;_E;_E;_E;_U133;_U134;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_U147;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_U176;_U177;_U178;_U179;_U180;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_U665;_U666;_E;_U668;_U669;_U670;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_U685;_U686;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_E;_U1021|]
 \ No newline at end of file
 diff --git a/src/macro/eval/bytes/evalBytes_E_L79.ml b/src/macro/eval/bytes/evalBytes_E_L79.ml
-index 90ee3fc9a..64434ac23 100644
+index 90ee3fc..64434ac 100644
 --- a/src/macro/eval/bytes/evalBytes_E_L79.ml
 +++ b/src/macro/eval/bytes/evalBytes_E_L79.ml
 @@ -17,25 +17,25 @@
@@ -92,7 +144,7 @@ index 90ee3fc9a..64434ac23 100644
 +let _L79 = [|43920;43921;43922;43923;43924;43925;43926;43927;43928;43929;43930;43931;43932;43933;43934;43935;43936;43937;43938;43939;43940;43941;43942;43943;43944;43945;43946;43947;43948;43949;43950;43951;43952;43953;43954;43955;43956;43957;43958;43959;43960;43961;43962;43963;43964;43965;43966;43967;5112;5113;5114;5115;5116;5117;0;0;0;0;0;0;0;0;0;0|]
 \ No newline at end of file
 diff --git a/src/macro/eval/bytes/evalBytes_L1020.ml b/src/macro/eval/bytes/evalBytes_L1020.ml
-index 3a7618515..ce18cef2b 100644
+index 3a76185..ce18cef 100644
 --- a/src/macro/eval/bytes/evalBytes_L1020.ml
 +++ b/src/macro/eval/bytes/evalBytes_L1020.ml
 @@ -17,26 +17,26 @@
@@ -146,7 +198,7 @@ index 3a7618515..ce18cef2b 100644
 +let _L670 = [|42881;0;42883;0;42885;0;42887;0;0;0;0;42892;0;613;0;0;42897;0;42899;0;0;0;42903;0;42905;0;42907;0;42909;0;42911;0;42913;0;42915;0;42917;0;42919;0;42921;0;614;604;609;620;0;0;670;647;669;43859;42933;0;42935;0;0;0;0;0;0;0;0;0|]
 +let _L1020 = [|0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;65345;65346;65347;65348;65349;65350;65351;65352;65353;65354;65355;65356;65357;65358;65359;65360;65361;65362;65363;65364;65365;65366;65367;65368;65369;65370;0;0;0;0;0|]
 diff --git a/src/macro/eval/bytes/evalBytes_U1021.ml b/src/macro/eval/bytes/evalBytes_U1021.ml
-index f45db92b8..f5ed4a00a 100644
+index f45db92..f5ed4a0 100644
 --- a/src/macro/eval/bytes/evalBytes_U1021.ml
 +++ b/src/macro/eval/bytes/evalBytes_U1021.ml
 @@ -17,28 +17,28 @@
@@ -206,7 +258,7 @@ index f45db92b8..f5ed4a00a 100644
 +let _U1021 = [|0;65313;65314;65315;65316;65317;65318;65319;65320;65321;65322;65323;65324;65325;65326;65327;65328;65329;65330;65331;65332;65333;65334;65335;65336;65337;65338;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0;0|]
 \ No newline at end of file
 diff --git a/src/macro/eval/bytes/evalBytes_U79.ml b/src/macro/eval/bytes/evalBytes_U79.ml
-index 89f8241f2..8242d0079 100644
+index 89f8241..8242d00 100644
 --- a/src/macro/eval/bytes/evalBytes_U79.ml
 +++ b/src/macro/eval/bytes/evalBytes_U79.ml
 @@ -17,24 +17,24 @@

@@ -29,20 +29,22 @@ changed.
 
 ## 2. A resident compiler
 
-Every compile is a cold start today: ~0.4 s before any typing happens, and the typed
-standard library is thrown away each time. Native Haxe's compilation server keeps it.
-This is the one hard problem left, and three other items wait on it.
-
-- [ ] Measure where the time goes in a cold compile (runtime init, std parsing, typing,
-      generation) so the fix targets the right part.
-- [ ] Option A: run the compiler's own server loop (`--wait stdio`) inside the worker
-      with stdin fed from page messages. js_of_ocaml reads stdin synchronously, so the
-      worker has to block for input: `Atomics.wait` on a SharedArrayBuffer again.
-- [ ] Option B: a second run of the bundle in the same worker reusing the first run's
-      typed modules. Probably not possible without changes inside the compiler; check
-      before trying.
-- [ ] Option C: accept cold starts and make them cheaper (smaller std slice per project,
-      js_of_ocaml optimization level, snapshotting the runtime's heap after init).
+- [x] Measured a cold hot-reload build of hello (2.4 s in node): startup 0.1 s, macros
+      0.84, parsing 0.75 (696 files), typing 0.53, the rest 0.26. Almost all of it is
+      redoing unchanged modules. 2026-10-18.
+- [x] Haxe's compilation server, driven one request at a time: with `HAXE_RESIDENT=1`,
+      `--wait stdio` registers its loop body as an OCaml callback and returns instead of
+      blocking (`patches/`, server.ml). `stubs.js` adds `hx_request`, `hx_write_file`
+      (with a modification time that only rises), and `Unix.stat` for the in-memory
+      filesystem. `web/resident-worker.js` keeps one runtime alive; `play.html` uses it and
+      warms the reload build's cache at start. Reload builds: 69–82 ms in Brave, 93–116 ms
+      in Firefox, from ~2.5–3 s. `node tests/resident.js` checks edits, a broken edit
+      and its fix. 2026-10-18.
+- [ ] Memory over a long session: the server's cache grows; watch it, and use the
+      server's own GC task if it matters.
+- [ ] Rob's fix for the server's cost on deep dependency chains (`4.3-server-skip-reason`
+      on his fork, in Haxe 5) applies to the resident server; build from a fork branch
+      carrying it and `patches/` instead of the 4.3.7 tag.
 
 ## 3. Hot reload in the page
 

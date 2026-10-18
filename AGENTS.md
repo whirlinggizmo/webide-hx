@@ -26,8 +26,10 @@ consumer of it, not part of it.
 
 ## Testing
 
-- Without a browser: `node tests/browserlike.js` runs the bundle in node as a page would.
-  It is the quickest check that a stub change didn't break startup.
+- Without a browser: `node tests/browserlike.js` runs the bundle in node as a page would
+  (the quickest check that a stub change didn't break startup); `node tests/resident.js`
+  drives the resident compiler through edits; `node tests/run.js DIR args...` runs any
+  build in the in-memory filesystem (add `--times` for a phase breakdown).
 - In a browser: `python3 web/serve.py`, open `http://127.0.0.1:8765/`.
   The page compiles hello world (and runs it), compiles it again, then compiles the
   parity program with the hotreload build macro, and POSTs a JSON report the server
@@ -51,6 +53,11 @@ consumer of it, not part of it.
   Worker per compile.
 - js_of_ocaml links a `//Provides:` JS file as primitives; wasm_of_ocaml does not. For
   wasm each JS primitive needs a `.wat` import shim as well.
+- `//Always` in `stubs.js` is not honored for a user stub file: code that must run (a
+  device, a prototype patch) has to be reached through a `//Requires:` chain from a
+  primitive the compiler calls. `hx_expose` is that root; require new pieces from it.
+- `hx_expose` runs on every path lookup; it sets up once per runtime (`hx_exposed`).
+  State that must survive between calls lives there, not in its closures.
 - In node the runtime uses the real filesystem, so `--js out.js` writes a real file
   there; in a page it writes to the in-memory tree at the same path.
 - pcre2 is emulated on JS RegExp over latin1 byte strings. Regex differences in macros
