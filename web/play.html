@@ -9,7 +9,17 @@
   @media (prefers-color-scheme: dark) { :root { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; } }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
-  header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header { position: relative; display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  /* a build in progress: a spinner by the status, and a bar along the header's foot */
+  .spinner { display: none; width: 12px; height: 12px; margin-right: -6px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  body.busy .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; visibility: hidden; }
+  body.busy #progress { visibility: visible; }
+  #progress div { height: 100%; width: 0; background: var(--accent); transition: width 0.1s linear; }
+  #progress.guess div { width: 30%; transition: none; animation: slide 1.2s ease-in-out infinite alternate; }
+  @keyframes slide { from { margin-left: 0; } to { margin-left: 70%; } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } #progress.guess div { animation: none; width: 100%; opacity: 0.4; } }
   header h1 { font-size: 15px; margin: 0; }
   header .status { color: var(--muted); font-size: 13px; }
   header .project { margin-left: auto; display: flex; gap: 6px; align-items: center; }
@@ -47,7 +57,8 @@
 <header>
   <h1>Haxe, hot</h1>
   <button class="primary" id="build" title="Ctrl-S">Build</button>
-  <span class="status" id="status">starting</span>
+  <span class="spinner" aria-hidden="true"></span>
+  <span class="status" id="status" role="status">starting</span>
   <span class="project">
     <span class="where" id="where"></span>
     <button id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder</button>
@@ -55,6 +66,7 @@
     <button id="export" title="the project as a zip">Export zip</button>
     <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
   </span>
+  <div id="progress"><div></div></div>
 </header>
 <main>
   <section>
@@ -214,7 +226,11 @@ async function flushWrites(name) {
 const compiler = new Worker("resident-worker.js");
 const pending = new Map();
 let nextId = 1, sent = {};
-compiler.onmessage = (ev) => { const r = ev.data; pending.get(r.id)(r); pending.delete(r.id); };
+compiler.onmessage = (ev) => {
+  const r = ev.data;
+  if (r.type === "progress") { if (activity) activity.files = r.files; return; }
+  pending.get(r.id)(r); pending.delete(r.id);
+};
 compiler.onerror = (e) => { for (const [, resolve] of pending) resolve({ code: -2, stderr: "worker error: " + e.message, stdout: "", ms: 0 }); pending.clear(); };
 function ask(msg) {
   return new Promise((resolve) => { msg.id = nextId++; pending.set(msg.id, resolve); compiler.postMessage(msg); });
@@ -296,13 +312,48 @@ function showDiagnostics(byFile) {
   renderTree();
 }
 
+// ---- a build in progress. The compiler doesn't report progress (a build is one call, in
+// the worker), but the worker reports each library file it reads, and the last build of
+// the same kind (kept in localStorage) says about how long and how many files: a bar from
+// those, or one that only moves while there's nothing to go by. Shown only once a build
+// takes longer than BUSY_AFTER, so quick ones don't flicker
+const BUSY_AFTER = 150;
+let activity = null, compilerUp = false;
+const lastBuilds = (() => { try { return JSON.parse(localStorage.getItem("haxe-in-browser-builds")) || {}; } catch (e) { return {}; } })();
+function busy(label, kind) {
+  const a = { files: 0, t0: performance.now() };
+  activity = a;
+  const tick = () => {
+    const ms = performance.now() - a.t0;
+    if (ms < BUSY_AFTER) return;
+    document.body.classList.add("busy");
+    status(`${label}… ${(ms / 1000).toFixed(1)} s` + (a.files ? ` · ${a.files} library files read` : ""));
+    const last = lastBuilds[kind];
+    $("progress").classList.toggle("guess", !last);
+    if (last) $("progress").firstChild.style.width = 100 * Math.min(0.95, Math.max(ms / last.ms, last.files ? a.files / last.files : 0)) + "%";
+  };
+  const timer = setInterval(tick, 100);
+  return () => {
+    clearInterval(timer);
+    if (activity === a) activity = null;
+    document.body.classList.remove("busy");
+    $("progress").firstChild.style.width = "0";
+    lastBuilds[kind] = { ms: performance.now() - a.t0, files: a.files };
+    try { localStorage.setItem("haxe-in-browser-builds", JSON.stringify(lastBuilds)); } catch (e) {}
+  };
+}
+
 async function build() {
   syncEditor();
   const sources = {};
   for (const f of names()) if (isCode(f)) sources["/static/" + f] = files[f];
   const args = buildArgs(version > 0);
+  // a first build starts the compiler and reads the library; after it, a whole build or a reload's
+  const done = busy(compilerUp ? "building" : "starting the compiler and building", !compilerUp ? "first" : version > 0 ? "reload" : "whole");
   status("building");
   const r = await compile(args, sources, "/static/out/" + BUNDLE);
+  done();
+  if (r.code >= 0) compilerUp = true;
   const messages = parseMessages(r.stderr);
   showDiagnostics(messages.byFile);
   if (r.code !== 0 || !r.output) {
@@ -476,7 +527,9 @@ async function startProgram() {
   $("run").src = first.ok ? "run/?start=" + ++starts : "about:blank";
   if (!first.ok) return first;
   // a reload's build has its own defines, so its own cache: make it now, not at the first save
+  const done = busy("build 1 running; warming the compiler for reloads", "warm");
   const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
+  done();
   status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
   return first;
 }

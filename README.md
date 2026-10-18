@@ -135,7 +135,10 @@ didn't change stays parsed and typed, so a reload build takes about 0.1 s instea
 by `build.py` (node and npm needed for that step; versions are pinned in
 `editor/package-lock.json`). Ctrl-S builds. The compiler's errors and warnings appear on
 their lines, and the file tree counts each file's errors. Files under `src/` ending in
-`.hx` are the program; anything else is an asset the program can fetch. New, Rename and
+`.hx` are the program; anything else is an asset the program can fetch. A build that
+takes more than a moment shows a spinner, its time so far and the library files the
+compiler has read, with a bar estimated from the last build of the same kind (the
+compiler reports no progress of its own; the worker counts its reads from `std/`). New, Rename and
 Delete work on the project, which is kept as it's edited: in the browser, or in a folder
 on this computer.
 

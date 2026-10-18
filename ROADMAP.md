@@ -97,6 +97,10 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       notices, a delete the compiler forgets, assets added and removed. 2026-10-18.
 - [x] The project kept in the browser (IndexedDB, as it's typed), seeded from the
       example (`web/hello/files.json`, from build.py); Reset goes back to it. 2026-10-18.
+- [x] A build in progress: a spinner, the time so far, the library files read (the worker
+      reports each `std/` read as it happens), and a bar against the last build of the
+      same kind, kept in localStorage; a sliding bar when there's none. Hidden for builds
+      under 150 ms, so reloads don't flicker. 2026-10-18.
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).
 - [x] The project's files through ZenFS (`@zenfs/core` and `@zenfs/dom`, a node-like `fs`

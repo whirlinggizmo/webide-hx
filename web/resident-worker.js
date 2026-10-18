@@ -10,7 +10,16 @@
 //                               of defines (a reload's) is made before it's needed
 // and gets back {id, code, ms, stdout, stderr, output}: code 0 or 1, the compiler's
 // messages in stderr, the output file's text.
+// While a build runs, the worker also posts {type: "progress", files}: how many library
+// files the compiler has read so far in this build (each by synchronous XHR from std/).
 var started = false, startMs = 0;
+
+var libraryFiles = 0;
+var xhrOpen = XMLHttpRequest.prototype.open;
+XMLHttpRequest.prototype.open = function (method, url) {
+  if (/\/std\/./.test(url) && !/\/manifest\.json$/.test(url)) postMessage({ type: "progress", files: ++libraryFiles });
+  return xhrOpen.apply(this, arguments);
+};
 
 // the compiler's filesystem holds bytes, one per char (latin1); the page has text: UTF-8 between
 var encoder = new TextEncoder(), decoder = new TextDecoder();
@@ -43,6 +52,7 @@ function start(files) {
 
 function request(args) {
   var t0 = performance.now();
+  libraryFiles = 0;
   // one argument per line is valid hxml
   var out = globalThis.hx_request(args.join("\n"));
   var stdout = [], stderr = [], failed = false;
