@@ -1,0 +1,213 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haxe hot reload in a page</title>
+<style>
+  :root { --bg: #fafafa; --fg: #111; --muted: #666; --line: #ddd; --panel: #fff; --accent: #0b6bcb; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 15px; margin: 0; }
+  header .status { color: var(--muted); font-size: 13px; }
+  button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
+  section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .tabs { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  .tabs button { padding: 2px 10px; font-size: 13px; }
+  .tabs button.on { border-color: var(--accent); }
+  textarea { flex: 1; border: 0; padding: 8px; resize: none; background: var(--panel); color: var(--fg); font: 13px/1.45 ui-monospace, monospace; tab-size: 4; min-height: 0; }
+  textarea:focus { outline: none; }
+  iframe { flex: 1; border: 0; background: var(--panel); min-height: 0; }
+  #out { margin: 0; padding: 6px 8px; max-height: 30%; overflow: auto; font: 12px/1.4 ui-monospace, monospace; border-top: 1px solid var(--line); color: var(--muted); white-space: pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Haxe, hot</h1>
+  <button class="primary" id="build" title="Ctrl-S">Build</button>
+  <span class="status" id="status">starting</span>
+</header>
+<main>
+  <section>
+    <div class="tabs" id="tabs"></div>
+    <textarea id="editor" spellcheck="false"></textarea>
+    <pre id="out"></pre>
+  </section>
+  <section>
+    <iframe id="run" title="the running program"></iframe>
+  </section>
+</main>
+<script>
+// The program (hotreload-hx's examples/hello, copied to hello/ by build.py --hotreload) is
+// compiled in a worker by the in-page compiler, then handed to the service worker (sw.js),
+// which plays the DevServer's part for the frame on the right. Saving a .hx file builds
+// again with -D hotreload_reload; saving an asset tells the program it changed.
+const PROJECT = "hello/";
+const FILES = ["src/Main.hx", "src/Hello.hx", "assets/greeting.txt"];
+const MAIN = "Main", BUNDLE = "hello.js";
+const HOTRELOAD = ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml"];
+
+const files = {}, saved = {};
+let current = FILES[1], version = 0, reg = null;
+const $ = (id) => document.getElementById(id);
+const status = (s) => { $("status").textContent = s; };
+const out = (s) => { $("out").textContent = s; };
+
+function compile(args, sources, output) {
+  return new Promise((resolve) => {
+    const w = new Worker("worker.js");
+    w.onmessage = (ev) => { w.terminate(); resolve(ev.data); };
+    w.onerror = (e) => { w.terminate(); resolve({ code: -2, stderr: "worker error: " + e.message, stdout: "", ms: 0 }); };
+    w.postMessage({ files: sources, args, output });
+  });
+}
+
+function tell(msg) {
+  return new Promise((resolve) => {
+    const ch = new MessageChannel();
+    ch.port1.onmessage = (ev) => resolve(ev.data);
+    reg.active.postMessage(msg, [ch.port2]);
+  });
+}
+
+async function serviceWorker() {
+  reg = await navigator.serviceWorker.register("sw.js", { scope: "./run/" });
+  const sw = reg.installing || reg.waiting || reg.active;
+  if (sw.state !== "activated")
+    await new Promise((r) => sw.addEventListener("statechange", () => sw.state === "activated" && r()));
+  await tell({ type: "reset" });
+}
+
+async function build() {
+  const sources = {};
+  for (const f of FILES) if (f.endsWith(".hx")) sources["/static/" + f] = files[f];
+  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "--js", "/static/out/" + BUNDLE]);
+  if (version > 0) args.push("-D", "hotreload_reload");
+  status("building");
+  const r = await compile(args, sources, "/static/out/" + BUNDLE);
+  if (r.code !== 0 || !r.output) {
+    status("build failed; the program keeps what it has");
+    out((r.stderr || r.stdout || "no output").trim());
+    return { ok: false, r };
+  }
+  version++;
+  await tell({ type: "build", name: BUNDLE, version, js: r.output });
+  status(`build ${version}: ${Math.round(r.ms)} ms` + (version > 1 ? ", reloading" : ""));
+  out(r.stdout.trim());
+  return { ok: true, r };
+}
+
+async function saveAsset(name) {
+  await tell({ type: "assets", files: { [name]: files[name] }, changed: true });
+  status(`${name} saved; the program reads it again`);
+}
+
+async function save() {
+  if (files[current] === saved[current]) return build();
+  saved[current] = files[current];
+  return current.endsWith(".hx") ? build() : saveAsset(current);
+}
+
+function show(name) {
+  current = name;
+  $("editor").value = files[name];
+  for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.name === name);
+}
+
+$("editor").addEventListener("input", () => { files[current] = $("editor").value; });
+$("editor").addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); }
+  if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "\t"); }
+});
+$("build").onclick = () => save();
+
+// the frame's log, for the test below
+function frameLog() {
+  try { return $("run").contentDocument.getElementById("log").textContent; } catch (e) { return ""; }
+}
+function until(test, ms) {
+  return new Promise((resolve) => {
+    const end = performance.now() + ms;
+    (function check() {
+      const v = test();
+      if (v || performance.now() > end) resolve(v || null); else setTimeout(check, 100);
+    })();
+  });
+}
+const lastTicks = (log, word) => {
+  const re = new RegExp(word + ", world! \\(ticks: (\\d+), since the last reload: (\\d+)\\)", "g");
+  let m, last = null;
+  while ((m = re.exec(log))) last = { ticks: +m[1], since: +m[2] };
+  return last;
+};
+
+// ?test: edit, build and check without a person, then POST what happened to /report
+async function test() {
+  const report = { steps: [] };
+  const step = (name, ok, detail) => { report.steps.push({ name, ok: !!ok, detail }); };
+  const t0 = performance.now();
+  let before = await until(() => lastTicks(frameLog(), "Hello"), 15000);
+  step("v1 runs", before, before);
+  // an edit to the code: the message changes, the @:hot tick count carries on
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace("'$greeting, $name! (ticks", "'$greeting again, $name! (ticks");
+  before = lastTicks(frameLog(), "Hello");
+  const b2 = await save();
+  step("v2 builds", b2.ok, b2.ok ? Math.round(b2.r.ms) + " ms" : b2.r.stderr);
+  const after = await until(() => lastTicks(frameLog(), "Hello again"), 15000);
+  step("v2 runs the new code", after, after);
+  step("ticks carried over (@:hot)", after && before && after.ticks > before.ticks, { before, after });
+  step("since-reload started over (plain static)", after && before && after.since < after.ticks, { before, after });
+  const log = frameLog();
+  step("reload hooks ran", log.includes("hello: reloading...") && log.includes("hello: reloaded"));
+  // an asset edit: nothing is built, the program reads it again
+  show("assets/greeting.txt");
+  files["assets/greeting.txt"] = "Howdy\n";
+  await save();
+  const howdy = await until(() => lastTicks(frameLog(), "Howdy again"), 15000);
+  step("asset change reaches the program", howdy && frameLog().includes('the greeting is now "Howdy"'), howdy);
+  // a broken edit: the build fails, the program keeps running the last good code
+  show("src/Hello.hx");
+  const good = files["src/Hello.hx"];
+  files["src/Hello.hx"] = good.replace("ticks++;", "ticks++ oops;");
+  const b3 = await save();
+  const still = lastTicks(frameLog(), "Howdy again");
+  await new Promise((r) => setTimeout(r, 1500));
+  const later = lastTicks(frameLog(), "Howdy again");
+  step("a failed build is reported and the program keeps running", !b3.ok && later && still && later.ticks > still.ticks,
+       { error: (b3.r.stderr || "").split("\n")[0], still, later });
+  files["src/Hello.hx"] = good;
+  const b4 = await save();
+  step("the fixed edit builds and reloads", b4.ok);
+  report.ms = Math.round(performance.now() - t0);
+  report.log = frameLog().split("\n").slice(-12);
+  report.ok = report.steps.every((s) => s.ok);
+  await fetch("/report", { method: "POST", body: JSON.stringify(report) });
+}
+
+(async function () {
+  if (!("serviceWorker" in navigator)) { status("this page needs service workers (and http://localhost or https)"); return; }
+  for (const f of FILES) files[f] = saved[f] = await (await fetch(PROJECT + f, { cache: "no-store" })).text();
+  for (const f of FILES) {
+    const b = document.createElement("button");
+    b.textContent = f.split("/").pop(); b.dataset.name = f; b.onclick = () => show(f);
+    $("tabs").appendChild(b);
+  }
+  show(current);
+  await serviceWorker();
+  const assets = {};
+  for (const f of FILES) if (!f.endsWith(".hx")) assets[f] = files[f];
+  await tell({ type: "assets", files: assets, changed: false });
+  const first = await build();
+  if (!first.ok) return;
+  $("run").src = "run/";
+  if (location.search.includes("test")) test();
+})();
+</script>
+</body>
+</html>

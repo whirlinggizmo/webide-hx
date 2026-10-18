@@ -53,7 +53,10 @@ This is the one hard problem left, and three other items wait on it.
 What hotreload-hx's JS client needs from a server is small: the current bundle, and a
 way to learn a new one exists. Nothing here needs a resident compiler.
 
-- [ ] An in-page stand-in for the DevServer: after a compile, hand the swap the new
+- [x] Working in Brave, 2026-10-18: `web/play.html` + `web/sw.js` (a service worker plays the
+      DevServer) edit, build and hot-reload hotreload-hx's examples/hello; `?test` checks it.
+      Firefox not yet run.
+- [x] An in-page stand-in for the DevServer: after a compile, hand the swap the new
       bundle as a blob URL and signal it. Look at what `hotreload.Reloader` on JS polls
       (`/__hotreload`) and give it the same answers from the page.
 - [ ] Run the program in an iframe next to the compiler, from the bundle the worker
