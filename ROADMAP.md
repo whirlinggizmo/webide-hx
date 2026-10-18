@@ -18,13 +18,9 @@ changed.
       (`patches/`). 2026-10-18.
 - [x] Reproducible from nothing: `build.py` installs opam, OCaml, the libraries, mbedtls
       and Haxe under `build/`. 2026-10-18.
-- [~] Send the case-table change upstream to Haxe (same arrays, as literals). Harmless;
-      makes the stock compiler worker-safe under js_of_ocaml. Branch
-      `eval-case-tables-array-literals` on Rob's fork, off upstream `development`;
-      built with OCaml 5.3 in the `haxe-build-dev` Docker image; Haxe's unit tests on
-      the interpreter pass with it (11,417 assertions), and every BMP code point's
-      toUpperCase/toLowerCase matches Haxe 4.3.7's. Opened as HaxeFoundation/haxe#13067.
-      2026-10-18.
+- [x] The case-table change is upstream: HaxeFoundation/haxe#13067, merged into
+      `development` by Simn (4413a0b94), so Haxe 5 has it. The 4.3.7 build here still
+      carries it in `patches/`, since the 4.3 line is frozen. 2026-10-18.
 - [x] Standard library on demand: `web/std/` + `manifest.json`, fetched by synchronous
       XHR from the worker the first time the compiler opens a file (72 files for hello
       world, 152 for the parity program). Bundle 7.8 MB → 3.8 MB; compiles 0.1–0.3 s

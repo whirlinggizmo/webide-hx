@@ -53,7 +53,7 @@ the gap is widest there.
      `Array.of_list [1024 elements]`, become array literals. js_of_ocaml emits a list
      literal as nested cons cells, a 1027-deep expression that a Web Worker's parser
      can't take (main threads have the stack for it). As arrays the bundle's deepest
-     nesting is 42. Same data; a candidate upstream patch.
+     nesting is 42. Same data; merged upstream as haxe#13067 (Haxe 5), carried here for 4.3.7.
 3. **dune** builds `haxe.bc`, 41 MB of bytecode.
 4. **js_of_ocaml** compiles it to `web/haxe.js` (3.8 MB) with `stubs.js` linked in.
    The JS-relevant standard library (the root classes plus `haxe/`, `js/`, `sys/` and
