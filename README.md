@@ -134,7 +134,10 @@ didn't change stays parsed and typed, so a reload build takes about 0.1 s instea
 `play.html` edits with CodeMirror 6, bundled from `editor/` into `web/vendor/codemirror.js`
 by `build.py` (node and npm needed for that step; versions are pinned in
 `editor/package-lock.json`). Ctrl-S builds. The compiler's errors and warnings appear on
-their lines, and each tab counts its errors.
+their lines, and the file tree counts each file's errors. Files under `src/` ending in
+`.hx` are the program; anything else is an asset the program can fetch. New, Rename and
+Delete work on the project, which the browser keeps (IndexedDB) as it's edited; Reset
+goes back to the example. `?test` uses a store of its own.
 
 ## Debugging
 

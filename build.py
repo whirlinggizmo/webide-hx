@@ -235,6 +235,10 @@ def main():
         shutil.rmtree(hello, ignore_errors=True)
         for sub in ["src", "assets"]:
             shutil.copytree(os.path.join(d, "examples", "hello", sub), os.path.join(hello, sub))
+        listing = sorted(os.path.relpath(os.path.join(r, f), hello).replace(os.sep, "/")
+                         for r, _, fs in os.walk(hello) for f in fs)
+        with open(os.path.join(hello, "files.json"), "w") as f:
+            json.dump(listing, f)
     os.makedirs(BUILD, exist_ok=True)
     print("toolchain"); env = toolchain()
     print("mbedtls"); prefix = mbedtls(env)

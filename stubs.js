@@ -97,6 +97,15 @@ function hx_expose() {
     // a new file changes its directory, which is how the server notices it
     if (isNew) hx_mtimes[name.replace(/\/[^\/]*$/, "")] = t;
   };
+  // a file removed: its time is forgotten (so a module from it is out of date) and its
+  // directory's is new (so the server looks again at what the directory holds)
+  globalThis.hx_remove_file = function (name) {
+    var root = resolve_fs_device(caml_string_of_jsstring(name));
+    if (root.device.content && root.device.content[root.rest]) delete root.device.content[root.rest];
+    delete hx_mtimes[name];
+    var t = hx_exposed.clock = Math.max(hx_exposed.clock + 1, Math.floor(Date.now() / 1000));
+    hx_mtimes[name.replace(/\/[^\/]*$/, "")] = t;
+  };
   // one request to a resident compiler (started with --wait stdio and HAXE_RESIDENT=1):
   // the hxml, and what a connection would be sent back (\x01 before stdout lines, a
   // \x02 line when the build failed, messages otherwise)

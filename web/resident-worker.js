@@ -4,7 +4,8 @@
 //
 // The page sends:
 //   {type: "build", id, files: {path: text}, args: [...], output}
-//       files: those that changed since the last build (all of them the first time)
+//       files: those that changed since the last build (all of them the first time);
+//       a file sent as null was removed
 //   {type: "warm", id, args}    a build whose output is thrown away: the cache for a set
 //                               of defines (a reload's) is made before it's needed
 // and gets back {id, code, ms, stdout, stderr, output}: code 0 or 1, the compiler's
@@ -59,7 +60,10 @@ onmessage = function (ev) {
     if (!started) {
       start(msg.files || {});
     } else {
-      for (var name in msg.files || {}) globalThis.hx_write_file(name, toBytes(msg.files[name]));
+      for (var name in msg.files || {}) {
+        if (msg.files[name] === null) globalThis.hx_remove_file(name);
+        else globalThis.hx_write_file(name, toBytes(msg.files[name]));
+      }
     }
     r = request(msg.args);
     r.output = null;

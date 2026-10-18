@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Haxe hot reload in a page</title>
 <style>
-  :root { --bg: #fafafa; --fg: #111; --muted: #666; --line: #ddd; --panel: #fff; --accent: #0b6bcb; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; } }
+  :root { --bg: #fafafa; --fg: #111; --muted: #666; --line: #ddd; --panel: #fff; --accent: #0b6bcb; --hover: #eef3fa; --error: #c62828; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; } }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
   header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -14,20 +14,31 @@
   header .status { color: var(--muted); font-size: 13px; }
   button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
   button.primary { border-color: var(--accent); color: var(--accent); }
-  main { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
-  @media (max-width: 760px) { main { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; } }
-  section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
-  .tabs { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
-  .tabs button { padding: 2px 10px; font-size: 13px; }
-  .tabs button.on { border-color: var(--accent); }
+  main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
+  section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .code { display: grid; grid-template-columns: 180px 1fr; min-height: 0; flex: 1; }
+  .files { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .filebar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border-bottom: 1px solid var(--line); }
+  .filebar button { padding: 1px 8px; font-size: 12px; }
+  #tree { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; font-size: 13px; }
+  #tree .dir { padding: 6px 10px 2px; color: var(--muted); font-size: 12px; }
+  #tree button { display: flex; width: 100%; border: 0; border-radius: 0; text-align: left; padding: 3px 10px 3px 20px; background: transparent; }
+  #tree button:hover { background: var(--hover); }
+  #tree button.on { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+  #tree .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
+  .edit { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #editor { flex: 1; min-height: 0; overflow: hidden; }
   #editor .cm-editor { height: 100%; font-size: 13px; }
   #editor .cm-editor.cm-focused { outline: none; }
   #editor .cm-scroller { font-family: ui-monospace, monospace; line-height: 1.45; }
-  .tabs button .count { margin-left: 6px; font-size: 11px; color: #c62828; }
-  @media (prefers-color-scheme: dark) { .tabs button .count { color: #ff8a80; } }
   iframe { flex: 1; border: 0; background: var(--panel); min-height: 0; }
   #out { margin: 0; padding: 6px 8px; max-height: 30%; overflow: auto; font: 12px/1.4 ui-monospace, monospace; border-top: 1px solid var(--line); color: var(--muted); white-space: pre-wrap; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 3fr 2fr; }
+    .code { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .files { border-right: 0; border-bottom: 1px solid var(--line); max-height: 140px; }
+  }
 </style>
 </head>
 <body>
@@ -38,26 +49,41 @@
 </header>
 <main>
   <section>
-    <div class="tabs" id="tabs"></div>
-    <div id="editor"></div>
-    <pre id="out"></pre>
+    <div class="code">
+      <div class="files">
+        <div class="filebar">
+          <button id="new" title="a new file: src/... for code, anything else is an asset">New</button>
+          <button id="rename">Rename</button>
+          <button id="delete">Delete</button>
+          <button id="reset" title="back to the example, losing your changes">Reset</button>
+        </div>
+        <ul id="tree"></ul>
+      </div>
+      <div class="edit">
+        <div id="editor"></div>
+        <pre id="out"></pre>
+      </div>
+    </div>
   </section>
   <section>
     <iframe id="run" title="the running program"></iframe>
   </section>
 </main>
 <script>
-// The program (hotreload-hx's examples/hello, copied to hello/ by build.py --hotreload) is
-// compiled in a worker by the in-page compiler, then handed to the service worker (sw.js),
-// which plays the DevServer's part for the frame on the right. Saving a .hx file builds
-// again with -D hotreload_reload; saving an asset tells the program it changed.
-const PROJECT = "hello/";
-const FILES = ["src/Main.hx", "src/Hello.hx", "assets/greeting.txt"];
+// A project of files: .hx files under src/ are the program (compiled in a worker by the
+// in-page compiler), anything else is an asset, served to the program by the service
+// worker (sw.js), which plays the DevServer's part for the frame on the right. Saving a
+// .hx file, or adding, renaming or removing one, builds again (-D hotreload_reload after the
+// first) and the program reloads; saving an asset tells the program it changed. The
+// project is kept in the browser (IndexedDB) as it's edited; the first time, and after
+// Reset, it's hotreload-hx's examples/hello (copied to hello/ by build.py --hotreload).
+const TESTING = location.search.includes("test");
+const EXAMPLE = "hello/";
 const MAIN = "Main", BUNDLE = "hello.js";
 const HOTRELOAD = ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml"];
 
 const files = {}, saved = {};
-let current = FILES[1], version = 0, reg = null;
+let current = null, version = 0, reg = null;
 // the editor (CodeMirror, web/vendor/codemirror.js): one view, a state per file, so each
 // keeps its own undo history; the compiler's errors and warnings as each file's diagnostics
 let CM = null, view = null;
@@ -65,9 +91,47 @@ const states = new Map(), diagnostics = new Map();
 const $ = (id) => document.getElementById(id);
 const status = (s) => { $("status").textContent = s; };
 const out = (s) => { $("out").textContent = s; };
+const names = () => Object.keys(files).sort();
+const isCode = (name) => name.startsWith("src/") && name.endsWith(".hx");
 
-// the compiler stays resident in one worker (resident-worker.js): a build sends only the
-// files that changed since the last one, and what didn't change stays typed
+// ---- the project, kept in IndexedDB: one record per file, {name, text}
+const store = {
+  db: null,
+  open() {
+    return new Promise((resolve, reject) => {
+      const r = indexedDB.open(TESTING ? "haxe-in-browser-test" : "haxe-in-browser", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("files", { keyPath: "name" });
+      r.onsuccess = () => { this.db = r.result; resolve(); };
+      r.onerror = () => reject(r.error);
+    });
+  },
+  run(mode, f) {
+    return new Promise((resolve, reject) => {
+      const tx = this.db.transaction("files", mode);
+      const result = f(tx.objectStore("files"));
+      tx.oncomplete = () => resolve(result && result.result);
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+  all() { return this.run("readonly", (s) => s.getAll()); },
+  put(name, text) { return this.run("readwrite", (s) => s.put({ name, text })); },
+  remove(name) { return this.run("readwrite", (s) => s.delete(name)); },
+  clear() { return this.run("readwrite", (s) => s.clear()); },
+};
+// edits go to the store as they're typed (a moment after the last key), so a reload keeps them
+const pendingWrites = new Map();
+function keep(name) {
+  clearTimeout(pendingWrites.get(name));
+  pendingWrites.set(name, setTimeout(() => { pendingWrites.delete(name); if (name in files) store.put(name, files[name]); }, 400));
+}
+async function flushWrites() {
+  for (const [name, t] of pendingWrites) { clearTimeout(t); if (name in files) await store.put(name, files[name]); }
+  pendingWrites.clear();
+}
+
+// ---- the compiler stays resident in one worker (resident-worker.js): a build sends only
+// the files that changed since the last one (and, as null, those removed), and what didn't
+// change stays typed
 const compiler = new Worker("resident-worker.js");
 const pending = new Map();
 let nextId = 1, sent = {};
@@ -79,6 +143,7 @@ function ask(msg) {
 function compile(args, sources, output) {
   const changed = {};
   for (const [k, v] of Object.entries(sources)) if (sent[k] !== v) changed[k] = sent[k] = v;
+  for (const k of Object.keys(sent)) if (!(k in sources)) { changed[k] = null; delete sent[k]; }
   return ask({ type: "build", files: changed, args, output });
 }
 
@@ -116,7 +181,7 @@ function parseMessages(text) {
   const re = /^\/static\/(.+?):(\d+): (?:characters (\d+)-(\d+)|lines (\d+)-(\d+)) : (?:(Warning|Error) : )?(.*)$/;
   for (const line of (text || "").split("\n")) {
     const m = re.exec(line);
-    if (!m || !FILES.includes(m[1])) { if (line.trim()) rest.push(line); continue; }
+    if (!m || !(m[1] in files)) { if (line.trim()) rest.push(line); continue; }
     const list = byFile.get(m[1]) || [];
     list.push({ line: +m[2], from: m[3] ? +m[3] : null, to: m[4] ? +m[4] : null, lastLine: m[6] ? +m[6] : null,
                 severity: m[7] === "Warning" ? "warning" : "error", message: m[8] });
@@ -134,22 +199,20 @@ function toDiagnostics(doc, list) {
   });
 }
 function showDiagnostics(byFile) {
-  for (const f of FILES) diagnostics.set(f, byFile.get(f) || []);
-  for (const f of FILES) {
-    const list = diagnostics.get(f);
+  diagnostics.clear();
+  for (const f of names()) {
+    const list = byFile.get(f) || [];
+    diagnostics.set(f, list);
     if (f === current) view.dispatch(CM.setDiagnostics(view.state, toDiagnostics(view.state.doc, list)));
     else if (states.has(f)) { const st = states.get(f); states.set(f, st.update(CM.setDiagnostics(st, toDiagnostics(st.doc, list))).state); }
   }
-  for (const b of $("tabs").children) {
-    const n = diagnostics.get(b.dataset.name).filter((d) => d.severity === "error").length;
-    b.querySelector(".count").textContent = n ? String(n) : "";
-  }
+  renderTree();
 }
 
 async function build() {
   syncEditor();
   const sources = {};
-  for (const f of FILES) if (f.endsWith(".hx")) sources["/static/" + f] = files[f];
+  for (const f of names()) if (isCode(f)) sources["/static/" + f] = files[f];
   const args = buildArgs(version > 0);
   status("building");
   const r = await compile(args, sources, "/static/out/" + BUNDLE);
@@ -167,16 +230,104 @@ async function build() {
   return { ok: true, r };
 }
 
-async function saveAsset(name) {
-  await tell({ type: "assets", files: { [name]: files[name] }, changed: true });
-  status(`${name} saved; the program reads it again`);
+// assets the program has, changed or removed (null): told to the service worker, and, when
+// `changed`, to the program as an edit is
+function tellAssets(list, changed) {
+  return tell({ type: "assets", files: list, changed });
 }
 
 async function save() {
   syncEditor();
-  if (files[current] === saved[current]) return build();
+  if (current === null) return build();
+  await store.put(current, files[current]);
+  if (files[current] === saved[current]) return isCode(current) ? build() : { ok: true };
   saved[current] = files[current];
-  return current.endsWith(".hx") ? build() : saveAsset(current);
+  if (isCode(current)) return build();
+  await tellAssets({ [current]: files[current] }, true);
+  status(`${current} saved; the program reads it again`);
+  return { ok: true };
+}
+
+// ---- files: new, rename, remove. A path is relative to the project: src/game/Game.hx
+function validName(name) {
+  return /^[A-Za-z0-9_.\-]+(\/[A-Za-z0-9_.\-]+)*$/.test(name) && !name.split("/").some((p) => p === "." || p === "..");
+}
+// a new .hx file's first text: its package from its directory under src/, a class named for it
+function template(name) {
+  if (!isCode(name)) return "";
+  const parts = name.slice(4, -3).split("/"), cls = parts.pop();
+  return (parts.length ? `package ${parts.join(".")};\n\n` : "") + `class ${cls} {\n}\n`;
+}
+async function newFile(name, text) {
+  if (!validName(name)) throw new Error(`not a file name: ${name}`);
+  if (name in files) throw new Error(`${name} is there already`);
+  files[name] = saved[name] = text !== undefined ? text : template(name);
+  await store.put(name, files[name]);
+  renderTree();
+  show(name);
+  if (isCode(name)) return build();
+  await tellAssets({ [name]: files[name] }, true);
+  status(`${name} added`);
+  return { ok: true };
+}
+async function renameFile(from, to) {
+  if (!(from in files)) throw new Error(`no file ${from}`);
+  if (!validName(to)) throw new Error(`not a file name: ${to}`);
+  if (to in files) throw new Error(`${to} is there already`);
+  syncEditor();
+  files[to] = files[from]; saved[to] = saved[from];
+  delete files[from]; delete saved[from];
+  if (states.has(from)) { states.set(to, states.get(from)); states.delete(from); }
+  await store.put(to, files[to]);
+  await store.remove(from);
+  if (current === from) current = to;
+  renderTree();
+  show(current);
+  const assets = {};
+  if (!isCode(from)) assets[from] = null;
+  if (!isCode(to)) assets[to] = files[to];
+  if (Object.keys(assets).length) await tellAssets(assets, true);
+  if (isCode(from) || isCode(to)) return build();
+  status(`${from} is now ${to}`);
+  return { ok: true };
+}
+async function deleteFile(name) {
+  if (!(name in files)) throw new Error(`no file ${name}`);
+  delete files[name]; delete saved[name];
+  states.delete(name); diagnostics.delete(name);
+  await store.remove(name);
+  if (current === name) current = names().find(isCode) || names()[0] || null;
+  renderTree();
+  if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
+  if (!isCode(name)) { await tellAssets({ [name]: null }, true); status(`${name} removed`); return { ok: true }; }
+  return build();
+}
+
+function renderTree() {
+  const tree = $("tree");
+  tree.textContent = "";
+  let dir = null;
+  for (const name of names()) {
+    const slash = name.lastIndexOf("/");
+    const d = slash < 0 ? "" : name.slice(0, slash + 1);
+    if (d !== dir) {
+      dir = d;
+      const li = document.createElement("li"); li.className = "dir"; li.textContent = d || "./";
+      tree.appendChild(li);
+    }
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.dataset.name = name;
+    b.classList.toggle("on", name === current);
+    b.title = name;
+    const n = document.createElement("span"); n.className = "name"; n.textContent = name.slice(slash + 1);
+    const c = document.createElement("span"); c.className = "count";
+    const errors = (diagnostics.get(name) || []).filter((x) => x.severity === "error").length;
+    c.textContent = errors ? String(errors) : "";
+    b.append(n, c);
+    b.onclick = () => show(name);
+    li.appendChild(b);
+    tree.appendChild(li);
+  }
 }
 
 const dark = matchMedia("(prefers-color-scheme: dark)");
@@ -189,7 +340,9 @@ function makeState(name) {
     CM.EditorState.tabSize.of(4),
     CM.lintGutter(),
     theme.of(dark.matches ? CM.oneDark : []),
-    CM.EditorView.updateListener.of((u) => { if (u.docChanged && name === current) files[name] = u.state.doc.toString(); }),
+    CM.EditorView.updateListener.of((u) => {
+      if (u.docChanged && name === current && name in files) { files[name] = u.state.doc.toString(); keep(name); }
+    }),
   ];
   if (name.endsWith(".hx")) ext.push(CM.StreamLanguage.define(CM.haxe));
   let st = CM.EditorState.create({ doc: files[name], extensions: ext });
@@ -199,26 +352,46 @@ function makeState(name) {
 }
 // the editor shows files[current]: after a change made outside it (the test's edits), put it in
 function syncEditor() {
-  if (view && view.state.doc.toString() !== files[current])
+  if (view && current !== null && view.state.doc.toString() !== files[current])
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: files[current] } });
 }
 
 function show(name) {
-  if (view && states.has(current)) states.set(current, view.state);
+  if (view && current !== null && states.has(current) && current in files) states.set(current, view.state);
   current = name;
   let st = states.get(name);
   if (!st || st.doc.toString() !== files[name]) st = makeState(name);
   states.set(name, st);
   view.setState(st);
-  for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.name === name);
+  for (const b of $("tree").querySelectorAll("button")) b.classList.toggle("on", b.dataset.name === name);
 }
 dark.addEventListener("change", () => {
   for (const [f, st] of states) states.set(f, st.update({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) }).state);
   view.dispatch({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) });
 });
+// a file operation's failure, for a person: in the status line
+const attempt = (f) => f().catch((e) => status(e.message));
 $("build").onclick = () => save();
+$("new").onclick = () => attempt(async () => {
+  const name = prompt("New file (src/... for code, anything else is an asset):", "src/");
+  if (name) await newFile(name.trim());
+});
+$("rename").onclick = () => attempt(async () => {
+  if (current === null) return;
+  const name = prompt(`Rename ${current} to:`, current);
+  if (name && name.trim() !== current) await renameFile(current, name.trim());
+});
+$("delete").onclick = () => attempt(async () => {
+  if (current !== null && confirm(`Delete ${current}?`)) await deleteFile(current);
+});
+$("reset").onclick = () => attempt(async () => {
+  if (!confirm("Back to the example? Your changes to this project are lost.")) return;
+  await store.clear();
+  location.reload();
+});
+addEventListener("beforeunload", () => { flushWrites(); });
 
-// the frame's log, for the test below
+// ---- the frame's log, for the test below
 function frameLog() {
   try { return $("run").contentDocument.getElementById("log").textContent; } catch (e) { return ""; }
 }
@@ -238,7 +411,8 @@ const lastTicks = (log, word) => {
   return last;
 };
 
-// ?test: edit, build and check without a person, then POST what happened to /report
+// ?test: edit, build and check without a person, then POST what happened to /report. It
+// uses a project store of its own, cleared first
 async function test() {
   const report = { steps: [] };
   const step = (name, ok, detail) => { report.steps.push({ name, ok: !!ok, detail }); };
@@ -283,6 +457,7 @@ async function test() {
   CM.forEachDiagnostic(view.state, (d, from) => marked.push({ line: view.state.doc.lineAt(from).number, text: view.state.sliceDoc(d.from, d.to), message: d.message, severity: d.severity }));
   step("the error is marked in the editor, on its line and its text", marked.length === 1 && marked[0].line === 39 && marked[0].text === "oops"
        && view.state.doc.toString() === files["src/Hello.hx"], marked);
+  step("the tree counts the error", document.querySelector('#tree button[data-name="src/Hello.hx"] .count').textContent === "1");
   files["src/Hello.hx"] = good;
   const b4 = await save();
   step("the fixed edit builds and reloads", b4.ok, b4.ok ? Math.round(b4.r.ms) + " ms" : b4.r.stderr);
@@ -297,6 +472,57 @@ async function test() {
   files["src/Hello.hx"] = good;
   const bl = await save();
   step("a run of edits builds", report.reloadMs.every((ms) => ms >= 0) && bl.ok, report.reloadMs);
+
+  // ---- files: a new class, used by the program; renamed; removed
+  const nf = await newFile("src/util/Greeter.hx");
+  step("a new .hx file gets its package and class, and builds", nf.ok && files["src/util/Greeter.hx"] === "package util;\n\nclass Greeter {\n}\n",
+       nf.ok ? files["src/util/Greeter.hx"] : nf.r.stderr);
+  files["src/util/Greeter.hx"] = "package util;\n\nclass Greeter {\n\tpublic static function greet(who:String):String\n\t\treturn 'greetings, ' + who;\n}\n";
+  await save();
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = good.replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); say(util.Greeter.greet("new file"));');
+  const bg = await save();
+  step("the program uses the new file", bg.ok && await until(() => frameLog().includes("greetings, new file"), 15000), bg.ok ? null : bg.r.stderr);
+
+  const rn = await renameFile("src/util/Greeter.hx", "src/util/Welcome.hx");
+  step("renaming a class's file breaks the build that names it (the compiler saw the rename)", !rn.ok && /Greeter/.test(rn.r.stderr || ""),
+       (rn.r && rn.r.stderr || "").split("\n")[0]);
+  show("src/util/Welcome.hx");
+  files["src/util/Welcome.hx"] = files["src/util/Welcome.hx"].replace("class Greeter", "class Welcome").replace("greetings, ", "welcome, ");
+  await save();
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace('util.Greeter.greet("new file")', 'util.Welcome.greet("renamed")');
+  const br = await save();
+  step("after the fix-up, the renamed file builds and runs", br.ok && await until(() => frameLog().includes("welcome, renamed"), 15000), br.ok ? null : br.r.stderr);
+
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace(' say(util.Welcome.greet("renamed"));', "");
+  await save();
+  const del = await deleteFile("src/util/Welcome.hx");
+  step("deleting the file builds", del.ok, del.ok ? null : del.r.stderr);
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); say(util.Welcome.greet("gone"));');
+  const gone = await save();
+  step("the compiler no longer has the deleted file", !gone.ok && /Welcome/.test(gone.r.stderr || ""), (gone.r && gone.r.stderr || "").split("\n")[0]);
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace(' say(util.Welcome.greet("gone"));', "");
+  const back = await save();
+  step("and builds again without it", back.ok, back.ok ? null : back.r.stderr);
+
+  // ---- assets: a new one is served; a removed one isn't
+  await newFile("assets/notes.txt", "a note");
+  const served = await $("run").contentWindow.fetch("assets/notes.txt").then((r) => r.ok ? r.text() : null);
+  step("a new asset is served to the program", served === "a note", served);
+  await deleteFile("assets/notes.txt");
+  const removed = await $("run").contentWindow.fetch("assets/notes.txt").then((r) => r.status);
+  step("a removed asset isn't", removed === 404, removed);
+  const badName = await newFile("../x.hx").then(() => "made", (e) => e.message);
+  step("a bad file name is refused", /not a file name/.test(badName), badName);
+
+  // ---- the project is kept: what the store holds is what the page has
+  await flushWrites();
+  const kept = await store.all();
+  const keptNames = kept.map((f) => f.name).sort();
+  step("the store holds the project's files", JSON.stringify(keptNames) === JSON.stringify(names()), keptNames);
+  step("and their latest text", kept.every((f) => f.text === files[f.name]));
+
   report.ms = Math.round(performance.now() - t0);
   report.log = frameLog().split("\n").slice(-12);
   report.ok = report.steps.every((s) => s.ok);
@@ -305,29 +531,35 @@ async function test() {
 
 (async function () {
   if (!("serviceWorker" in navigator)) { status("this page needs service workers (and http://localhost or https)"); return; }
+  if (!("indexedDB" in window)) { status("this page needs IndexedDB"); return; }
   CM = await import("./vendor/codemirror.js");
   theme = new CM.Compartment();
-  for (const f of FILES) files[f] = saved[f] = await (await fetch(PROJECT + f, { cache: "no-store" })).text();
-  for (const f of FILES) {
-    const b = document.createElement("button");
-    b.dataset.name = f; b.onclick = () => show(f);
-    b.append(f.split("/").pop());
-    const n = document.createElement("span"); n.className = "count"; b.append(n);
-    $("tabs").appendChild(b);
+  await store.open();
+  if (TESTING) await store.clear();
+  let kept = await store.all();
+  if (kept.length === 0) {
+    // the first time (or after Reset): the example
+    const listing = await (await fetch(EXAMPLE + "files.json", { cache: "no-store" })).json();
+    kept = [];
+    for (const name of listing) kept.push({ name, text: await (await fetch(EXAMPLE + name, { cache: "no-store" })).text() });
+    for (const f of kept) await store.put(f.name, f.text);
   }
+  for (const f of kept) files[f.name] = saved[f.name] = f.text;
+  current = names().find((n) => n.endsWith("Hello.hx")) || names().find(isCode) || names()[0] || null;
   view = new CM.EditorView({ parent: $("editor") });
-  show(current);
+  renderTree();
+  if (current !== null) show(current);
   await serviceWorker();
   const assets = {};
-  for (const f of FILES) if (!f.endsWith(".hx")) assets[f] = files[f];
-  await tell({ type: "assets", files: assets, changed: false });
+  for (const f of names()) if (!isCode(f)) assets[f] = files[f];
+  await tellAssets(assets, false);
   const first = await build();
   if (!first.ok) return;
   $("run").src = "run/";
   // a reload's build has its own defines, so its own cache: make it now, not at the first save
   const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
   status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
-  if (location.search.includes("test")) test();
+  if (TESTING) test();
 })();
 </script>
 </body>

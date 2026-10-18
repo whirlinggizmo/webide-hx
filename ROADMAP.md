@@ -90,7 +90,13 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [x] Compiler errors and warnings as the editor's diagnostics: on their file, line and
       characters, with an error count on each tab; the test checks one lands on `oops`
       at Hello.hx:39 and clears after the fix. 2026-10-18.
-- [ ] A file tree, and adding, renaming and removing files (the file list is fixed now).
+- [x] A file tree (folders as headers, error counts), and New, Rename, Delete: a new
+      `src/**.hx` gets its package and class; a rename or delete reaches the resident
+      compiler's filesystem (`hx_remove_file`) and the service worker's assets, and code
+      changes build. The test checks a new class used by the program, a rename the build
+      notices, a delete the compiler forgets, assets added and removed. 2026-10-18.
+- [x] The project kept in the browser (IndexedDB, as it's typed), seeded from the
+      example (`web/hello/files.json`, from build.py); Reset goes back to it. 2026-10-18.
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).
 - [ ] Project persistence: IndexedDB for the browser-only case; the File System Access

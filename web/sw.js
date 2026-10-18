@@ -42,7 +42,8 @@ self.addEventListener("message", (e) => {
   } else if (m.type === "assets") {
     const urls = [];
     for (const [path, text] of Object.entries(m.files)) {
-      state.assets.set(path, { text, type: typeOf(path) });
+      if (text === null) state.assets.delete(path);
+      else state.assets.set(path, { text, type: typeOf(path) });
       urls.push(scopePath() + path);
     }
     if (m.changed) {
