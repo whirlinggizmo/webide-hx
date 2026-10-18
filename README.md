@@ -139,8 +139,9 @@ their lines, and each tab counts its errors.
 ## Debugging
 
 `play.html` builds with `-debug -D source-map-content`, so each bundle has a source map
-with the `.hx` text in it, and the service worker serves build N's map as
-`run/hello.js.map?v=N`, the one that bundle names. Open DevTools on the page, find
+with the `.hx` text in it. The service worker puts the map inside its bundle, as a
+`data:` URL: DevTools loads a source map over the network itself, past the page's
+service worker, so a map served only from the service worker would fail to load. Open DevTools on the page, find
 `Hello.hx` among the sources, and set breakpoints; they keep working across reloads.
 `node tests/devtools.js PORT` checks this against a Chromium-based browser started with
 `--remote-debugging-port=PORT` on `play.html`.

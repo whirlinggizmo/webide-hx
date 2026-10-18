@@ -71,8 +71,9 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 - [x] Debugging in the browser's DevTools: builds use `-debug -D source-map-content` (the
       sources live only in the in-memory filesystem, so the map carries them); the
-      service worker keeps each build's map and each bundle names its own
-      (`hello.js.map?v=N`). `node tests/devtools.js PORT` checks it in Brave over the
+      service worker puts each build's map inside its bundle as a `data:` URL, since
+      DevTools loads maps past the service worker (a served map was a 404 to it; Rob
+      saw "Source map failed to load"). `node tests/devtools.js PORT` checks it in Brave over the
       DevTools protocol: a breakpoint on a Hello.hx line hits at that line, with state
       readable, in the first bundle and in a reloaded one. Firefox: not checked (no
       such protocol headless); try it by hand. No debug adapter. 2026-10-18.

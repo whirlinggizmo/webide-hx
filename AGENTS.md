@@ -72,6 +72,10 @@ consumer of it, not part of it.
   primitive the compiler calls. `hx_expose` is that root; require new pieces from it.
 - `hx_expose` runs on every path lookup; it sets up once per runtime (`hx_exposed`).
   State that must survive between calls lives there, not in its closures.
+- DevTools fetches source maps itself, over the network, without the page's service
+  worker: a URL only the service worker answers is a 404 to it. That's why maps are
+  inline `data:` URLs. `tests/devtools.js` loads maps the same way (inline, or
+  `Network.loadNetworkResource`); reading one through the page proves nothing.
 - In node the runtime uses the real filesystem, so `--js out.js` writes a real file
   there; in a page it writes to the in-memory tree at the same path.
 - Strings in the compiler's filesystem are bytes, one per char. Text from the page is

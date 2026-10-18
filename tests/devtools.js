@@ -1,6 +1,7 @@
 // Checks debugging in DevTools against a running play.html, over the DevTools protocol
 // (Chromium-based browsers: Brave, Chrome). For the first bundle and then a reloaded one:
-// reads the bundle's source map from inside the program's frame, sets a breakpoint where
+// gets the bundle's source map as DevTools does (inline, or over the network past the
+// page's service worker), sets a breakpoint where
 // the map puts a line of Hello.hx, waits for it to hit, and checks the pause maps back to
 // that line, with the program's state readable there.
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
@@ -70,10 +71,29 @@ var scripts = new Map(); // scriptId -> {url, sourceMapURL}
 async function checkBundle(label) {
   // the newest bundle the frame loaded, and its map, fetched where the service worker answers
   var bundle = [...scripts.entries()].filter(function (e) { return /\/run\/hello\.js/.test(e[1].url) && e[1].sourceMapURL; }).pop();
-  step(label + ": the bundle names a source map", !!bundle, bundle && bundle[1].sourceMapURL);
+  step(label + ": the bundle names a source map", !!bundle, bundle && bundle[1].sourceMapURL.slice(0, 48));
   if (!bundle) return;
-  var mapUrl = new URL(bundle[1].sourceMapURL, bundle[1].url).href;
-  var map = JSON.parse(await evaluate("document.getElementById('run').contentWindow.fetch(" + JSON.stringify(mapUrl) + ").then(r => r.text())"));
+  // the map as DevTools gets it: inline (a data: URL), or loaded over the network the way
+  // DevTools loads one (Network.loadNetworkResource), which a page's service worker
+  // doesn't answer
+  var map;
+  var ref = bundle[1].sourceMapURL;
+  if (ref.startsWith("data:")) {
+    var comma = ref.indexOf(",");
+    var body = ref.slice(comma + 1);
+    map = JSON.parse(/;base64$/.test(ref.slice(0, comma)) ? Buffer.from(body, "base64").toString("utf8") : decodeURIComponent(body));
+  } else {
+    var tree = (await send("Page.getFrameTree")).frameTree;
+    var frame = (tree.childFrames || []).map(function (c) { return c.frame; }).find(function (f) { return /\/run\//.test(f.url); }) || tree.frame;
+    var res = (await send("Network.loadNetworkResource", { frameId: frame.id, url: new URL(ref, bundle[1].url).href,
+      options: { disableCache: false, includeCredentials: false } })).resource;
+    step(label + ": DevTools can load the map", res.success, { url: ref, status: res.httpStatusCode });
+    if (!res.success) return;
+    var chunks = [], h = res.stream, eof = false;
+    while (!eof) { var c = await send("IO.read", { handle: h }); chunks.push(c.base64Encoded ? Buffer.from(c.data, "base64").toString("utf8") : c.data); eof = c.eof; }
+    await send("IO.close", { handle: h });
+    map = JSON.parse(chunks.join(""));
+  }
   var srcIndex = map.sources.findIndex(function (s) { return /Hello\.hx$/.test(s); });
   step(label + ": the map carries Hello.hx's text", srcIndex >= 0 && map.sourcesContent && !!map.sourcesContent[srcIndex], map.sources[srcIndex]);
   if (srcIndex < 0) return;
@@ -115,6 +135,7 @@ async function checkBundle(label) {
   await new Promise(function (r) { ws.onopen = r; });
   on("Debugger.scriptParsed", function (p) { scripts.set(p.scriptId, { url: p.url, sourceMapURL: p.sourceMapURL }); });
   await send("Runtime.enable");
+  await send("Page.enable");
   await send("Debugger.enable");
   // the program running: its first bundle loaded
   for (var i = 0; i < 100 && ![...scripts.values()].some(function (s) { return /\/run\/hello\.js/.test(s.url); }); i++)

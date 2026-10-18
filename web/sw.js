@@ -2,7 +2,7 @@
 // (the run/ scope), so every request the program makes comes here:
 //   run/            the program's page: a log, and the bundle
 //   run/<bundle>    the latest build (any ?v=), stamped with its number as the DevServer does
-//   run/<bundle>.map?v=N  build N's source map (a -debug build), which the bundle names
+//                   (a -debug build's carries its source map inside, as a data: URL)
 //   run/assets/...  files the page gave it
 //   /__hotreload?since=N         held until there's a build newer than N (or 20 s), then
 //                                {version, url}: the JS reloader imports url next
@@ -15,7 +15,6 @@ const state = {
   name: "main.js",       // the bundle's file name, as the program's page loads it
   version: 0,
   js: null,
-  maps: new Map(),       // build number -> its source map (each bundle names its own)
   assets: new Map(),     // path under run/ -> {text, type}
   assetVersion: 0,
   assetChanges: [],      // {version, urls}
@@ -40,9 +39,11 @@ self.addEventListener("message", (e) => {
     state.version = m.version;
     let js = m.js;
     if (m.map) {
-      // the bundle names its own build's map, so a reloaded one never gets a newer map
-      state.maps.set(m.version, m.map);
-      js = js.replace(/\n\/\/# sourceMappingURL=[^\n]*\s*$/, "") + "\n//# sourceMappingURL=" + state.name + ".map?v=" + m.version + "\n";
+      // the map inside the bundle, as a data: URL: DevTools loads a map over the network
+      // itself, past this worker, so a map served from here would be a 404 to it. Inline,
+      // each bundle also carries its own build's map, reloads included
+      js = js.replace(/\n\/\/# sourceMappingURL=[^\n]*\s*$/, "") +
+        "\n//# sourceMappingURL=data:application/json;charset=utf-8;base64," + base64(m.map) + "\n";
     }
     state.js = "globalThis.__hotreload_built = " + m.version + "; " + js;
     wake();
@@ -58,11 +59,19 @@ self.addEventListener("message", (e) => {
       wake();
     }
   } else if (m.type === "reset") {
-    state.version = 0; state.js = null; state.assets.clear(); state.maps.clear();
+    state.version = 0; state.js = null; state.assets.clear();
     state.assetVersion = 0; state.assetChanges = [];
   }
   if (port) port.postMessage({ ok: true, version: state.version, assetVersion: state.assetVersion });
 });
+
+// text as UTF-8, in base64
+function base64(text) {
+  const bytes = new TextEncoder().encode(text);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
 
 function scopePath() { return new URL(self.registration.scope).pathname; } // "/run/"
 
@@ -122,11 +131,6 @@ self.addEventListener("fetch", (e) => {
       '<style>body{margin:0;font:13px/1.4 ui-monospace,monospace;background:#fff;color:#111}' +
       '@media (prefers-color-scheme: dark){body{background:#111;color:#ddd}}pre{margin:8px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>' +
       '<body><pre id="log"></pre><script src="' + state.name + '"></script></body></html>', "text/html"));
-    return;
-  }
-  if (rest === state.name + ".map") {
-    const map = state.maps.get(parseInt(url.searchParams.get("v"), 10) || state.version);
-    e.respondWith(map ? respond(map, "application/json") : respond("no map", "text/plain", 404));
     return;
   }
   if (rest === state.name) {
