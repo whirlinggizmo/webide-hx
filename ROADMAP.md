@@ -21,8 +21,9 @@ changed.
 - [~] Send the case-table change upstream to Haxe (same arrays, as literals). Harmless;
       makes the stock compiler worker-safe under js_of_ocaml. Branch
       `eval-case-tables-array-literals` on Rob's fork, off upstream `development`;
-      built with OCaml 5.3 in the `haxe-build-dev` Docker image, and every BMP code
-      point's toUpperCase/toLowerCase matches Haxe 4.3.7's; PR not yet opened. 2026-10-18.
+      built with OCaml 5.3 in the `haxe-build-dev` Docker image; Haxe's unit tests on
+      the interpreter pass with it (11,417 assertions), and every BMP code point's
+      toUpperCase/toLowerCase matches Haxe 4.3.7's; PR not yet opened. 2026-10-18.
 - [x] Standard library on demand: `web/std/` + `manifest.json`, fetched by synchronous
       XHR from the worker the first time the compiler opens a file (72 files for hello
       world, 152 for the parity program). Bundle 7.8 MB → 3.8 MB; compiles 0.1–0.3 s
