@@ -202,7 +202,7 @@ def main():
     print("haxe source"); src = haxe_source(args)
     print("haxe bytecode"); bc = haxe_bytecode(src, env, prefix)
     print("bundle"); bundle(src, bc, env, args.embed, args.embed_std)
-    print("done: python3 web/serve.py 8765 web/report.json, then http://127.0.0.1:8765/")
+    print("done: python3 web/serve.py, then http://127.0.0.1:8765/play.html")
 
 
 if __name__ == "__main__":

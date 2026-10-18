@@ -28,7 +28,7 @@ consumer of it, not part of it.
 
 - Without a browser: `node tests/browserlike.js` runs the bundle in node as a page would.
   It is the quickest check that a stub change didn't break startup.
-- In a browser: `python3 web/serve.py 8765 web/report.json`, open `http://127.0.0.1:8765/`.
+- In a browser: `python3 web/serve.py`, open `http://127.0.0.1:8765/`.
   The page compiles hello world (and runs it), compiles it again, then compiles the
   parity program with the hotreload build macro, and POSTs a JSON report the server
   writes to the given file. Headless works: `firefox --headless --new-instance --profile

@@ -11,7 +11,7 @@ compiler and the running program all in one page, nothing installed.
 
 ## Run it
 
-    python3 web/serve.py 8765 web/report.json
+    python3 web/serve.py
     # open http://127.0.0.1:8765/
 
 The page compiles a hello world (and runs it), compiles it again, then compiles the
