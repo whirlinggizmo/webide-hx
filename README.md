@@ -136,8 +136,28 @@ by `build.py` (node and npm needed for that step; versions are pinned in
 `editor/package-lock.json`). Ctrl-S builds. The compiler's errors and warnings appear on
 their lines, and the file tree counts each file's errors. Files under `src/` ending in
 `.hx` are the program; anything else is an asset the program can fetch. New, Rename and
-Delete work on the project, which the browser keeps (IndexedDB) as it's edited; Reset
-goes back to the example. `?test` uses a store of its own.
+Delete work on the project, which is kept as it's edited: in the browser, or in a folder
+on this computer.
+
+The project's files go through [ZenFS](https://github.com/zen-fs/core), a node-like `fs`,
+bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs.js` into
+`web/vendor/fs.js`:
+
+- In the browser (IndexedDB) by default, seeded from the example; Reset goes back to it.
+- **Open folder** works on a folder on disk through the File System Access API
+  (Chromium browsers; the button is hidden elsewhere). Brave turns the API off: enable
+  `brave://flags/#file-system-access-api` first. Edits, new files, renames and
+  deletes happen in the folder, so another editor sees them. The page remembers the
+  folder and opens it again next time, asking first if the browser wants permission.
+  **Close folder** goes back to the browser's project.
+- **Import zip** replaces the browser's project with a zip's files; **Export zip** saves
+  the project.
+- Hidden files, `node_modules`, and `out/`, `bin/`, `build/`, `dump/` at the top aren't
+  part of the project, nor files over 8 MB. Files that aren't UTF-8 text (images,
+  sounds) are kept and served as bytes, and shown read-only.
+
+`?test` uses stores of its own, and a directory in the browser's private file system
+(OPFS) for the folder steps.
 
 ## Debugging
 

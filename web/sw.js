@@ -15,7 +15,7 @@ const state = {
   name: "main.js",       // the bundle's file name, as the program's page loads it
   version: 0,
   js: null,
-  assets: new Map(),     // path under run/ -> {text, type}
+  assets: new Map(),     // path under run/ -> {body, type}: body is text, or bytes (a Uint8Array)
   assetVersion: 0,
   assetChanges: [],      // {version, urls}
   waiting: [],           // held polls: {ready(), answer()}
@@ -41,9 +41,9 @@ self.addEventListener("message", (e) => {
     wake();
   } else if (m.type === "assets") {
     const urls = [];
-    for (const [path, text] of Object.entries(m.files)) {
-      if (text === null) state.assets.delete(path);
-      else state.assets.set(path, { text, type: typeOf(path) });
+    for (const [path, body] of Object.entries(m.files)) {
+      if (body === null) state.assets.delete(path);
+      else state.assets.set(path, { body, type: typeOf(path) });
       urls.push(scopePath() + path);
     }
     if (m.changed) {
@@ -63,11 +63,14 @@ function scopePath() { return new URL(self.registration.scope).pathname; } // "/
 function typeOf(path) {
   const ext = path.split(".").pop();
   return { js: "text/javascript", json: "application/json", html: "text/html", css: "text/css", txt: "text/plain",
-           png: "image/png", svg: "image/svg+xml" }[ext] || "application/octet-stream";
+           png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+           wav: "audio/wav", ogg: "audio/ogg", mp3: "audio/mpeg", wasm: "application/wasm" }[ext] || "application/octet-stream";
 }
 
 function respond(body, type, status) {
-  return new Response(body, { status: status || 200, headers: { "Content-Type": type + "; charset=utf-8", "Cache-Control": "no-store" } });
+  // text is sent as UTF-8; bytes as they are
+  const text = typeof body === "string";
+  return new Response(body, { status: status || 200, headers: { "Content-Type": type + (text ? "; charset=utf-8" : ""), "Cache-Control": "no-store" } });
 }
 
 function hold(ready, answer) {
@@ -123,5 +126,5 @@ self.addEventListener("fetch", (e) => {
     return;
   }
   const asset = state.assets.get(rest);
-  e.respondWith(asset ? respond(asset.text, asset.type) : respond("not found: " + rest, "text/plain", 404));
+  e.respondWith(asset ? respond(asset.body, asset.type) : respond("not found: " + rest, "text/plain", 404));
 });

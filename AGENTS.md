@@ -51,7 +51,8 @@ consumer of it, not part of it.
   TMPDIR URL` or `brave-browser --headless=new --disable-gpu --no-first-run
   --user-data-dir=TMPDIR URL`, each with its own throwaway profile directory, then read
   the report file and kill the browser by PID. Both browsers are on the development box;
-  Chromium proper isn't.
+  Chromium proper isn't. `brave-browser` is a shell wrapper: start
+  `/opt/brave.com/brave/brave` itself, or killing the PID you have leaves Brave running.
 - The parity program's expected output is hotreload-hx's native build of the same
   sources: compare byte for byte.
 

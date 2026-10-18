@@ -12,6 +12,8 @@
   header { display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   header h1 { font-size: 15px; margin: 0; }
   header .status { color: var(--muted); font-size: 13px; }
+  header .project { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+  header .where { color: var(--muted); font-size: 13px; }
   button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
   button.primary { border-color: var(--accent); color: var(--accent); }
   main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
@@ -46,6 +48,13 @@
   <h1>Haxe, hot</h1>
   <button class="primary" id="build" title="Ctrl-S">Build</button>
   <span class="status" id="status">starting</span>
+  <span class="project">
+    <span class="where" id="where"></span>
+    <button id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder</button>
+    <button id="import" title="a zip as the project kept in this browser, replacing it">Import zip</button>
+    <button id="export" title="the project as a zip">Export zip</button>
+    <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
+  </span>
 </header>
 <main>
   <section>
@@ -75,8 +84,9 @@
 // worker (sw.js), which plays the DevServer's part for the frame on the right. Saving a
 // .hx file, or adding, renaming or removing one, builds again (-D hotreload_reload after the
 // first) and the program reloads; saving an asset tells the program it changed. The
-// project is kept in the browser (IndexedDB) as it's edited; the first time, and after
-// Reset, it's hotreload-hx's examples/hello (copied to hello/ by build.py --hotreload).
+// project's files are kept as they're edited: in the browser, or in a folder on this
+// computer the person opened. The browser's project is, the first time and after Reset,
+// hotreload-hx's examples/hello (copied to hello/ by build.py --hotreload).
 const TESTING = location.search.includes("test");
 const EXAMPLE = "hello/";
 const MAIN = "Main", BUNDLE = "hello.js";
@@ -94,39 +104,108 @@ const out = (s) => { $("out").textContent = s; };
 const names = () => Object.keys(files).sort();
 const isCode = (name) => name.startsWith("src/") && name.endsWith(".hx");
 
-// ---- the project, kept in IndexedDB: one record per file, {name, text}
-const store = {
-  db: null,
+// ---- the project's files, through ZenFS (vendor/fs.js, a node-like fs): kept in this
+// browser (IndexedDB, mounted at /browser), or in a folder on this computer that the
+// person opened (File System Access, mounted at /folder). A file is text, or its bytes (a
+// Uint8Array) when it isn't UTF-8 text. Hidden files, node_modules and build outputs at the
+// top (out/, bin/, build/, dump/) aren't part of the project, nor files over MAX_BYTES
+let FS = null;
+const SKIP = /(^|\/)(\.[^/]*|node_modules)(\/|$)|^(out|bin|build|dump)(\/|$)/;
+const MAX_BYTES = 8 << 20;
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+const isText = (data) => typeof data === "string";
+function asData(bytes) {
+  bytes = new Uint8Array(bytes);
+  try { const text = utf8.decode(bytes); return text.includes("\0") ? bytes : text; } catch (e) { return bytes; }
+}
+const project = {
+  root: "/browser",
+  folder: null, // the open folder's handle; null when the project is the browser's
+  path(name) { return this.root + "/" + name; },
   open() {
+    return FS.configure({ mounts: { "/browser": { backend: FS.IndexedDB, storeName: TESTING ? "haxe-in-browser-test-project" : "haxe-in-browser-project" } } });
+  },
+  async useFolder(handle) {
+    const mounted = await FS.resolveMountConfig({ backend: FS.WebAccess, handle });
+    if (this.folder) FS.umount("/folder");
+    FS.mount("/folder", mounted);
+    this.root = "/folder"; this.folder = handle;
+  },
+  useBrowser() {
+    if (this.folder) FS.umount("/folder");
+    this.root = "/browser"; this.folder = null;
+  },
+  // every file, {name: data}; those too big to take, by name, in `skipped`
+  async load() {
+    const fsp = FS.fs.promises, files = {}, skipped = [];
+    const walk = async (rel) => {
+      for (const e of await fsp.readdir(rel ? this.path(rel) : this.root, { withFileTypes: true })) {
+        const name = rel ? rel + "/" + e.name : e.name;
+        if (SKIP.test(name)) continue;
+        if (e.isDirectory()) await walk(name);
+        else if (!e.isFile()) continue;
+        else if ((await fsp.stat(this.path(name))).size > MAX_BYTES) skipped.push(name);
+        else files[name] = asData(await fsp.readFile(this.path(name)));
+      }
+    };
+    await walk("");
+    return { files, skipped };
+  },
+  async put(name, data) {
+    const p = this.path(name);
+    await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
+    await FS.fs.promises.writeFile(p, data);
+  },
+  // a file, and the directories that leaves empty
+  async remove(name) {
+    const fsp = FS.fs.promises;
+    await fsp.rm(this.path(name), { force: true });
+    for (let dir = name, i; (i = dir.lastIndexOf("/")) > 0;) {
+      dir = dir.slice(0, i);
+      if ((await fsp.readdir(this.path(dir))).length) break;
+      await fsp.rmdir(this.path(dir));
+    }
+  },
+  // the browser's project only: a folder on disk is never emptied
+  async clear() {
+    if (this.folder) throw new Error("a folder isn't cleared");
+    for (const e of await FS.fs.promises.readdir(this.root)) await FS.fs.promises.rm(this.path(e), { recursive: true, force: true });
+  },
+};
+// the open folder's handle, kept (in IndexedDB) so the next visit can open it again: at
+// once if the browser kept the permission, else when the person says so
+const remembered = {
+  db() {
     return new Promise((resolve, reject) => {
-      const r = indexedDB.open(TESTING ? "haxe-in-browser-test" : "haxe-in-browser", 1);
-      r.onupgradeneeded = () => r.result.createObjectStore("files", { keyPath: "name" });
-      r.onsuccess = () => { this.db = r.result; resolve(); };
+      const r = indexedDB.open(TESTING ? "haxe-in-browser-test-folder" : "haxe-in-browser-folder", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("handles");
+      r.onsuccess = () => resolve(r.result);
       r.onerror = () => reject(r.error);
     });
   },
-  run(mode, f) {
+  async run(mode, f) {
+    const db = await this.db();
     return new Promise((resolve, reject) => {
-      const tx = this.db.transaction("files", mode);
-      const result = f(tx.objectStore("files"));
-      tx.oncomplete = () => resolve(result && result.result);
-      tx.onerror = () => reject(tx.error);
+      const tx = db.transaction("handles", mode), req = f(tx.objectStore("handles"));
+      tx.oncomplete = () => { db.close(); resolve(req.result); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
     });
   },
-  all() { return this.run("readonly", (s) => s.getAll()); },
-  put(name, text) { return this.run("readwrite", (s) => s.put({ name, text })); },
-  remove(name) { return this.run("readwrite", (s) => s.delete(name)); },
-  clear() { return this.run("readwrite", (s) => s.clear()); },
+  get() { return this.run("readonly", (s) => s.get("folder")); },
+  set(handle) { return this.run("readwrite", (s) => handle ? s.put(handle, "folder") : s.delete("folder")); },
 };
-// edits go to the store as they're typed (a moment after the last key), so a reload keeps them
+// edits go to the project as they're typed (a moment after the last key), so a reload keeps them
 const pendingWrites = new Map();
 function keep(name) {
   clearTimeout(pendingWrites.get(name));
-  pendingWrites.set(name, setTimeout(() => { pendingWrites.delete(name); if (name in files) store.put(name, files[name]); }, 400));
+  pendingWrites.set(name, setTimeout(() => { pendingWrites.delete(name); if (name in files) project.put(name, files[name]); }, 400));
 }
-async function flushWrites() {
-  for (const [name, t] of pendingWrites) { clearTimeout(t); if (name in files) await store.put(name, files[name]); }
-  pendingWrites.clear();
+async function flushWrites(name) {
+  for (const [n, t] of [...pendingWrites]) {
+    if (name !== undefined && n !== name) continue;
+    clearTimeout(t); pendingWrites.delete(n);
+    if (n in files) await project.put(n, files[n]);
+  }
 }
 
 // ---- the compiler stays resident in one worker (resident-worker.js): a build sends only
@@ -239,7 +318,7 @@ function tellAssets(list, changed) {
 async function save() {
   syncEditor();
   if (current === null) return build();
-  await store.put(current, files[current]);
+  await flushWrites(current);
   if (files[current] === saved[current]) return isCode(current) ? build() : { ok: true };
   saved[current] = files[current];
   if (isCode(current)) return build();
@@ -252,6 +331,11 @@ async function save() {
 function validName(name) {
   return /^[A-Za-z0-9_.\-]+(\/[A-Za-z0-9_.\-]+)*$/.test(name) && !name.split("/").some((p) => p === "." || p === "..");
 }
+function checkName(name) {
+  if (!validName(name)) throw new Error(`not a file name: ${name}`);
+  if (SKIP.test(name)) throw new Error(`${name} wouldn't be part of the project (hidden, node_modules, or a build output)`);
+  if (name in files) throw new Error(`${name} is there already`);
+}
 // a new .hx file's first text: its package from its directory under src/, a class named for it
 function template(name) {
   if (!isCode(name)) return "";
@@ -259,10 +343,9 @@ function template(name) {
   return (parts.length ? `package ${parts.join(".")};\n\n` : "") + `class ${cls} {\n}\n`;
 }
 async function newFile(name, text) {
-  if (!validName(name)) throw new Error(`not a file name: ${name}`);
-  if (name in files) throw new Error(`${name} is there already`);
+  checkName(name);
   files[name] = saved[name] = text !== undefined ? text : template(name);
-  await store.put(name, files[name]);
+  await project.put(name, files[name]);
   renderTree();
   show(name);
   if (isCode(name)) return build();
@@ -272,14 +355,13 @@ async function newFile(name, text) {
 }
 async function renameFile(from, to) {
   if (!(from in files)) throw new Error(`no file ${from}`);
-  if (!validName(to)) throw new Error(`not a file name: ${to}`);
-  if (to in files) throw new Error(`${to} is there already`);
+  checkName(to);
   syncEditor();
   files[to] = files[from]; saved[to] = saved[from];
   delete files[from]; delete saved[from];
   if (states.has(from)) { states.set(to, states.get(from)); states.delete(from); }
-  await store.put(to, files[to]);
-  await store.remove(from);
+  await project.put(to, files[to]);
+  await project.remove(from);
   if (current === from) current = to;
   renderTree();
   show(current);
@@ -295,7 +377,7 @@ async function deleteFile(name) {
   if (!(name in files)) throw new Error(`no file ${name}`);
   delete files[name]; delete saved[name];
   states.delete(name); diagnostics.delete(name);
-  await store.remove(name);
+  await project.remove(name);
   if (current === name) current = names().find(isCode) || names()[0] || null;
   renderTree();
   if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
@@ -333,6 +415,9 @@ function renderTree() {
 const dark = matchMedia("(prefers-color-scheme: dark)");
 let theme = null;
 function makeState(name) {
+  if (!isText(files[name]))
+    return CM.EditorState.create({ doc: `${name}: ${files[name].length} bytes, not text; it can't be edited here`,
+                                   extensions: [CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), theme.of(dark.matches ? CM.oneDark : [])] });
   const ext = [
     CM.basicSetup,
     CM.keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { save(); return true; } }, CM.indentWithTab]),
@@ -352,7 +437,7 @@ function makeState(name) {
 }
 // the editor shows files[current]: after a change made outside it (the test's edits), put it in
 function syncEditor() {
-  if (view && current !== null && view.state.doc.toString() !== files[current])
+  if (view && current !== null && isText(files[current]) && view.state.doc.toString() !== files[current])
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: files[current] } });
 }
 
@@ -360,7 +445,7 @@ function show(name) {
   if (view && current !== null && states.has(current) && current in files) states.set(current, view.state);
   current = name;
   let st = states.get(name);
-  if (!st || st.doc.toString() !== files[name]) st = makeState(name);
+  if (!st || (isText(files[name]) && st.doc.toString() !== files[name])) st = makeState(name);
   states.set(name, st);
   view.setState(st);
   for (const b of $("tree").querySelectorAll("button")) b.classList.toggle("on", b.dataset.name === name);
@@ -369,6 +454,80 @@ dark.addEventListener("change", () => {
   for (const [f, st] of states) states.set(f, st.update({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) }).state);
   view.dispatch({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) });
 });
+// ---- the whole project: a build from scratch and the program started on it, at first and
+// when the project changes (a folder opened or closed, a zip imported)
+let starts = 0;
+async function startProgram() {
+  await tell({ type: "reset" });
+  version = 0;
+  const assets = {};
+  for (const f of names()) if (!isCode(f)) assets[f] = files[f];
+  await tellAssets(assets, false);
+  const first = await build();
+  $("run").src = first.ok ? "run/?start=" + ++starts : "about:blank";
+  if (!first.ok) return first;
+  // a reload's build has its own defines, so its own cache: make it now, not at the first save
+  const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
+  status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
+  return first;
+}
+// the page's files become `loaded` (project.load()'s), and the program starts over on them
+async function switchTo(loaded) {
+  for (const f of Object.keys(files)) { delete files[f]; delete saved[f]; }
+  states.clear(); diagnostics.clear();
+  for (const [f, data] of Object.entries(loaded.files)) files[f] = saved[f] = data;
+  current = names().find((n) => n.endsWith("Hello.hx")) || names().find(isCode) || names()[0] || null;
+  renderTree();
+  if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
+  showWhere();
+  const first = await startProgram();
+  if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
+  return first;
+}
+function showWhere() {
+  $("where").textContent = project.folder ? "folder: " + project.folder.name : "kept in this browser";
+  $("folder").textContent = project.folder ? "Close folder" : reopen ? `Reopen ${reopen.name}` : "Open folder";
+  $("folder").hidden = !project.folder && !reopen && !("showDirectoryPicker" in window);
+  $("reset").hidden = !!project.folder;
+}
+let reopen = null; // a folder from the last visit, waiting for the person's permission
+async function openFolder(handle) {
+  await flushWrites();
+  await project.useFolder(handle);
+  reopen = null;
+  await remembered.set(handle);
+  return switchTo(await project.load());
+}
+async function closeFolder() {
+  await flushWrites();
+  project.useBrowser();
+  await remembered.set(null);
+  return switchTo(await project.load());
+}
+// a zip's files as the browser's project, replacing what it had (and closing a folder);
+// a folder holding everything, as GitHub's zips have, is taken off
+async function importZip(bytes) {
+  const entries = FS.unzipSync(bytes);
+  let list = Object.keys(entries).filter((n) => !n.endsWith("/"));
+  const first = list.length ? list[0].split("/") : [];
+  const top = first.length > 1 ? first[0] + "/" : null;
+  const strip = top && list.every((n) => n.startsWith(top)) ? top.length : 0;
+  const safe = (n) => n && !n.startsWith("/") && !n.split("/").some((p) => p === "" || p === "." || p === "..");
+  await flushWrites();
+  if (project.folder) { project.useBrowser(); await remembered.set(null); }
+  await project.clear();
+  for (const n of list) {
+    const name = n.slice(strip);
+    if (safe(name) && !SKIP.test(name) && entries[n].length <= MAX_BYTES) await project.put(name, asData(entries[n]));
+  }
+  return switchTo(await project.load());
+}
+function exportZip() {
+  const enc = new TextEncoder(), entries = {};
+  for (const f of names()) entries[f] = isText(files[f]) ? enc.encode(files[f]) : files[f];
+  return FS.zipSync(entries);
+}
+
 // a file operation's failure, for a person: in the status line
 const attempt = (f) => f().catch((e) => status(e.message));
 $("build").onclick = () => save();
@@ -386,9 +545,34 @@ $("delete").onclick = () => attempt(async () => {
 });
 $("reset").onclick = () => attempt(async () => {
   if (!confirm("Back to the example? Your changes to this project are lost.")) return;
-  await store.clear();
+  await project.clear();
   location.reload();
 });
+$("folder").onclick = () => attempt(async () => {
+  if (project.folder) return closeFolder();
+  if (reopen) {
+    if (await reopen.requestPermission({ mode: "readwrite" }) !== "granted") return;
+    return openFolder(reopen);
+  }
+  let handle;
+  try { handle = await showDirectoryPicker({ mode: "readwrite" }); } catch (e) { return; } // cancelled
+  return openFolder(handle);
+});
+$("import").onclick = () => $("zipfile").click();
+$("zipfile").onchange = () => attempt(async () => {
+  const file = $("zipfile").files[0];
+  $("zipfile").value = "";
+  if (!file) return;
+  if (!confirm(`Replace the project kept in this browser with ${file.name}?`)) return;
+  return importZip(new Uint8Array(await file.arrayBuffer()));
+});
+$("export").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([exportZip()], { type: "application/zip" }));
+  a.download = (project.folder ? project.folder.name : "haxe-project") + ".zip";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
 addEventListener("beforeunload", () => { flushWrites(); });
 
 // ---- the frame's log, for the test below
@@ -412,7 +596,8 @@ const lastTicks = (log, word) => {
 };
 
 // ?test: edit, build and check without a person, then POST what happened to /report. It
-// uses a project store of its own, cleared first
+// uses stores of its own, cleared first, and a directory of the browser's private file
+// system (OPFS) as the folder
 async function test() {
   const report = { steps: [] };
   const step = (name, ok, detail) => { report.steps.push({ name, ok: !!ok, detail }); };
@@ -516,12 +701,96 @@ async function test() {
   const badName = await newFile("../x.hx").then(() => "made", (e) => e.message);
   step("a bad file name is refused", /not a file name/.test(badName), badName);
 
-  // ---- the project is kept: what the store holds is what the page has
+  const skipName = await newFile("out/x.txt").then(() => "made", (e) => e.message);
+  step("a name outside the project (a build output) is refused", /wouldn't be part/.test(skipName), skipName);
+
+  // ---- the project is kept: what the browser's store holds is what the page has
   await flushWrites();
-  const kept = await store.all();
-  const keptNames = kept.map((f) => f.name).sort();
-  step("the store holds the project's files", JSON.stringify(keptNames) === JSON.stringify(names()), keptNames);
-  step("and their latest text", kept.every((f) => f.text === files[f.name]));
+  const kept = (await project.load()).files;
+  step("the store holds the project's files", JSON.stringify(Object.keys(kept).sort()) === JSON.stringify(names()), Object.keys(kept));
+  step("and their latest text", names().every((f) => kept[f] === files[f]));
+
+  // ---- zip: out, and in (as the browser's project)
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const zipped = FS.unzipSync(exportZip());
+  step("Export zip holds every file, as it is", JSON.stringify(Object.keys(zipped).sort()) === JSON.stringify(names())
+       && names().every((f) => dec.decode(zipped[f]) === files[f]), Object.keys(zipped));
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0xff, 0xfe]);
+  const helloText = files["src/Hello.hx"];
+  await importZip(FS.zipSync({
+    "proj/src/Main.hx": enc.encode(files["src/Main.hx"]),
+    "proj/src/Hello.hx": enc.encode(helloText.replace("'$greeting again, $name! (ticks", "'$greeting from the zip, $name! (ticks")),
+    "proj/assets/greeting.txt": enc.encode("Ahoy\n"),
+    "proj/assets/dot.png": png,
+    "proj/.git/HEAD": enc.encode("ref: refs/heads/main\n"),
+    "proj/out/main.js": enc.encode("// built"),
+  }));
+  step("Import zip: its files, its top folder taken off, hidden files and build outputs left out",
+       JSON.stringify(names()) === JSON.stringify(["assets/dot.png", "assets/greeting.txt", "src/Hello.hx", "src/Main.hx"]), names());
+  step("the zip's program runs", await until(() => lastTicks(frameLog(), "Ahoy from the zip"), 15000), frameLog().split("\n").slice(-2));
+  step("a file that isn't text is kept as its bytes", files["assets/dot.png"] instanceof Uint8Array && same([...files["assets/dot.png"]], [...png]));
+  const pngRes = await $("run").contentWindow.fetch("assets/dot.png");
+  const pngServed = new Uint8Array(await pngRes.arrayBuffer());
+  step("and served as them, typed", same([...pngServed], [...png]) && pngRes.headers.get("Content-Type") === "image/png", pngRes.headers.get("Content-Type"));
+  show("assets/dot.png");
+  step("the editor shows it and doesn't edit it", view.state.readOnly && /14 bytes/.test(view.state.doc.toString()));
+  const keptBytes = (await project.load()).files["assets/dot.png"];
+  step("the browser's store keeps it as bytes", keptBytes instanceof Uint8Array && same([...keptBytes], [...png]));
+
+  // ---- a folder on this computer. A directory in the browser's private file system (OPFS)
+  // stands in for one the person picks: the same kind of handle
+  const opfs = await navigator.storage.getDirectory();
+  await opfs.removeEntry("haxe-test-folder", { recursive: true }).catch(() => {});
+  const dir = await opfs.getDirectoryHandle("haxe-test-folder", { create: true });
+  const walkTo = async (path, create) => {
+    const parts = path.split("/");
+    let d = dir;
+    for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p, { create });
+    return [d, parts[parts.length - 1]];
+  };
+  const write = async (path, text) => {
+    const [d, f] = await walkTo(path, true);
+    const w = await (await d.getFileHandle(f, { create: true })).createWritable();
+    await w.write(text); await w.close();
+  };
+  const read = async (path) => {
+    try { const [d, f] = await walkTo(path, false); return await (await (await d.getFileHandle(f)).getFile()).text(); } catch (e) { return null; }
+  };
+  const isDir = async (path) => { try { await walkTo(path + "/x", false); return true; } catch (e) { return false; } };
+  await write("src/Main.hx", files["src/Main.hx"]);
+  await write("src/Hello.hx", helloText.replace("'$greeting again, $name! (ticks", "'$greeting from the folder, $name! (ticks"));
+  await write("assets/greeting.txt", "Hey\n");
+  await write("notes/readme.md", "# notes\n");
+  await write(".git/HEAD", "ref: refs/heads/main\n");
+  await write("out/main.js", "// built");
+  // a build's many files: not part of the project, but opening the folder still walks them
+  for (let i = 0; i < 300; i++) await write(`out/obj/${i}.o`, "x");
+  const t1 = performance.now();
+  const of = await openFolder(dir);
+  report.folderOpenMs = Math.round(performance.now() - t1);
+  step("Open folder: its files, without hidden files and build outputs", of.ok &&
+       JSON.stringify(names()) === JSON.stringify(["assets/greeting.txt", "notes/readme.md", "src/Hello.hx", "src/Main.hx"]), names());
+  step("the folder's program runs", await until(() => lastTicks(frameLog(), "Hey from the folder"), 15000), frameLog().split("\n").slice(-2));
+  step("Reset is hidden for a folder", $("reset").hidden && $("folder").textContent === "Close folder");
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace("from the folder", "from the disk");
+  const fe = await save();
+  step("an edit is written to the folder", fe.ok && /from the disk/.test(await read("src/Hello.hx") || ""));
+  step("and runs", await until(() => lastTicks(frameLog(), "Hey from the disk"), 15000));
+  await newFile("src/extra/Extra.hx");
+  step("a new file is made in the folder", await read("src/extra/Extra.hx") === "package extra;\n\nclass Extra {\n}\n", await read("src/extra/Extra.hx"));
+  await renameFile("notes/readme.md", "notes/README.md");
+  step("a rename moves the file in the folder", await read("notes/README.md") === "# notes\n" && await read("notes/readme.md") === null);
+  await deleteFile("src/extra/Extra.hx");
+  step("a delete removes the file, and the directory it left empty", await read("src/extra/Extra.hx") === null && !(await isDir("src/extra")) && await isDir("src"));
+  step("what isn't part of the project is left alone", await read(".git/HEAD") === "ref: refs/heads/main\n" && await read("out/main.js") === "// built" && await read("out/obj/0.o") === "x");
+  step("the folder is remembered for the next visit", await remembered.get().then((h) => h && h.isSameEntry(dir)));
+  const cf = await closeFolder();
+  step("Close folder: back to the browser's project (the zip's)", cf.ok && names().includes("assets/dot.png")
+       && await until(() => lastTicks(frameLog(), "Ahoy from the zip"), 15000));
+  step("and the folder is forgotten", await remembered.get() === undefined);
+  await opfs.removeEntry("haxe-test-folder", { recursive: true });
 
   report.ms = Math.round(performance.now() - t0);
   report.log = frameLog().split("\n").slice(-12);
@@ -532,34 +801,25 @@ async function test() {
 (async function () {
   if (!("serviceWorker" in navigator)) { status("this page needs service workers (and http://localhost or https)"); return; }
   if (!("indexedDB" in window)) { status("this page needs IndexedDB"); return; }
-  CM = await import("./vendor/codemirror.js");
+  [CM, FS] = await Promise.all([import("./vendor/codemirror.js"), import("./vendor/fs.js")]);
   theme = new CM.Compartment();
-  await store.open();
-  if (TESTING) await store.clear();
-  let kept = await store.all();
-  if (kept.length === 0) {
+  await project.open();
+  if (TESTING) { await project.clear(); await remembered.set(null); }
+  // the folder from the last visit, if the browser still lets the page have it
+  const handle = await remembered.get().catch(() => null);
+  if (handle && await handle.queryPermission({ mode: "readwrite" }) === "granted") await project.useFolder(handle).catch(() => null);
+  else if (handle) reopen = handle;
+  let loaded = await project.load();
+  if (!project.folder && Object.keys(loaded.files).length === 0) {
     // the first time (or after Reset): the example
     const listing = await (await fetch(EXAMPLE + "files.json", { cache: "no-store" })).json();
-    kept = [];
-    for (const name of listing) kept.push({ name, text: await (await fetch(EXAMPLE + name, { cache: "no-store" })).text() });
-    for (const f of kept) await store.put(f.name, f.text);
+    for (const name of listing) await project.put(name, await (await fetch(EXAMPLE + name, { cache: "no-store" })).text());
+    loaded = await project.load();
   }
-  for (const f of kept) files[f.name] = saved[f.name] = f.text;
-  current = names().find((n) => n.endsWith("Hello.hx")) || names().find(isCode) || names()[0] || null;
   view = new CM.EditorView({ parent: $("editor") });
-  renderTree();
-  if (current !== null) show(current);
   await serviceWorker();
-  const assets = {};
-  for (const f of names()) if (!isCode(f)) assets[f] = files[f];
-  await tellAssets(assets, false);
-  const first = await build();
-  if (!first.ok) return;
-  $("run").src = "run/";
-  // a reload's build has its own defines, so its own cache: make it now, not at the first save
-  const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
-  status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
-  if (TESTING) test();
+  const first = await switchTo(loaded);
+  if (TESTING && first.ok) test();
 })();
 </script>
 </body>

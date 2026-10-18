@@ -205,19 +205,21 @@ def bundle(src, bc, env, embeds, embed_std):
 
 
 def editor():
-    """web/vendor/codemirror.js: CodeMirror for play.html, from editor/ (pinned in its
-    package-lock.json), bundled with esbuild. Needs node and npm on the PATH"""
+    """web/vendor/: play.html's libraries, from editor/ (pinned in its package-lock.json),
+    bundled with esbuild: codemirror.js (the editor) and fs.js (ZenFS and fflate, for the
+    project's files). Needs node and npm on the PATH"""
     d = os.path.join(HERE, "editor")
-    out = os.path.join(HERE, "web", "vendor", "codemirror.js")
     npm = shutil.which("npm")
     if npm is None:
         sys.exit("npm not found: play.html's editor is built with it (node 18 or later)")
     if not os.path.exists(os.path.join(d, "node_modules", ".package-lock.json")):
         run([npm, "ci", "--no-audit", "--no-fund"], cwd=d, quiet=True)
-    os.makedirs(os.path.dirname(out), exist_ok=True)
     esbuild = os.path.join(d, "node_modules", ".bin", "esbuild")
-    run([esbuild, "entry.js", "--bundle", "--format=esm", "--minify", "--log-level=warning", "--outfile=" + out], cwd=d)
-    print(f"  {out}: {os.path.getsize(out) / 1e3:.0f} KB")
+    for entry, name in (("entry.js", "codemirror.js"), ("fs.js", "fs.js")):
+        out = os.path.join(HERE, "web", "vendor", name)
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        run([esbuild, entry, "--bundle", "--format=esm", "--minify", "--log-level=warning", "--outfile=" + out], cwd=d)
+        print(f"  {out}: {os.path.getsize(out) / 1e3:.0f} KB")
 
 
 def main():

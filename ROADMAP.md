@@ -99,10 +99,31 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       example (`web/hello/files.json`, from build.py); Reset goes back to it. 2026-10-18.
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).
-- [ ] Project persistence: IndexedDB for the browser-only case; the File System Access
-      API to work on a real directory where it exists (Chromium), so a normal editor can
-      touch the same files.
-- [ ] Import/export a project as a zip.
+- [x] The project's files through ZenFS (`@zenfs/core` and `@zenfs/dom`, a node-like `fs`
+      over swappable backends) instead of a hand-written store: IndexedDB for the
+      browser's project, WebAccess for a folder. Bundled with fflate into
+      `web/vendor/fs.js` (328 KB, 95 KB gzipped). Files that aren't UTF-8 are kept,
+      served and zipped as bytes, shown read-only in the editor. Hidden files,
+      node_modules and top-level out/, bin/, build/, dump/ aren't part of the project.
+      2026-10-18.
+- [x] Open folder (File System Access, so Chromium; hidden where there's no picker,
+      which includes Brave until `brave://flags/#file-system-access-api` is on):
+      the page edits the files on disk, new/rename/delete happen there, and the handle is
+      remembered for the next visit (reopened at once if the browser kept the
+      permission, else a Reopen button). The test opens a directory of the browser's
+      private file system (OPFS), the same kind of handle, so it runs in Firefox too.
+      2026-10-18.
+- [x] Import zip (replaces the browser's project; a single top folder, as GitHub's zips
+      have, is taken off) and Export zip. 2026-10-18.
+- [ ] A folder changed outside the page (another editor, git) isn't noticed until it's
+      opened again: poll the files' modification times, or FileSystemObserver where it
+      exists.
+- [ ] Opening a folder walks every entry, ignored ones included (ZenFS reads the whole
+      tree's handles up front): fine for a project, slow for a huge tree. Measured: 300
+      extra files under out/ cost little (folder opened and built in 0.33 s in Brave, 0.65
+      s in Firefox).
+- [ ] The project's layout is fixed (`src/`, main class `Main`): read it from the
+      folder's hxml instead.
 
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 
