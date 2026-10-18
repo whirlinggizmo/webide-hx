@@ -42,9 +42,10 @@ changed.
       and its fix. 2026-10-18.
 - [ ] Memory over a long session: the server's cache grows; watch it, and use the
       server's own GC task if it matters.
-- [ ] Rob's fix for the server's cost on deep dependency chains (`4.3-server-skip-reason`
-      on his fork, in Haxe 5) applies to the resident server; build from a fork branch
-      carrying it and `patches/` instead of the 4.3.7 tag.
+- [x] Built from `4.3-js_of_ocaml` on Rob's fork instead of the 4.3.7 tag and a patch:
+      the server skip-reason fix (haxe#13058), the case tables (haxe#13067), resident
+      mode and the bytecode build, one commit each, on 4.3.7. The branch still builds a
+      native compiler and passes the interpreter unit tests. 2026-10-18.
 
 ## 3. Hot reload in the page
 

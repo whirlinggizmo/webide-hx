@@ -2,8 +2,8 @@
 """
 Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
 
-    python3 build.py                         Haxe 4.3.7 from GitHub, std embedded
-    python3 build.py --haxe-src ~/src/haxe   a local checkout instead (copied, then patched)
+    python3 build.py                         Haxe from robknopf/haxe's 4.3-js_of_ocaml branch
+    python3 build.py --haxe-src ~/src/haxe   a local checkout of that branch instead (copied)
     python3 build.py --embed DIR:/lib/name   embed more files in the bundle's filesystem
     python3 build.py --hotreload ~/projects/github/whirlinggizmo/hotreload-hx
                                              embed hotreload-hx at /lib/hotreload (the page's
@@ -20,8 +20,11 @@ import argparse, glob, json, os, re, shutil, subprocess, sys, tarfile, urllib.re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(HERE, "build")
-HAXE_TAG = "4.3.7"
-HAXE_URL = "https://github.com/HaxeFoundation/haxe.git"
+# Haxe 4.3.7 with what a browser build needs, as commits on a branch of Rob's fork: the
+# server's linear skip reasons (haxe#13058, in Haxe 5), eval's case tables as array
+# literals (haxe#13067, in Haxe 5), the server's resident mode, and a bytecode build
+HAXE_URL = "https://github.com/robknopf/haxe.git"
+HAXE_REF = "4.3-js_of_ocaml"
 MBEDTLS_URL = "https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v2.28.9.tar.gz"
 OPAM_VERSION = "2.3.0"
 OCAML = "ocaml-base-compiler.4.14.2"
@@ -99,23 +102,30 @@ def mbedtls(env):
 
 
 def haxe_source(args):
-    """build/haxe: the compiler's source at HAXE_TAG (or a copy of --haxe-src), patched"""
+    """build/haxe: the compiler's source, HAXE_REF of HAXE_URL (kept up to date with it), or
+    a copy of --haxe-src"""
     dst = os.path.join(BUILD, "haxe")
-    if os.path.exists(os.path.join(dst, ".patched")):
-        return dst
-    shutil.rmtree(dst, ignore_errors=True)
+    marker = os.path.join(dst, ".source")
+    want = args.haxe_src or f"{HAXE_URL}#{HAXE_REF}"
+    if not os.path.exists(marker) or open(marker).read() != want:
+        shutil.rmtree(dst, ignore_errors=True)
     if args.haxe_src:
-        print(f"copying {args.haxe_src}")
-        shutil.copytree(args.haxe_src, dst, ignore=shutil.ignore_patterns("_build", ".git"), symlinks=True)
+        if not os.path.exists(dst):
+            print(f"copying {args.haxe_src}")
+            shutil.copytree(args.haxe_src, dst, ignore=shutil.ignore_patterns("_build", ".git"), symlinks=True)
+    elif not os.path.exists(dst):
+        run(["git", "clone", "-q", "--depth", "1", "--branch", HAXE_REF, "--recurse-submodules", "--shallow-submodules", HAXE_URL, dst])
     else:
-        run(["git", "clone", "-q", "--depth", "1", "--branch", HAXE_TAG, HAXE_URL, dst])
-    for p in sorted(glob.glob(os.path.join(HERE, "patches", "*.patch"))):
-        if os.path.isdir(os.path.join(dst, ".git")):
-            run(["git", "-C", dst, "apply", p], quiet=True)
-        else:
-            run(["patch", "-p1", "-d", dst, "-i", p], quiet=True)
-    open(os.path.join(dst, ".patched"), "w").write(HAXE_TAG)
+        # the branch moved on: fetch it; dune rebuilds what changed
+        run(["git", "-C", dst, "fetch", "-q", "--depth", "1", "origin", HAXE_REF], quiet=True)
+        run(["git", "-C", dst, "checkout", "-q", "FETCH_HEAD"], quiet=True)
+    open(marker, "w").write(want)
     return dst
+
+
+def commit_of(src):
+    r = subprocess.run(["git", "-C", src, "rev-parse", "--short", "HEAD"], capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else "local"
 
 
 def haxe_bytecode(src, env, prefix):
@@ -127,7 +137,7 @@ def haxe_bytecode(src, env, prefix):
     libparams = ["-cclib", "-lpcre2-8", "-cclib", "-lz", "-cclib", "-lmbedtls", "-cclib", "-lmbedx509", "-cclib", "-lmbedcrypto"]
     open(os.path.join(src, "lib.sexp"), "w").write(subprocess.run([prebuild, "libparams"] + libparams, capture_output=True, text=True, check=True).stdout)
     open(os.path.join(src, "src", "compiler", "version.ml"), "w").write(
-        subprocess.run([prebuild, "version", "", HAXE_TAG, "js_of_ocaml"], capture_output=True, text=True, check=True).stdout)
+        subprocess.run([prebuild, "version", "", HAXE_REF, commit_of(src)], capture_output=True, text=True, check=True).stdout)
     run(["dune", "build", "--workspace", "dune-workspace.dev", "src/haxe.bc"], cwd=src, env=env, quiet=True)
     return bc
 
@@ -183,7 +193,7 @@ def bundle(src, bc, env, embeds, embed_std):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--haxe-src", help="a local Haxe checkout to copy instead of cloning the tag")
+    ap.add_argument("--haxe-src", help="a local Haxe checkout (of the 4.3-js_of_ocaml branch) to copy instead of cloning it")
     ap.add_argument("--embed", action="append", default=[], metavar="SRC:DEST", help="a file or directory to embed in the bundle's filesystem")
     ap.add_argument("--hotreload", metavar="DIR", help="embed hotreload-hx from DIR at /lib/hotreload")
     ap.add_argument("--embed-std", action="store_true", help="embed the standard library in the bundle instead of serving it from web/std")

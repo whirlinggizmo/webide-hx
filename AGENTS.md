@@ -19,9 +19,13 @@ consumer of it, not part of it.
   `opam` against `~/.opam`. `build.py` sets `OPAMROOT` to `build/opam`; follow it.
 - `web/haxe.js` and `web/std/` are generated and ignored by git. So are `build/` (2 GB)
   and `build-log.txt`.
-- Haxe changes go in `patches/` as diffs against the 4.3.7 tag, applied by `build.py`.
-  Don't edit `build/haxe` and leave it there: regenerate the patch (`git -C build/haxe
-  diff`) and commit that.
+- Haxe changes are commits on the `4.3-js_of_ocaml` branch of Rob's fork
+  (`~/projects/github/robknopf/haxe`), one change per commit; `build.py` clones and
+  fetches it. Don't edit `build/haxe` and leave it there. The fork's `development` stays
+  identical to upstream; a change worth sending upstream goes on its own branch off
+  `development` as a PR, and is backported here as a commit. In that clone, run `git
+  submodule update` after every checkout (`extra/haxelib_src` differs between 4.3 and
+  development) and stage files by name.
 - Commit messages: no attribution lines.
 
 ## Testing

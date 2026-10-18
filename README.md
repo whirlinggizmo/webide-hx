@@ -46,14 +46,22 @@ the gap is widest there.
 
 1. **mbedtls 2.28** is built from source, because Haxe's ssl binding needs its headers
    to compile at all, even though nothing here uses it.
-2. **Haxe 4.3.7** is cloned at its tag and patched (`patches/`):
-   - `src/dune`: the executable is built as bytecode (`(modes byte)`), with
-     `-no-check-prims` so the link doesn't insist on the C stubs being loadable;
-   - `src/macro/eval/bytes/*.ml`: eval's Unicode case tables, written as
-     `Array.of_list [1024 elements]`, become array literals. js_of_ocaml emits a list
-     literal as nested cons cells, a 1027-deep expression that a Web Worker's parser
-     can't take (main threads have the stack for it). As arrays the bundle's deepest
-     nesting is 42. Same data; merged upstream as haxe#13067 (Haxe 5), carried here for 4.3.7.
+2. **Haxe** is cloned from the `4.3-js_of_ocaml` branch of
+   [robknopf/haxe](https://github.com/robknopf/haxe/tree/4.3-js_of_ocaml): 4.3.7 plus
+   these commits, each its own:
+   - the compilation server formats a module's skip reason only when printing it, in
+     linear time ([haxe#13058](https://github.com/HaxeFoundation/haxe/pull/13058), in
+     Haxe 5): the resident compiler below is that server;
+   - eval's Unicode case tables as array literals
+     ([haxe#13067](https://github.com/HaxeFoundation/haxe/pull/13067), in Haxe 5). As
+     list literals, js_of_ocaml emits a 1027-deep expression that a Web Worker's parser
+     can't take;
+   - the server's resident mode (`HAXE_RESIDENT=1`, below);
+   - `src/dune` builds `haxe.bc` beside the native `haxe`, linked with
+     `-no-check-prims` since the C stubs are replaced by `stubs.js`.
+   The branch also carries the fork's Windows build workflow. It still builds a native
+   compiler, and Haxe's interpreter unit tests pass on it (10,899 assertions, with the
+   utest commit 4.3.7's CI pins). Once a clone exists, each build fetches the branch again.
 3. **dune** builds `haxe.bc`, 41 MB of bytecode.
 4. **js_of_ocaml** compiles it to `web/haxe.js` (3.8 MB) with `stubs.js` linked in.
    The JS-relevant standard library (the root classes plus `haxe/`, `js/`, `sys/` and
@@ -106,7 +114,7 @@ bundle expects the library embedded (`--embed-std`).
 
 `play.html` doesn't start the compiler for each build. Its worker
 (`web/resident-worker.js`) starts the bundle once as Haxe's compilation server,
-`--wait stdio` with `HAXE_RESIDENT=1`, which the patch turns into a registered callback
+`--wait stdio` with `HAXE_RESIDENT=1`, which the branch turns into a registered callback
 instead of a blocking loop. Each build is one request (`hx_request(hxml)`), after
 `hx_write_file` puts the changed sources in place with a new modification time. What
 didn't change stays parsed and typed, so a reload build takes about 0.1 s instead of 2.5.
