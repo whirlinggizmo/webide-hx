@@ -21,7 +21,8 @@ exit code, time and output size. Without a browser:
     node tests/browserlike.js
 
 runs the same bundle in node as a page would. `web/haxe.js` is generated (ignored by
-git); `python3 build.py` makes it, see below.
+git); `python3 build.py --hotreload ../../github/whirlinggizmo/hotreload-hx` makes it,
+see below.
 
 ## What was measured
 
@@ -96,23 +97,16 @@ a Worker per compile is the design.
 
 ## Setup
 
-An opam switch with OCaml 4.14 and Haxe's dependencies. opam itself can be a single
-binary in `~/.local/bin` (no root needed); the system packages are `libpcre2-dev`,
-`zlib1g-dev`, `cmake` and a C compiler.
+Nothing beyond the system packages: `build.py` installs opam (one static binary),
+OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml under `build/opam` the first time
+it runs, about ten minutes and 1.5 GB. From the system it needs git, cmake, make, a C
+compiler, `libpcre2-dev` and `zlib1g-dev`, and bubblewrap for opam's build sandbox
+(without it, sandboxing is turned off). It runs opam with a PATH of its own, because
+a directory named `install` on the user's PATH (`~/.bun` has one) makes `make install`
+fail inside opam builds.
 
-    opam init --bare -n --disable-sandboxing
-    opam switch create wasm ocaml-base-compiler.4.14.2
-    eval $(opam env --switch=wasm --set-switch)
-    opam install camlp5.8.03.04 ocamlfind.1.9.1 dune sedlex xml-light extlib ptmap sha camlp-streams conf-libpcre2-8 conf-zlib luv.0.5.13
-    opam install js_of_ocaml-compiler js_of_ocaml
-    # for the wasm route later: binaryen (>= 119) and
-    opam install --assume-depexts wasm_of_ocaml-compiler
-
-Haxe 4.3's `dune < 3.16` constraint didn't matter; dune 3.24 builds it.
-
-Pitfall: if `~/.bun` (not `~/.bun/bin`) is on your PATH, it holds a directory named
-`install`, and opam builds fail at `make install` with "install: Permission denied".
-Run opam with a PATH that doesn't include it.
+Haxe 4.3's `dune < 3.16` constraint didn't matter; dune 3.24 builds it. For the wasm
+route later, binaryen (>= 119) and `wasm_of_ocaml-compiler` would be added.
 
 ## Next
 

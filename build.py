@@ -9,8 +9,10 @@ Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
                                              embed hotreload-hx at /lib/hotreload (the page's
                                              parity test needs it)
 
-Needs the opam switch described in the README (OCaml 4.14, Haxe's dependencies,
-js_of_ocaml), cmake and a C compiler. Everything else is fetched into build/.
+Self-contained: opam, OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml are
+installed under build/ the first time (about ten minutes). From the system it needs
+git, cmake, make, a C compiler, libpcre2-dev and zlib1g-dev (and bubblewrap, or opam's
+sandboxing is turned off).
 """
 import argparse, glob, os, re, shutil, subprocess, sys, tarfile, urllib.request
 
@@ -19,6 +21,13 @@ BUILD = os.path.join(HERE, "build")
 HAXE_TAG = "4.3.7"
 HAXE_URL = "https://github.com/HaxeFoundation/haxe.git"
 MBEDTLS_URL = "https://github.com/Mbed-TLS/mbedtls/archive/refs/tags/v2.28.9.tar.gz"
+OPAM_VERSION = "2.3.0"
+OCAML = "ocaml-base-compiler.4.14.2"
+SWITCH = "haxe"
+# Haxe 4.3's haxe.opam, minus conf-neko (tests only); dune 3.24 builds it despite the < 3.16 there
+HAXE_DEPS = ["camlp5.8.03.04", "ocamlfind.1.9.1", "dune", "sedlex", "xml-light", "extlib", "ptmap", "sha", "camlp-streams",
+             "conf-libpcre2-8", "conf-zlib", "luv.0.5.13"]
+JSOO = ["js_of_ocaml-compiler", "js_of_ocaml"]
 
 
 def run(cmd, cwd=None, env=None, quiet=False):
@@ -31,12 +40,37 @@ def run(cmd, cwd=None, env=None, quiet=False):
     return r
 
 
-def opam_env(switch):
-    """the switch's environment, as `opam env` prints it"""
-    out = subprocess.run(["opam", "env", f"--switch={switch}", "--set-switch", "--shell=sh"], capture_output=True, text=True, check=True).stdout
-    env = dict(os.environ)
+def toolchain():
+    """build/opam: an opam root of our own with OCaml and the libraries in it; the
+    environment to build with. The PATH is only the system's and our own bin: a
+    directory named `install` on the user's PATH (~/.bun has one) breaks `make install`"""
+    bindir = os.path.join(BUILD, "bin")
+    root = os.path.join(BUILD, "opam")
+    opam = os.path.join(bindir, "opam")
+    env = dict(os.environ, OPAMROOT=root, OPAMYES="1", OPAMNOAUTOUPGRADE="1",
+               PATH=os.pathsep.join([bindir, "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]))
+    if not os.path.exists(opam):
+        os.makedirs(bindir, exist_ok=True)
+        arch = {"x86_64": "x86_64", "aarch64": "arm64", "arm64": "arm64"}[os.uname().machine]
+        url = f"https://github.com/ocaml/opam/releases/download/{OPAM_VERSION}/opam-{OPAM_VERSION}-{arch}-linux"
+        print(f"  downloading {url}")
+        urllib.request.urlretrieve(url, opam)
+        os.chmod(opam, 0o755)
+    if not os.path.exists(os.path.join(root, "config")):
+        sandbox = [] if shutil.which("bwrap") else ["--disable-sandboxing"]
+        run(["opam", "init", "--bare", "-n"] + sandbox, env=env, quiet=True)
+    switch_bin = os.path.join(root, SWITCH, "bin")
+    if not os.path.exists(os.path.join(switch_bin, "ocaml")):
+        print("  compiling OCaml (a few minutes)")
+        run(["opam", "switch", "create", SWITCH, OCAML], env=env, quiet=True)
+    out = subprocess.run(["opam", "env", f"--switch={SWITCH}", "--set-switch", "--shell=sh"], env=env, capture_output=True, text=True, check=True).stdout
     for k, v in re.findall(r"^(\w+)='([^']*)'; export", out, re.M):
         env[k] = v
+    if not os.path.exists(os.path.join(switch_bin, "camlp5o")):
+        print("  installing Haxe's OCaml dependencies (a few minutes)")
+        run(["opam", "install"] + HAXE_DEPS, env=env, quiet=True)
+    if not os.path.exists(os.path.join(switch_bin, "js_of_ocaml")):
+        run(["opam", "install"] + JSOO, env=env, quiet=True)
     return env
 
 
@@ -116,7 +150,6 @@ def bundle(src, bc, env, embeds):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--switch", default="wasm", help="the opam switch (default: wasm)")
     ap.add_argument("--haxe-src", help="a local Haxe checkout to copy instead of cloning the tag")
     ap.add_argument("--embed", action="append", default=[], metavar="SRC:DEST", help="a file or directory to embed in the bundle's filesystem")
     ap.add_argument("--hotreload", metavar="DIR", help="embed hotreload-hx from DIR at /lib/hotreload")
@@ -125,7 +158,7 @@ def main():
         d = os.path.expanduser(args.hotreload)
         args.embed += [f"{d}/src:/lib/hotreload/src", f"{d}/extraParams.hxml:/lib/hotreload/extraParams.hxml"]
     os.makedirs(BUILD, exist_ok=True)
-    env = opam_env(args.switch)
+    print("toolchain"); env = toolchain()
     print("mbedtls"); prefix = mbedtls(env)
     print("haxe source"); src = haxe_source(args)
     print("haxe bytecode"); bc = haxe_bytecode(src, env, prefix)
