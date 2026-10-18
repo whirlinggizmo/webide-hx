@@ -22,16 +22,25 @@
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } #progress.guess div { animation: none; width: 100%; opacity: 0.4; } }
   header h1 { font-size: 15px; margin: 0; }
   header .status { color: var(--muted); font-size: 13px; }
-  header .project { margin-left: auto; display: flex; gap: 6px; align-items: center; }
-  header .where { color: var(--muted); font-size: 13px; }
+  header .where { margin-left: auto; color: var(--muted); font-size: 13px; }
+  /* the menus: a button in the header, its items in a list below it */
+  .menus { display: flex; gap: 2px; }
+  .menu { position: relative; }
+  .menubutton { border-color: transparent; background: transparent; }
+  .menubutton:hover, .menubutton[aria-expanded="true"] { background: var(--hover); }
+  .items { position: absolute; top: calc(100% + 4px); left: 0; z-index: 10; display: flex; flex-direction: column; min-width: 220px; padding: 4px 0;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); }
+  .items[hidden] { display: none; }
+  .items button { border: 0; border-radius: 0; text-align: left; padding: 5px 14px; background: transparent; }
+  .items button:hover, .items button:focus-visible, .items button:focus { background: var(--hover); outline: none; }
+  .items button:disabled { color: var(--muted); background: transparent; cursor: default; }
+  .items hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
   button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
   button.primary { border-color: var(--accent); color: var(--accent); }
   main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
   section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .code { display: grid; grid-template-columns: 180px 1fr; min-height: 0; flex: 1; }
   .files { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
-  .filebar { display: flex; flex-wrap: wrap; gap: 4px; padding: 6px; border-bottom: 1px solid var(--line); }
-  .filebar button { padding: 1px 8px; font-size: 12px; }
   #tree { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; font-size: 13px; }
   #tree .dir { padding: 6px 10px 2px; color: var(--muted); font-size: 12px; }
   #tree button { display: flex; width: 100%; border: 0; border-radius: 0; text-align: left; padding: 3px 10px 3px 20px; background: transparent; }
@@ -56,28 +65,37 @@
 <body>
 <header>
   <h1>Haxe, hot</h1>
+  <nav class="menus">
+    <div class="menu">
+      <button class="menubutton" id="file-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="file-items">File</button>
+      <div class="items" id="file-items" role="menu" aria-labelledby="file-menu" hidden>
+        <button role="menuitem" id="new" title="src/... for code, anything else is an asset">New file…</button>
+        <button role="menuitem" id="rename">Rename…</button>
+        <button role="menuitem" id="delete">Delete…</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menubutton" id="project-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="project-items">Project</button>
+      <div class="items" id="project-items" role="menu" aria-labelledby="project-menu" hidden>
+        <button role="menuitem" id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder…</button>
+        <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
+        <button role="menuitem" id="export">Export zip</button>
+        <hr role="separator">
+        <button role="menuitem" id="reset" title="back to the example, losing your changes">Reset to the example…</button>
+      </div>
+    </div>
+  </nav>
   <button class="primary" id="build" title="Ctrl-S">Build</button>
   <span class="spinner" aria-hidden="true"></span>
   <span class="status" id="status" role="status">starting</span>
-  <span class="project">
-    <span class="where" id="where"></span>
-    <button id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder</button>
-    <button id="import" title="a zip as the project kept in this browser, replacing it">Import zip</button>
-    <button id="export" title="the project as a zip">Export zip</button>
-    <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
-  </span>
+  <span class="where" id="where"></span>
+  <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
   <div id="progress"><div></div></div>
 </header>
 <main>
   <section>
     <div class="code">
       <div class="files">
-        <div class="filebar">
-          <button id="new" title="a new file: src/... for code, anything else is an asset">New</button>
-          <button id="rename">Rename</button>
-          <button id="delete">Delete</button>
-          <button id="reset" title="back to the example, losing your changes">Reset</button>
-        </div>
         <ul id="tree"></ul>
       </div>
       <div class="edit">
@@ -552,7 +570,7 @@ async function switchTo(loaded) {
 }
 function showWhere() {
   $("where").textContent = project.folder ? "folder: " + project.folder.name : "kept in this browser";
-  $("folder").textContent = project.folder ? "Close folder" : reopen ? `Reopen ${reopen.name}` : "Open folder";
+  $("folder").textContent = project.folder ? "Close folder" : reopen ? `Reopen ${reopen.name}…` : "Open folder…";
   $("folder").hidden = !project.folder && !reopen && !("showDirectoryPicker" in window);
   $("reset").hidden = !!project.folder;
 }
@@ -593,6 +611,52 @@ function exportZip() {
   for (const f of names()) entries[f] = isText(files[f]) ? enc.encode(files[f]) : files[f];
   return FS.zipSync(entries);
 }
+
+// ---- the menus. A menu button opens its list (with the keyboard: on its first item, or
+// its last with the up arrow); the arrows, Home and End move, Escape closes, and so does
+// a click anywhere else. Picking an item closes the menu, then runs the item's handler
+function closeMenus() {
+  for (const m of document.querySelectorAll(".menu")) {
+    m.querySelector(".items").hidden = true;
+    m.querySelector(".menubutton").setAttribute("aria-expanded", "false");
+  }
+}
+// what the items can do just now
+function refreshMenus() {
+  $("rename").disabled = $("delete").disabled = current === null;
+}
+for (const m of document.querySelectorAll(".menu")) {
+  const button = m.querySelector(".menubutton"), list = m.querySelector(".items");
+  const items = () => [...list.querySelectorAll("[role=menuitem]")].filter((i) => !i.hidden && !i.disabled);
+  const focusItem = (i) => { const all = items(); if (all.length) all[(i + all.length) % all.length].focus(); };
+  const open = (focus) => {
+    closeMenus(); refreshMenus();
+    list.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    if (focus !== undefined) focusItem(focus);
+  };
+  // a click from the keyboard (Enter, Space) has no pointer: focus the first item then
+  button.onclick = (e) => { if (list.hidden) open(e.detail === 0 ? 0 : undefined); else closeMenus(); };
+  button.onkeydown = (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); open(0); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); open(-1); }
+  };
+  // moving across to another menu while one is open opens that one
+  button.onpointerenter = () => { if (list.hidden && document.querySelector(".items:not([hidden])")) open(); };
+  list.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) closeMenus(); }, true);
+  list.onkeydown = (e) => {
+    const all = items(), at = all.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") focusItem(at + 1);
+    else if (e.key === "ArrowUp") focusItem(at - 1);
+    else if (e.key === "Home") focusItem(0);
+    else if (e.key === "End") focusItem(-1);
+    else if (e.key === "Escape") { closeMenus(); button.focus(); }
+    else if (e.key === "Tab") { closeMenus(); return; }
+    else return;
+    e.preventDefault();
+  };
+}
+document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".menu")) closeMenus(); });
 
 // a file operation's failure, for a person: in the status line
 const attempt = (f) => f().catch((e) => status(e.message));

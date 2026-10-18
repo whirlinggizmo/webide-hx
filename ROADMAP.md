@@ -101,6 +101,10 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       reports each `std/` read as it happens), and a bar against the last build of the
       same kind, kept in localStorage; a sliding bar when there's none. Hidden for builds
       under 150 ms, so reloads don't flicker. 2026-10-18.
+- [x] File and Project menus in the header instead of rows of buttons (keyboard: arrows,
+      Home, End, Escape; items off when they can't apply). `node tests/menus.js PORT`.
+      2026-10-18.
+- [ ] A context menu on the tree's files (Rename, Delete).
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).
 - [x] The project's files through ZenFS (`@zenfs/core` and `@zenfs/dom`, a node-like `fs`

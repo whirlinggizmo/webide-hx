@@ -138,15 +138,19 @@ their lines, and the file tree counts each file's errors. Files under `src/` end
 `.hx` are the program; anything else is an asset the program can fetch. A build that
 takes more than a moment shows a spinner, its time so far and the library files the
 compiler has read, with a bar estimated from the last build of the same kind (the
-compiler reports no progress of its own; the worker counts its reads from `std/`). New, Rename and
-Delete work on the project, which is kept as it's edited: in the browser, or in a folder
-on this computer.
+compiler reports no progress of its own; the worker counts its reads from `std/`).
+
+The header's **File** menu has New file, Rename and Delete; its **Project** menu has Open
+folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
+arrows, Home, End, Escape). The project is kept as it's edited: in the browser, or in a
+folder on this computer.
 
 The project's files go through [ZenFS](https://github.com/zen-fs/core), a node-like `fs`,
 bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs.js` into
 `web/vendor/fs.js`:
 
-- In the browser (IndexedDB) by default, seeded from the example; Reset goes back to it.
+- In the browser (IndexedDB) by default, seeded from the example; Project > Reset to the
+  example goes back to it.
 - **Open folder** works on a folder on disk through the File System Access API
   (Chromium browsers; the button is hidden elsewhere). Brave turns the API off: enable
   `brave://flags/#file-system-access-api` first. Edits, new files, renames and
