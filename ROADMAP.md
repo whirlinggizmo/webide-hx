@@ -69,6 +69,11 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 ## 4. The editor
 
+- [ ] Debugging in the browser's DevTools: build with `-debug -D source-map-content` (the
+      sources live only in the in-memory filesystem, so the map must carry them), have
+      the service worker serve each bundle's `.map` beside it, and check that a
+      breakpoint in a `.hx` file hits, in the first bundle and in a reloaded one, in
+      Brave and Firefox. No debug adapter: DevTools is the debugger for a page.
 - [ ] CodeMirror 6 with Haxe highlighting, a file tree over the project's files, save
       triggers a compile.
 - [ ] Compiler errors from stderr mapped to the editor's diagnostics
@@ -78,7 +83,15 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       touch the same files.
 - [ ] Import/export a project as a zip.
 
-## 5. Language server (after a resident compiler)
+## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
+
+- [ ] Page JavaScript can't drive the browser's debugger, so the IDE can't pause its own
+      frame. The routes: a native host speaking the browser's debugging protocol (an
+      install again), or instrumenting the compiled code to report lines and pause, where
+      pausing is the hard part (the program and the page share a thread). Decide after
+      the editor exists.
+
+## 6. Language server (after a resident compiler)
 
 - [ ] Port `haxe-language-server` (vshaxe; Haxe compiled to JS) to call the in-page
       compiler instead of spawning a `haxe` process. The compiler's `--display` protocol
@@ -88,7 +101,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [ ] Without a resident compiler, limit it to diagnostics on save; completion on
       keystrokes needs the warm server.
 
-## 6. WebAssembly (optional, for speed)
+## 7. WebAssembly (optional, for speed)
 
 - [ ] wasm_of_ocaml compiles the same bytecode in 13 s, but takes no JS primitives
       directly: each of the ~465 `//Provides` in `stubs.js` that is actually reached
@@ -96,7 +109,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       and measure first; the macro path (an interpreter in an interpreter) is where
       wasm would help most.
 
-## 7. Hosting
+## 8. Hosting
 
 - [ ] A static page is the point: GitHub Pages or any file server, with the bundle
       cached by the browser. If item 2's option A lands,
