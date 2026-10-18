@@ -41,6 +41,9 @@ consumer of it, not part of it.
   `privkey.pem` (names localhost, coinspinner(.local), 192.168.1.200/.201; CA in
   `~/keys/ca`, which Brave trusts). `python3 web/serve.py --tls` with those, then
   `https://192.168.1.200:8443/play.html?test`. `~/keys/localdev` is expired; don't use it.
+- Reloads: `node tests/reload.js PORT WEBCOPY`, against play.html served from a copy of
+  `web/` (it changes the copy's `sw.js`): edits and new files survive a reload, and the
+  page starts when a new service worker takes over from one holding long polls.
 - Debugging: start Brave with `--remote-debugging-port=P` on `play.html` (no `?test`),
   then `node tests/devtools.js P`: breakpoints by source map in the first and a
   reloaded bundle. Node 24's built-in WebSocket; no packages.

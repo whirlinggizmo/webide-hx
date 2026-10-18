@@ -18,7 +18,7 @@ const state = {
   assets: new Map(),     // path under run/ -> {body, type}: body is text, or bytes (a Uint8Array)
   assetVersion: 0,
   assetChanges: [],      // {version, urls}
-  waiting: [],           // held polls: {ready(), answer()}
+  waiting: [],           // held polls: {ready(), answer(), clientId, until}
 };
 
 self.addEventListener("install", () => self.skipWaiting());
@@ -73,16 +73,31 @@ function respond(body, type, status) {
   return new Response(body, { status: status || 200, headers: { "Content-Type": type + (text ? "; charset=utf-8" : ""), "Cache-Control": "no-store" } });
 }
 
-function hold(ready, answer) {
+// a long poll, answered when ready() or after HOLD_MS; sooner when the frame that asked is
+// gone (the page reloaded) or a newer service worker is waiting to take over, since this
+// worker can't hand over while it still holds requests
+function hold(ready, answer, clientId) {
   return new Promise((resolve) => {
     if (ready()) { resolve(answer()); return; }
-    const entry = { ready, answer: () => resolve(answer()) };
+    const entry = { ready, answer: () => resolve(answer()), clientId, until: Date.now() + HOLD_MS };
     state.waiting.push(entry);
-    setTimeout(() => {
-      const i = state.waiting.indexOf(entry);
-      if (i >= 0) { state.waiting.splice(i, 1); resolve(answer()); }
-    }, HOLD_MS);
+    sweep();
   });
+}
+let sweeping = null;
+function sweep() {
+  if (sweeping) return;
+  sweeping = setInterval(async () => {
+    const replaced = !!self.registration.waiting || !!self.registration.installing;
+    for (const entry of [...state.waiting]) {
+      const gone = entry.clientId && !(await self.clients.get(entry.clientId));
+      if (replaced || gone || Date.now() >= entry.until) {
+        const i = state.waiting.indexOf(entry);
+        if (i >= 0) { state.waiting.splice(i, 1); entry.answer(); }
+      }
+    }
+    if (state.waiting.length === 0) { clearInterval(sweeping); sweeping = null; }
+  }, 250);
 }
 
 function since(url) {
@@ -99,7 +114,7 @@ self.addEventListener("fetch", (e) => {
   if (path === "/__hotreload") {
     const n = since(url);
     const answer = () => respond(JSON.stringify({ version: state.version, url: scope + state.name, file: "", failed: false }), "application/json");
-    e.respondWith(hold(() => n === null || state.version > n, answer));
+    e.respondWith(hold(() => n === null || state.version > n, answer, e.clientId));
     return;
   }
   if (path === "/__hotreload_assets") {
@@ -108,7 +123,7 @@ self.addEventListener("fetch", (e) => {
       version: state.assetVersion,
       urls: n === null || n < 0 ? [] : [...new Set(state.assetChanges.filter((c) => c.version > n).flatMap((c) => c.urls))],
     }), "application/json");
-    e.respondWith(hold(() => n === null || n < 0 || state.assetVersion > n, answer));
+    e.respondWith(hold(() => n === null || n < 0 || state.assetVersion > n, answer, e.clientId));
     return;
   }
   if (!path.startsWith(scope)) return;

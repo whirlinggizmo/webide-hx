@@ -226,11 +226,19 @@ function compile(args, sources, output) {
   return ask({ type: "build", files: changed, args, output });
 }
 
+// a message to the service worker, answered on a port. Sent to the active one; if a newer
+// one takes over before that answers (sw.js changed), sent again to it
 function tell(msg) {
   return new Promise((resolve) => {
-    const ch = new MessageChannel();
-    ch.port1.onmessage = (ev) => resolve(ev.data);
-    reg.active.postMessage(msg, [ch.port2]);
+    let to = null;
+    const send = () => {
+      const ch = new MessageChannel();
+      to = reg.active;
+      ch.port1.onmessage = (ev) => { clearInterval(watch); resolve(ev.data); };
+      to.postMessage(msg, [ch.port2]);
+    };
+    const watch = setInterval(() => { if (reg.active && reg.active !== to) send(); }, 250);
+    send();
   });
 }
 
@@ -318,7 +326,8 @@ function tellAssets(list, changed) {
 async function save() {
   syncEditor();
   if (current === null) return build();
-  await flushWrites(current);
+  clearTimeout(pendingWrites.get(current)); pendingWrites.delete(current);
+  if (isText(files[current])) await project.put(current, files[current]);
   if (files[current] === saved[current]) return isCode(current) ? build() : { ok: true };
   saved[current] = files[current];
   if (isCode(current)) return build();
@@ -471,8 +480,8 @@ async function startProgram() {
   status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
   return first;
 }
-// the page's files become `loaded` (project.load()'s), and the program starts over on them
-async function switchTo(loaded) {
+// the page's files become `loaded` (project.load()'s): the tree and the editor
+function showProject(loaded) {
   for (const f of Object.keys(files)) { delete files[f]; delete saved[f]; }
   states.clear(); diagnostics.clear();
   for (const [f, data] of Object.entries(loaded.files)) files[f] = saved[f] = data;
@@ -480,6 +489,10 @@ async function switchTo(loaded) {
   renderTree();
   if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
   showWhere();
+}
+// ... and the program starts over on them
+async function switchTo(loaded) {
+  showProject(loaded);
   const first = await startProgram();
   if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
   return first;
@@ -816,9 +829,14 @@ async function test() {
     for (const name of listing) await project.put(name, await (await fetch(EXAMPLE + name, { cache: "no-store" })).text());
     loaded = await project.load();
   }
+  // the project first, so it shows while the service worker starts (a changed sw.js can
+  // take a moment to take over)
   view = new CM.EditorView({ parent: $("editor") });
+  showProject(loaded);
+  status("starting the service worker");
   await serviceWorker();
-  const first = await switchTo(loaded);
+  const first = await startProgram();
+  if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
   if (TESTING && first.ok) test();
 })();
 </script>
