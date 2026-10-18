@@ -16,7 +16,7 @@ installed under build/ the first time (about ten minutes). From the system it ne
 git, cmake, make, a C compiler, libpcre2-dev and zlib1g-dev (and bubblewrap, or opam's
 sandboxing is turned off), and node with npm for play.html's editor.
 """
-import argparse, glob, json, os, re, shutil, subprocess, sys, tarfile, urllib.request
+import argparse, filecmp, glob, json, os, re, shutil, subprocess, sys, tarfile, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(HERE, "build")
@@ -110,9 +110,22 @@ def haxe_source(args):
     if not os.path.exists(marker) or open(marker).read() != want:
         shutil.rmtree(dst, ignore_errors=True)
     if args.haxe_src:
-        if not os.path.exists(dst):
-            print(f"copying {args.haxe_src}")
-            shutil.copytree(args.haxe_src, dst, ignore=shutil.ignore_patterns("_build", ".git"), symlinks=True)
+        # every build, since the checkout is being worked on: its tracked files as they are
+        # now (edits included, build output not), copying only what changed, so dune
+        # rebuilds only that
+        src = os.path.expanduser(args.haxe_src)
+        names = subprocess.run(["git", "-C", src, "ls-files", "--recurse-submodules"], capture_output=True, text=True, check=True).stdout.splitlines()
+        copied = 0
+        for name in names:
+            a, b = os.path.join(src, name), os.path.join(dst, name)
+            if not os.path.isfile(a) or (os.path.exists(b) and filecmp.cmp(a, b, shallow=False)):
+                continue
+            os.makedirs(os.path.dirname(b), exist_ok=True)
+            if os.path.exists(b):
+                os.chmod(b, 0o644)
+            shutil.copy2(a, b)
+            copied += 1
+        print(f"  {copied} files from {src}")
     elif not os.path.exists(dst):
         run(["git", "clone", "-q", "--depth", "1", "--branch", HAXE_REF, "--recurse-submodules", "--shallow-submodules", HAXE_URL, dst])
     else:

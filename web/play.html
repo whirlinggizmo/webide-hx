@@ -99,21 +99,14 @@ async function serviceWorker() {
 }
 
 function buildArgs(reload) {
-  // -debug and the sources in the map: DevTools shows and steps the .hx files, which live
-  // only in the compiler's in-memory filesystem
-  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "-debug", "-D", "source-map-content",
-                                 "--js", "/static/out/" + BUNDLE]);
+  // -debug, with the map inside the bundle and the sources inside the map: DevTools loads
+  // a map over the network itself, past the service worker, and the .hx files live only
+  // in the compiler's in-memory filesystem (-D source-map-inline: the fork's Haxe, and
+  // proposed upstream)
+  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "-debug",
+                                 "-D", "source-map-inline", "-D", "source-map-content", "--js", "/static/out/" + BUNDLE]);
   if (reload) args.push("-D", "hotreload_reload");
   return args;
-}
-
-// the map's sources are the compiler's paths (file:////static/src/Hello.hx): name them as
-// the project does, so DevTools' tree reads src/, std/ and hotreload/
-function readableSources(mapText) {
-  const map = JSON.parse(mapText);
-  map.sources = map.sources.map((s) => s.replace(/^file:\/+/, "/")
-    .replace(/^\/static\//, "").replace(/^\/haxe\/std\//, "std/").replace(/^\/lib\/hotreload\/src\//, "hotreload/"));
-  return JSON.stringify(map);
 }
 
 // "/static/src/Hello.hx:39: characters 11-15 : Missing ;" (or "lines 12-14", and
@@ -168,7 +161,7 @@ async function build() {
     return { ok: false, r };
   }
   version++;
-  await tell({ type: "build", name: BUNDLE, version, js: r.output, map: r.map && readableSources(r.map) });
+  await tell({ type: "build", name: BUNDLE, version, js: r.output });
   status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
   out([r.stdout.trim()].concat(messages.rest).filter((x) => x).join("\n"));
   return { ok: true, r };

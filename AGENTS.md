@@ -72,6 +72,11 @@ consumer of it, not part of it.
   primitive the compiler calls. `hx_expose` is that root; require new pieces from it.
 - `hx_expose` runs on every path lookup; it sets up once per runtime (`hx_exposed`).
   State that must survive between calls lives there, not in its closures.
+- Under js_of_ocaml, converting `bytes` to a `string` copies (strings are JS strings), so
+  OCaml code that stores a bytes as a string and fills it afterwards loses the fill.
+  Rbuffer did (fixed on the fork branch); look for that pattern when output has NULs.
+- `build.py --haxe-src DIR` builds from a local Haxe checkout (its tracked files, edits
+  included, re-synced each build): use it to test a branch change before it's pushed.
 - DevTools fetches source maps itself, over the network, without the page's service
   worker: a URL only the service worker answers is a 404 to it. That's why maps are
   inline `data:` URLs. `tests/devtools.js` loads maps the same way (inline, or

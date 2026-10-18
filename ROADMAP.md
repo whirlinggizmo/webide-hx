@@ -77,8 +77,12 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       DevTools protocol: a breakpoint on a Hello.hx line hits at that line, with state
       readable, in the first bundle and in a reloaded one. Firefox: not checked (no
       such protocol headless); try it by hand. No debug adapter. 2026-10-18.
-- [x] The map's sources are renamed for DevTools' tree: `src/`, `std/`, `hotreload/`
-      instead of the compiler's `file:////static/...` paths. 2026-10-18.
+- [x] Maps inline from the compiler: `-D source-map-inline` (a fork branch commit, for
+      upstream issue #6414) instead of the service worker rewriting the bundle. Sources
+      show under `file://` as `/static/src/...` (the earlier renaming needed the rewrite).
+      The branch also fixes Rbuffer under js_of_ocaml (big prints came out as NULs).
+      Not pushed yet: until it is, build with `--haxe-src` from the local branch.
+      2026-10-18.
 - [x] CodeMirror 6 in play.html: Haxe highlighting (the legacy-modes Haxe mode), a state
       per file (its own undo), Ctrl-S builds, tabs, dark theme following the system.
       Bundled from `editor/` (versions pinned in its lockfile) into

@@ -7,8 +7,8 @@
 //       files: those that changed since the last build (all of them the first time)
 //   {type: "warm", id, args}    a build whose output is thrown away: the cache for a set
 //                               of defines (a reload's) is made before it's needed
-// and gets back {id, code, ms, stdout, stderr, output, map}: code 0 or 1, the compiler's
-// messages in stderr, the output file's text, and its source map's when there is one.
+// and gets back {id, code, ms, stdout, stderr, output}: code 0 or 1, the compiler's
+// messages in stderr, the output file's text.
 var started = false, startMs = 0;
 
 // the compiler's filesystem holds bytes, one per char (latin1); the page has text: UTF-8 between
@@ -63,11 +63,8 @@ onmessage = function (ev) {
     }
     r = request(msg.args);
     r.output = null;
-    r.map = null;
     if (msg.type === "build" && r.code === 0 && msg.output) {
       try { r.output = fromBytes(globalThis.hx_read_file(msg.output)); } catch (e) { r.code = 1; r.stderr += "\nno output: " + e.message; }
-      // its source map, when the build made one (-debug)
-      try { r.map = fromBytes(globalThis.hx_read_file(msg.output + ".map")); } catch (e) {}
     }
     if (startMs) { r.startMs = startMs; startMs = 0; }
   } catch (e) {

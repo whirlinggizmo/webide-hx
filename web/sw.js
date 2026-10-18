@@ -2,7 +2,7 @@
 // (the run/ scope), so every request the program makes comes here:
 //   run/            the program's page: a log, and the bundle
 //   run/<bundle>    the latest build (any ?v=), stamped with its number as the DevServer does
-//                   (a -debug build's carries its source map inside, as a data: URL)
+//                   (built with -D source-map-inline, it carries its source map inside)
 //   run/assets/...  files the page gave it
 //   /__hotreload?since=N         held until there's a build newer than N (or 20 s), then
 //                                {version, url}: the JS reloader imports url next
@@ -37,15 +37,7 @@ self.addEventListener("message", (e) => {
   if (m.type === "build") {
     state.name = m.name || state.name;
     state.version = m.version;
-    let js = m.js;
-    if (m.map) {
-      // the map inside the bundle, as a data: URL: DevTools loads a map over the network
-      // itself, past this worker, so a map served from here would be a 404 to it. Inline,
-      // each bundle also carries its own build's map, reloads included
-      js = js.replace(/\n\/\/# sourceMappingURL=[^\n]*\s*$/, "") +
-        "\n//# sourceMappingURL=data:application/json;charset=utf-8;base64," + base64(m.map) + "\n";
-    }
-    state.js = "globalThis.__hotreload_built = " + m.version + "; " + js;
+    state.js = "globalThis.__hotreload_built = " + m.version + "; " + m.js;
     wake();
   } else if (m.type === "assets") {
     const urls = [];
@@ -64,14 +56,6 @@ self.addEventListener("message", (e) => {
   }
   if (port) port.postMessage({ ok: true, version: state.version, assetVersion: state.assetVersion });
 });
-
-// text as UTF-8, in base64
-function base64(text) {
-  const bytes = new TextEncoder().encode(text);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return btoa(bin);
-}
 
 function scopePath() { return new URL(self.registration.scope).pathname; } // "/run/"
 
