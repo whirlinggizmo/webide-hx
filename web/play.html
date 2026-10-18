@@ -35,6 +35,24 @@
   .items button:hover, .items button:focus-visible, .items button:focus { background: var(--hover); outline: none; }
   .items button:disabled { color: var(--muted); background: transparent; cursor: default; }
   .items hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+  .items button { display: flex; gap: 24px; }
+  .items kbd { margin-left: auto; font: inherit; font-size: 12px; color: var(--muted); }
+  .items button[hidden] { display: none; }
+  /* the page's own dialog: a question, or a name to type */
+  dialog { width: min(440px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg);
+           box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+  dialog form { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
+  dialog h2 { margin: 0; font-size: 15px; }
+  dialog p { margin: 0; }
+  dialog p:empty, dialog ul:empty { display: none; }
+  dialog ul { margin: 0; padding: 6px 10px 6px 26px; max-height: 160px; overflow: auto; background: var(--bg); border-radius: 4px; font: 12px/1.5 ui-monospace, monospace; }
+  dialog input { font: 13px ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+  dialog input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  dialog .error { color: var(--error); font-size: 13px; }
+  /* OK first in the form, so Enter picks it; shown on the right */
+  dialog .actions { display: flex; flex-direction: row-reverse; gap: 8px; margin-top: 4px; }
+  dialog .actions .danger { border-color: var(--error); color: var(--error); }
   button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
   button.primary { border-color: var(--accent); color: var(--accent); }
   main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
@@ -77,6 +95,8 @@
     <div class="menu">
       <button class="menubutton" id="project-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="project-items">Project</button>
       <div class="items" id="project-items" role="menu" aria-labelledby="project-menu" hidden>
+        <button role="menuitem" id="build-item">Build<kbd class="mod">Ctrl+S</kbd></button>
+        <hr role="separator">
         <button role="menuitem" id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder…</button>
         <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
         <button role="menuitem" id="export">Export zip</button>
@@ -92,6 +112,19 @@
   <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
   <div id="progress"><div></div></div>
 </header>
+<dialog id="dialog">
+  <form method="dialog">
+    <h2 id="dialog-title"></h2>
+    <p id="dialog-text"></p>
+    <ul id="dialog-list"></ul>
+    <input id="dialog-input" autocomplete="off" spellcheck="false" aria-labelledby="dialog-title">
+    <p class="error" id="dialog-error" role="alert"></p>
+    <div class="actions">
+      <button value="ok" id="dialog-ok" class="primary">OK</button>
+      <button value="cancel" id="dialog-cancel" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
 <main>
   <section>
     <div class="code">
@@ -658,23 +691,77 @@ for (const m of document.querySelectorAll(".menu")) {
 }
 document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".menu")) closeMenus(); });
 
+// ---- the page's dialog: a question (resolves to true, or null if cancelled) or, given a
+// `value`, a name to type (resolves to the text). `check(text)` returns why the text won't
+// do, shown under it, or nothing; `select` is the part of the value to select at first
+let dialogDone = null;
+function askPerson({ title, text = "", list = [], value = null, select = null, ok = "OK", danger = false, check = null }) {
+  if (dialogDone) dialogDone(null);
+  const d = $("dialog"), input = $("dialog-input");
+  $("dialog-title").textContent = title;
+  $("dialog-text").textContent = text;
+  $("dialog-list").replaceChildren(...list.map((x) => { const li = document.createElement("li"); li.textContent = x; return li; }));
+  $("dialog-error").textContent = "";
+  $("dialog-ok").textContent = ok;
+  $("dialog-ok").className = danger ? "danger" : "primary";
+  input.hidden = value === null;
+  input.value = value === null ? "" : value;
+  input.oninput = () => { $("dialog-error").textContent = ""; };
+  return new Promise((resolve) => {
+    dialogDone = (answer) => { dialogDone = null; if (d.open) d.close(); resolve(answer); };
+    d.querySelector("form").onsubmit = (e) => {
+      if (e.submitter && e.submitter.value === "cancel") { e.preventDefault(); dialogDone(null); return; }
+      e.preventDefault();
+      const answer = value === null ? true : input.value.trim();
+      const why = value === null || !check ? null : check(answer);
+      if (why) { $("dialog-error").textContent = why; input.focus(); return; }
+      dialogDone(answer);
+    };
+    d.oncancel = (e) => { e.preventDefault(); dialogDone(null); }; // Escape
+    d.showModal();
+    if (value !== null) { input.focus(); const [a, b] = select || [0, input.value.length]; input.setSelectionRange(a, b); }
+    else (danger ? $("dialog-cancel") : $("dialog-ok")).focus();
+  });
+}
+// why a name won't do for a new file (or a rename to it), or null
+function nameProblem(name) {
+  try { checkName(name); return null; } catch (e) { return e.message; }
+}
+// the base name of a path, without its extension: what a rename selects first
+function baseRange(path) {
+  const start = path.lastIndexOf("/") + 1, dot = path.lastIndexOf(".");
+  return [start, dot > start ? dot : path.length];
+}
+
 // a file operation's failure, for a person: in the status line
 const attempt = (f) => f().catch((e) => status(e.message));
+// Ctrl-S, or Cmd-S on a Mac: the menu shows which
+if (/Mac|iPhone|iPad/.test(navigator.platform)) for (const k of document.querySelectorAll("kbd.mod")) k.textContent = k.textContent.replace("Ctrl+", "⌘");
 $("build").onclick = () => save();
+$("build-item").onclick = () => save();
 $("new").onclick = () => attempt(async () => {
-  const name = prompt("New file (src/... for code, anything else is an asset):", "src/");
-  if (name) await newFile(name.trim());
+  const dir = current !== null && current.includes("/") ? current.slice(0, current.lastIndexOf("/") + 1) : "src/";
+  const name = await askPerson({ title: "New file", text: "A path in the project: src/... for code, anything else is an asset.",
+                                 value: dir, select: [dir.length, dir.length], ok: "Create", check: nameProblem });
+  if (name) await newFile(name);
 });
 $("rename").onclick = () => attempt(async () => {
   if (current === null) return;
-  const name = prompt(`Rename ${current} to:`, current);
-  if (name && name.trim() !== current) await renameFile(current, name.trim());
+  const from = current;
+  const name = await askPerson({ title: `Rename ${from}`, text: "A new name, or a new path to move it.", value: from, select: baseRange(from),
+                                 ok: "Rename", check: (n) => n === from ? "That's its name already." : nameProblem(n) });
+  if (name) await renameFile(from, name);
 });
 $("delete").onclick = () => attempt(async () => {
-  if (current !== null && confirm(`Delete ${current}?`)) await deleteFile(current);
+  if (current === null) return;
+  const name = current;
+  const sure = await askPerson({ title: `Delete ${name}?`, ok: "Delete", danger: true,
+                                 text: project.folder ? "It's deleted from the folder on disk, not moved to the trash." : "" });
+  if (sure) await deleteFile(name);
 });
 $("reset").onclick = () => attempt(async () => {
-  if (!confirm("Back to the example? Your changes to this project are lost.")) return;
+  if (!await askPerson({ title: "Reset to the example?", text: "The project kept in this browser goes back to the example; your changes to it are lost.",
+                         ok: "Reset", danger: true })) return;
   await project.clear();
   location.reload();
 });
@@ -693,7 +780,8 @@ $("zipfile").onchange = () => attempt(async () => {
   const file = $("zipfile").files[0];
   $("zipfile").value = "";
   if (!file) return;
-  if (!confirm(`Replace the project kept in this browser with ${file.name}?`)) return;
+  if (!await askPerson({ title: `Import ${file.name}?`, text: "Its files replace the project kept in this browser." + (project.folder ? " The open folder is closed, and left as it is." : ""),
+                         ok: "Import", danger: !project.folder })) return;
   return importZip(new Uint8Array(await file.arrayBuffer()));
 });
 $("export").onclick = () => {

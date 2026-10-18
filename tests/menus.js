@@ -1,7 +1,7 @@
 // Checks play.html's header menus (File, Project) in a Chromium-based browser, over the
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
-// a click elsewhere), an item that runs (File > New file…, its prompt answered), and items
-// turned off when they can't apply. It adds src/Menu.hx to the browser's project.
+// a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
+// name refused), Project > Build, and items turned off when they can't apply.
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
 //     node tests/menus.js 9333 [SCREENSHOT_PREFIX]
 // Prints each step; exits 1 if one fails.
@@ -14,7 +14,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   function send(method, params) { return new Promise(function (r) { var i = ++id; wait.set(i, r); ws.send(JSON.stringify({ id: i, method: method, params: params || {} })); }); }
   async function ev(x) { var r = await send("Runtime.evaluate", { expression: x, returnByValue: true }); return r.result ? r.result.value : undefined; }
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-  async function key(k, code) { await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: code || k, windowsVirtualKeyCode: { ArrowDown: 40, ArrowUp: 38, Escape: 27, End: 35, Enter: 13, Home: 36 }[k] }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: code || k }); await sleep(80); }
+  async function key(k, code) { await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: code || k, text: k === "Enter" ? "\r" : undefined, windowsVirtualKeyCode: { ArrowDown: 40, ArrowUp: 38, Escape: 27, End: 35, Enter: 13, Home: 36 }[k] }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: code || k }); await sleep(80); }
   var fails = 0;
   function step(name, ok, d) { if (!ok) fails++; console.log((ok ? "  ok   " : "  FAIL ") + name + (d !== undefined ? "  " + JSON.stringify(d) : "")); }
   var focused = "document.activeElement.id", openList = "[...document.querySelectorAll('.items')].filter(l => !l.hidden).map(l => l.id).join(',')";
@@ -33,7 +33,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await key("ArrowUp");
   step("ArrowUp on Project opens it on its last item", await ev(openList) === "project-items" && await ev(focused) === "reset", await ev(focused));
   await key("Home");
-  step("Home: the first item shown (Open folder is hidden without a picker)", await ev(focused) === "import", await ev(focused));
+  step("Home: the first item, Build", await ev(focused) === "build-item", await ev(focused));
   await shot("project");
   // the pointer: a click opens, moving to File switches, a click elsewhere closes
   var box = async function (sel) { return await ev("(() => { const r = document.querySelector('" + sel + "').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()"); };
@@ -46,13 +46,43 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("moving onto File switches to it", await ev(openList) === "file-items", await ev(openList));
   await click(await box("#editor"));
   step("a click elsewhere closes it", await ev(openList) === "");
-  // an item: New file, with the prompt answered
-  await send("Page.enable");
-  ws.addEventListener("message", function (e) { var m = JSON.parse(e.data); if (m.method === "Page.javascriptDialogOpening") send("Page.handleJavaScriptDialog", { accept: true, promptText: "src/Menu.hx" }); });
+  // an item and its dialog: File > New file…; a name that won't do is refused in the
+  // dialog, which stays open; Enter picks OK
+  var typeInto = async function (text) { await ev("$('dialog-input').select()"); await send("Input.insertText", { text: text }); await sleep(80); };
   await click(await box("#file-menu"));
   await click(await box("#new"));
+  step("File > New file… opens the dialog, the menu closed, on the name after the folder", await ev("$('dialog').open") && await ev(openList) === ""
+       && await ev("document.activeElement.id === 'dialog-input' && $('dialog-input').selectionStart === $('dialog-input').value.length"), await ev("$('dialog-input').value"));
+  await typeInto("out/x.hx");
+  await key("Enter");
+  step("a name that won't do: the dialog says why and stays open", await ev("$('dialog').open") && /wouldn't be part/.test(await ev("$('dialog-error').textContent")),
+       await ev("$('dialog-error').textContent"));
+  await typeInto("src/Menu.hx");
+  await key("Enter");
   await sleep(1500);
-  step("File > New file… makes the file, and the menu is closed", await ev("'src/Menu.hx' in files") && await ev(openList) === "");
+  step("Enter creates it", await ev("'src/Menu.hx' in files") && !(await ev("$('dialog').open")));
+  // Rename: the base name selected; Escape cancels
+  await click(await box("#file-menu"));
+  await click(await box("#rename"));
+  step("File > Rename… selects the name without its extension", await ev("$('dialog-input').value.slice($('dialog-input').selectionStart, $('dialog-input').selectionEnd)") === "Menu",
+       await ev("[$('dialog-input').selectionStart, $('dialog-input').selectionEnd]"));
+  await key("Escape");
+  step("Escape cancels: closed, nothing renamed", !(await ev("$('dialog').open")) && await ev("'src/Menu.hx' in files"));
+  // Delete: asks, on Cancel; then deletes on Delete
+  await click(await box("#file-menu"));
+  await click(await box("#delete"));
+  step("File > Delete… asks first, with Cancel focused", await ev("$('dialog').open && $('dialog-title').textContent === 'Delete src/Menu.hx?' && document.activeElement.id === 'dialog-cancel'"),
+       await ev("$('dialog-title').textContent"));
+  await shot("delete");
+  await click(await box("#dialog-ok"));
+  await sleep(1500);
+  step("and Delete deletes it", !(await ev("'src/Menu.hx' in files")));
+  // Project > Build
+  await click(await box("#project-menu"));
+  step("Project's first item is Build, then a separator", await ev("(() => { const l = $('project-items'); const first = l.querySelector('[role=menuitem]:not([hidden])'); return first.id === 'build-item' && first.nextElementSibling.tagName === 'HR'; })()"));
+  await click(await box("#build-item"));
+  await sleep(1500);
+  step("and builds", /^build \d+/.test(await ev("$('status').textContent")), await ev("$('status').textContent"));
   await ev("current = null; refreshMenus()");
   step("Rename and Delete are off with no file shown", await ev("$('rename').disabled && $('delete').disabled"));
   console.log(fails ? fails + " failed" : "all ok");

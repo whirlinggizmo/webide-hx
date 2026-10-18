@@ -140,9 +140,10 @@ takes more than a moment shows a spinner, its time so far and the library files 
 compiler has read, with a bar estimated from the last build of the same kind (the
 compiler reports no progress of its own; the worker counts its reads from `std/`).
 
-The header's **File** menu has New file, Rename and Delete; its **Project** menu has Open
-folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
-arrows, Home, End, Escape). The project is kept as it's edited: in the browser, or in a
+The header's **File** menu has New file, Rename and Delete; its **Project** menu has Build
+(also the button, and Ctrl-S), Open folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
+arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
+own dialog; a name that won't do is refused there, with the reason. The project is kept as it's edited: in the browser, or in a
 folder on this computer.
 
 The project's files go through [ZenFS](https://github.com/zen-fs/core), a node-like `fs`,
