@@ -15,12 +15,12 @@ changed.
 - [x] Macros: eval runs in the page; hotreload-hx's build macro produces the same bundle
       as native Haxe. 2026-10-18.
 - [x] Runs in a Web Worker in Firefox and Chromium (Brave). Needed the case-table patch
-      (`patches/`). 2026-10-18.
+      (then `patches/`, now the fork branch). 2026-10-18.
 - [x] Reproducible from nothing: `build.py` installs opam, OCaml, the libraries, mbedtls
       and Haxe under `build/`. 2026-10-18.
 - [x] The case-table change is upstream: HaxeFoundation/haxe#13067, merged into
       `development` by Simn (4413a0b94), so Haxe 5 has it. The 4.3.7 build here still
-      carries it in `patches/`, since the 4.3 line is frozen. 2026-10-18.
+      carries it as a commit on the fork branch, since the 4.3 line is frozen. 2026-10-18.
 - [x] Standard library on demand: `web/std/` + `manifest.json`, fetched by synchronous
       XHR from the worker the first time the compiler opens a file (72 files for hello
       world, 152 for the parity program). Bundle 7.8 MB → 3.8 MB; compiles 0.1–0.3 s
@@ -34,7 +34,7 @@ changed.
       redoing unchanged modules. 2026-10-18.
 - [x] Haxe's compilation server, driven one request at a time: with `HAXE_RESIDENT=1`,
       `--wait stdio` registers its loop body as an OCaml callback and returns instead of
-      blocking (`patches/`, server.ml). `stubs.js` adds `hx_request`, `hx_write_file`
+      blocking (a commit on the fork branch, server.ml). `stubs.js` adds `hx_request`, `hx_write_file`
       (with a modification time that only rises), and `Unix.stat` for the in-memory
       filesystem. `web/resident-worker.js` keeps one runtime alive; `play.html` uses it and
       warms the reload build's cache at start. Reload builds: 69–82 ms in Brave, 93–116 ms
