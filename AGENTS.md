@@ -17,7 +17,9 @@ consumer of it, not part of it.
 - The build is self-contained under `build/`: opam, OCaml, the libraries, mbedtls, Haxe.
   Never install opam or OCaml into the user's home for this project, and never run
   `opam` against `~/.opam`. `build.py` sets `OPAMROOT` to `build/opam`; follow it.
-- `web/haxe.js` and `web/std/` are generated and ignored by git. So are `build/` (2 GB)
+- `web/haxe.js`, `web/std/`, `web/hello/` and `web/vendor/` are generated and ignored by
+  git; so is `editor/node_modules/`. Change editor dependencies in `editor/package.json`
+  and commit the regenerated `package-lock.json`; `editor/entry.js` lists what the page uses. So are `build/` (2 GB)
   and `build-log.txt`.
 - Haxe changes are commits on the `4.3-js_of_ocaml` branch of Rob's fork
   (`~/projects/github/robknopf/haxe`), one change per commit; `build.py` clones and

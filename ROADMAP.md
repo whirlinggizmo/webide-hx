@@ -78,10 +78,16 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       such protocol headless); try it by hand. No debug adapter. 2026-10-18.
 - [x] The map's sources are renamed for DevTools' tree: `src/`, `std/`, `hotreload/`
       instead of the compiler's `file:////static/...` paths. 2026-10-18.
-- [ ] CodeMirror 6 with Haxe highlighting, a file tree over the project's files, save
-      triggers a compile.
-- [ ] Compiler errors from stderr mapped to the editor's diagnostics
-      (`File.hx:line: characters a-b : message` is a fixed format).
+- [x] CodeMirror 6 in play.html: Haxe highlighting (the legacy-modes Haxe mode), a state
+      per file (its own undo), Ctrl-S builds, tabs, dark theme following the system.
+      Bundled from `editor/` (versions pinned in its lockfile) into
+      `web/vendor/codemirror.js` by build.py, so the page needs no CDN. 2026-10-18.
+- [x] Compiler errors and warnings as the editor's diagnostics: on their file, line and
+      characters, with an error count on each tab; the test checks one lands on `oops`
+      at Hello.hx:39 and clears after the fix. 2026-10-18.
+- [ ] A file tree, and adding, renaming and removing files (the file list is fixed now).
+- [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
+      mode, if the stream mode's gaps show (string interpolation, metadata, regexes).
 - [ ] Project persistence: IndexedDB for the browser-only case; the File System Access
       API to work on a real directory where it exists (Chromium), so a normal editor can
       touch the same files.

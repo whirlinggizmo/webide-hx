@@ -120,6 +120,13 @@ instead of a blocking loop. Each build is one request (`hx_request(hxml)`), afte
 didn't change stays parsed and typed, so a reload build takes about 0.1 s instead of 2.5.
 `node tests/resident.js` drives it the same way.
 
+## The editor
+
+`play.html` edits with CodeMirror 6, bundled from `editor/` into `web/vendor/codemirror.js`
+by `build.py` (node and npm needed for that step; versions are pinned in
+`editor/package-lock.json`). Ctrl-S builds. The compiler's errors and warnings appear on
+their lines, and each tab counts its errors.
+
 ## Debugging
 
 `play.html` builds with `-debug -D source-map-content`, so each bundle has a source map
@@ -147,8 +154,8 @@ library's on-demand fetch keeps bytes as bytes.
 Nothing beyond the system packages: `build.py` installs opam (one static binary),
 OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml under `build/opam` the first time
 it runs, about ten minutes and 1.5 GB. From the system it needs git, cmake, make, a C
-compiler, `libpcre2-dev` and `zlib1g-dev`, and bubblewrap for opam's build sandbox
-(without it, sandboxing is turned off). It runs opam with a PATH of its own, because
+compiler, `libpcre2-dev` and `zlib1g-dev`, bubblewrap for opam's build sandbox
+(without it, sandboxing is turned off), and node with npm for the editor's bundle. It runs opam with a PATH of its own, because
 a directory named `install` on the user's PATH (`~/.bun` has one) makes `make install`
 fail inside opam builds.
 

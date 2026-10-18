@@ -14,7 +14,7 @@ Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
 Self-contained: opam, OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml are
 installed under build/ the first time (about ten minutes). From the system it needs
 git, cmake, make, a C compiler, libpcre2-dev and zlib1g-dev (and bubblewrap, or opam's
-sandboxing is turned off).
+sandboxing is turned off), and node with npm for play.html's editor.
 """
 import argparse, glob, json, os, re, shutil, subprocess, sys, tarfile, urllib.request
 
@@ -191,6 +191,22 @@ def bundle(src, bc, env, embeds, embed_std):
     print(f"  {out}: {os.path.getsize(out) / 1e6:.1f} MB")
 
 
+def editor():
+    """web/vendor/codemirror.js: CodeMirror for play.html, from editor/ (pinned in its
+    package-lock.json), bundled with esbuild. Needs node and npm on the PATH"""
+    d = os.path.join(HERE, "editor")
+    out = os.path.join(HERE, "web", "vendor", "codemirror.js")
+    npm = shutil.which("npm")
+    if npm is None:
+        sys.exit("npm not found: play.html's editor is built with it (node 18 or later)")
+    if not os.path.exists(os.path.join(d, "node_modules", ".package-lock.json")):
+        run([npm, "ci", "--no-audit", "--no-fund"], cwd=d, quiet=True)
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    esbuild = os.path.join(d, "node_modules", ".bin", "esbuild")
+    run([esbuild, "entry.js", "--bundle", "--format=esm", "--minify", "--log-level=warning", "--outfile=" + out], cwd=d)
+    print(f"  {out}: {os.path.getsize(out) / 1e3:.0f} KB")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--haxe-src", help="a local Haxe checkout (of the 4.3-js_of_ocaml branch) to copy instead of cloning it")
@@ -212,6 +228,7 @@ def main():
     print("haxe source"); src = haxe_source(args)
     print("haxe bytecode"); bc = haxe_bytecode(src, env, prefix)
     print("bundle"); bundle(src, bc, env, args.embed, args.embed_std)
+    print("editor"); editor()
     print("done: python3 web/serve.py, then http://127.0.0.1:8765/play.html")
 
 

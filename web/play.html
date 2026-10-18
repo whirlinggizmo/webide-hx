@@ -20,8 +20,12 @@
   .tabs { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   .tabs button { padding: 2px 10px; font-size: 13px; }
   .tabs button.on { border-color: var(--accent); }
-  textarea { flex: 1; border: 0; padding: 8px; resize: none; background: var(--panel); color: var(--fg); font: 13px/1.45 ui-monospace, monospace; tab-size: 4; min-height: 0; }
-  textarea:focus { outline: none; }
+  #editor { flex: 1; min-height: 0; overflow: hidden; }
+  #editor .cm-editor { height: 100%; font-size: 13px; }
+  #editor .cm-editor.cm-focused { outline: none; }
+  #editor .cm-scroller { font-family: ui-monospace, monospace; line-height: 1.45; }
+  .tabs button .count { margin-left: 6px; font-size: 11px; color: #c62828; }
+  @media (prefers-color-scheme: dark) { .tabs button .count { color: #ff8a80; } }
   iframe { flex: 1; border: 0; background: var(--panel); min-height: 0; }
   #out { margin: 0; padding: 6px 8px; max-height: 30%; overflow: auto; font: 12px/1.4 ui-monospace, monospace; border-top: 1px solid var(--line); color: var(--muted); white-space: pre-wrap; }
 </style>
@@ -35,7 +39,7 @@
 <main>
   <section>
     <div class="tabs" id="tabs"></div>
-    <textarea id="editor" spellcheck="false"></textarea>
+    <div id="editor"></div>
     <pre id="out"></pre>
   </section>
   <section>
@@ -54,6 +58,10 @@ const HOTRELOAD = ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml
 
 const files = {}, saved = {};
 let current = FILES[1], version = 0, reg = null;
+// the editor (CodeMirror, web/vendor/codemirror.js): one view, a state per file, so each
+// keeps its own undo history; the compiler's errors and warnings as each file's diagnostics
+let CM = null, view = null;
+const states = new Map(), diagnostics = new Map();
 const $ = (id) => document.getElementById(id);
 const status = (s) => { $("status").textContent = s; };
 const out = (s) => { $("out").textContent = s; };
@@ -108,12 +116,52 @@ function readableSources(mapText) {
   return JSON.stringify(map);
 }
 
+// "/static/src/Hello.hx:39: characters 11-15 : Missing ;" (or "lines 12-14", and
+// "Warning : " before a warning's text): by file, as CodeMirror diagnostics
+function parseMessages(text) {
+  const byFile = new Map(), rest = [];
+  const re = /^\/static\/(.+?):(\d+): (?:characters (\d+)-(\d+)|lines (\d+)-(\d+)) : (?:(Warning|Error) : )?(.*)$/;
+  for (const line of (text || "").split("\n")) {
+    const m = re.exec(line);
+    if (!m || !FILES.includes(m[1])) { if (line.trim()) rest.push(line); continue; }
+    const list = byFile.get(m[1]) || [];
+    list.push({ line: +m[2], from: m[3] ? +m[3] : null, to: m[4] ? +m[4] : null, lastLine: m[6] ? +m[6] : null,
+                severity: m[7] === "Warning" ? "warning" : "error", message: m[8] });
+    byFile.set(m[1], list);
+  }
+  return { byFile, rest };
+}
+function toDiagnostics(doc, list) {
+  return list.map((d) => {
+    const line = doc.line(Math.min(Math.max(d.line, 1), doc.lines));
+    let from = line.from, to = line.to;
+    if (d.from !== null) { from = Math.min(line.from + d.from - 1, line.to); to = Math.max(from, Math.min(line.from + d.to - 1, line.to)); }
+    else if (d.lastLine !== null) to = doc.line(Math.min(d.lastLine, doc.lines)).to;
+    return { from, to, severity: d.severity, message: d.message };
+  });
+}
+function showDiagnostics(byFile) {
+  for (const f of FILES) diagnostics.set(f, byFile.get(f) || []);
+  for (const f of FILES) {
+    const list = diagnostics.get(f);
+    if (f === current) view.dispatch(CM.setDiagnostics(view.state, toDiagnostics(view.state.doc, list)));
+    else if (states.has(f)) { const st = states.get(f); states.set(f, st.update(CM.setDiagnostics(st, toDiagnostics(st.doc, list))).state); }
+  }
+  for (const b of $("tabs").children) {
+    const n = diagnostics.get(b.dataset.name).filter((d) => d.severity === "error").length;
+    b.querySelector(".count").textContent = n ? String(n) : "";
+  }
+}
+
 async function build() {
+  syncEditor();
   const sources = {};
   for (const f of FILES) if (f.endsWith(".hx")) sources["/static/" + f] = files[f];
   const args = buildArgs(version > 0);
   status("building");
   const r = await compile(args, sources, "/static/out/" + BUNDLE);
+  const messages = parseMessages(r.stderr);
+  showDiagnostics(messages.byFile);
   if (r.code !== 0 || !r.output) {
     status("build failed; the program keeps what it has");
     out((r.stderr || r.stdout || "no output").trim());
@@ -122,7 +170,7 @@ async function build() {
   version++;
   await tell({ type: "build", name: BUNDLE, version, js: r.output, map: r.map && readableSources(r.map) });
   status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
-  out(r.stdout.trim());
+  out([r.stdout.trim()].concat(messages.rest).filter((x) => x).join("\n"));
   return { ok: true, r };
 }
 
@@ -132,21 +180,48 @@ async function saveAsset(name) {
 }
 
 async function save() {
+  syncEditor();
   if (files[current] === saved[current]) return build();
   saved[current] = files[current];
   return current.endsWith(".hx") ? build() : saveAsset(current);
 }
 
-function show(name) {
-  current = name;
-  $("editor").value = files[name];
-  for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.name === name);
+const dark = matchMedia("(prefers-color-scheme: dark)");
+let theme = null;
+function makeState(name) {
+  const ext = [
+    CM.basicSetup,
+    CM.keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { save(); return true; } }, CM.indentWithTab]),
+    CM.indentUnit.of("\t"),
+    CM.EditorState.tabSize.of(4),
+    CM.lintGutter(),
+    theme.of(dark.matches ? CM.oneDark : []),
+    CM.EditorView.updateListener.of((u) => { if (u.docChanged && name === current) files[name] = u.state.doc.toString(); }),
+  ];
+  if (name.endsWith(".hx")) ext.push(CM.StreamLanguage.define(CM.haxe));
+  let st = CM.EditorState.create({ doc: files[name], extensions: ext });
+  const list = diagnostics.get(name);
+  if (list && list.length) st = st.update(CM.setDiagnostics(st, toDiagnostics(st.doc, list))).state;
+  return st;
+}
+// the editor shows files[current]: after a change made outside it (the test's edits), put it in
+function syncEditor() {
+  if (view && view.state.doc.toString() !== files[current])
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: files[current] } });
 }
 
-$("editor").addEventListener("input", () => { files[current] = $("editor").value; });
-$("editor").addEventListener("keydown", (e) => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); save(); }
-  if (e.key === "Tab") { e.preventDefault(); document.execCommand("insertText", false, "\t"); }
+function show(name) {
+  if (view && states.has(current)) states.set(current, view.state);
+  current = name;
+  let st = states.get(name);
+  if (!st || st.doc.toString() !== files[name]) st = makeState(name);
+  states.set(name, st);
+  view.setState(st);
+  for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.name === name);
+}
+dark.addEventListener("change", () => {
+  for (const [f, st] of states) states.set(f, st.update({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) }).state);
+  view.dispatch({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) });
 });
 $("build").onclick = () => save();
 
@@ -211,9 +286,14 @@ async function test() {
   const later = lastTicks(frameLog(), "Howdy again");
   step("a failed build is reported and the program keeps running", !b3.ok && later && still && later.ticks > still.ticks,
        { error: (b3.r.stderr || "").split("\n")[0], still, later });
+  const marked = [];
+  CM.forEachDiagnostic(view.state, (d, from) => marked.push({ line: view.state.doc.lineAt(from).number, text: view.state.sliceDoc(d.from, d.to), message: d.message, severity: d.severity }));
+  step("the error is marked in the editor, on its line and its text", marked.length === 1 && marked[0].line === 39 && marked[0].text === "oops"
+       && view.state.doc.toString() === files["src/Hello.hx"], marked);
   files["src/Hello.hx"] = good;
   const b4 = await save();
   step("the fixed edit builds and reloads", b4.ok, b4.ok ? Math.round(b4.r.ms) + " ms" : b4.r.stderr);
+  step("the error marker is gone", CM.diagnosticCount(view.state) === 0, CM.diagnosticCount(view.state));
   report.reloadMs.push(Math.round(b4.r.ms));
   // a few more edits in a row: each is a build of one changed file
   for (let i = 0; i < 3; i++) {
@@ -232,12 +312,17 @@ async function test() {
 
 (async function () {
   if (!("serviceWorker" in navigator)) { status("this page needs service workers (and http://localhost or https)"); return; }
+  CM = await import("./vendor/codemirror.js");
+  theme = new CM.Compartment();
   for (const f of FILES) files[f] = saved[f] = await (await fetch(PROJECT + f, { cache: "no-store" })).text();
   for (const f of FILES) {
     const b = document.createElement("button");
-    b.textContent = f.split("/").pop(); b.dataset.name = f; b.onclick = () => show(f);
+    b.dataset.name = f; b.onclick = () => show(f);
+    b.append(f.split("/").pop());
+    const n = document.createElement("span"); n.className = "count"; b.append(n);
     $("tabs").appendChild(b);
   }
+  view = new CM.EditorView({ parent: $("editor") });
   show(current);
   await serviceWorker();
   const assets = {};

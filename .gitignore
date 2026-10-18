@@ -6,3 +6,5 @@ __pycache__/
 build-log.txt
 web/std/
 web/hello/
+editor/node_modules/
+web/vendor/
