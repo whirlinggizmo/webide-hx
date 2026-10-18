@@ -76,8 +76,8 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       DevTools protocol: a breakpoint on a Hello.hx line hits at that line, with state
       readable, in the first bundle and in a reloaded one. Firefox: not checked (no
       such protocol headless); try it by hand. No debug adapter. 2026-10-18.
-- [ ] Sources show in DevTools as `file:////static/src/...`: give the map a sourceRoot
-      or rewrite its sources so the tree reads as the project's.
+- [x] The map's sources are renamed for DevTools' tree: `src/`, `std/`, `hotreload/`
+      instead of the compiler's `file:////static/...` paths. 2026-10-18.
 - [ ] CodeMirror 6 with Haxe highlighting, a file tree over the project's files, save
       triggers a compile.
 - [ ] Compiler errors from stderr mapped to the editor's diagnostics

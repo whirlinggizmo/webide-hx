@@ -99,6 +99,15 @@ function buildArgs(reload) {
   return args;
 }
 
+// the map's sources are the compiler's paths (file:////static/src/Hello.hx): name them as
+// the project does, so DevTools' tree reads src/, std/ and hotreload/
+function readableSources(mapText) {
+  const map = JSON.parse(mapText);
+  map.sources = map.sources.map((s) => s.replace(/^file:\/+/, "/")
+    .replace(/^\/static\//, "").replace(/^\/haxe\/std\//, "std/").replace(/^\/lib\/hotreload\/src\//, "hotreload/"));
+  return JSON.stringify(map);
+}
+
 async function build() {
   const sources = {};
   for (const f of FILES) if (f.endsWith(".hx")) sources["/static/" + f] = files[f];
@@ -111,7 +120,7 @@ async function build() {
     return { ok: false, r };
   }
   version++;
-  await tell({ type: "build", name: BUNDLE, version, js: r.output, map: r.map });
+  await tell({ type: "build", name: BUNDLE, version, js: r.output, map: r.map && readableSources(r.map) });
   status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
   out(r.stdout.trim());
   return { ok: true, r };
