@@ -1,0 +1,61 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Haxe in the browser</title></head>
+<body>
+<pre id="log">starting</pre>
+<script>
+var log = document.getElementById("log");
+function say(s) { log.textContent += "\n" + s; }
+function compile(files, args, output) {
+  return new Promise(function (resolve) {
+    var w = new Worker("worker.js");
+    w.onmessage = function (ev) { w.terminate(); resolve(ev.data); };
+    w.onerror = function (e) { w.terminate(); resolve({ stdout: "", stderr: "worker error: " + e.message, code: -2, ms: 0, output: null }); };
+    w.postMessage({ files: files, args: args, output: output });
+  });
+}
+// the same compile on the main thread: Firefox's workers run out of stack parsing haxe.js
+var bundle = null;
+async function compileOnMain(files, args, output) {
+  var out = [], err = [], code = null, t0 = performance.now();
+  globalThis.jsoo_fs_tmp = Object.keys(files).map(function (k) { return { name: k, content: files[k] }; });
+  globalThis.process = { argv: ["node", "haxe"].concat(args), env: { HAXE_STD_PATH: "/haxe/std" }, cwd: function () { return "/static"; }, exit: function (c) { code = c; throw { hx_exit: c }; } };
+  var cl = console.log, ce = console.error;
+  console.log = function () { out.push(Array.prototype.join.call(arguments, " ")); };
+  console.error = function () { err.push(Array.prototype.join.call(arguments, " ")); };
+  if (bundle === null) bundle = await (await fetch("haxe.js")).text();
+  try { (0, eval)(bundle); if (code === null) code = 0; } catch (e) { if (!(e && e.hx_exit !== undefined)) { err.push("exception: " + e.message); code = -1; } }
+  console.log = cl; console.error = ce;
+  var result = null;
+  if (output) { try { result = globalThis.hx_read_file(output); } catch (e) { err.push("no output: " + e.message); } }
+  return { stdout: out.join("\n"), stderr: err.join("\n"), code: code, ms: performance.now() - t0, output: result, where: "main thread" };
+}
+async function compileAnywhere(files, args, output) {
+  var r = await compile(files, args, output);
+  r.where = "worker";
+  if (r.code < 0 && /recursion|stack/i.test(r.stderr)) { say("  (the worker ran out of stack loading the compiler; using the main thread)"); r = await compileOnMain(files, args, output); }
+  return r;
+}
+async function fetchAll(paths) {
+  var files = {};
+  for (var p of paths) files["/static/" + p] = await (await fetch("src/" + p)).text();
+  return files;
+}
+(async function () {
+  var report = {};
+  var hello = await fetchAll(["Hello.hx"]);
+  report.hello = await compileAnywhere(hello, ["-cp", "/static", "--main", "Hello", "--js", "/static/out/hello.js"], "/static/out/hello.js");
+  say("hello (" + report.hello.where + "): exit " + report.hello.code + " in " + Math.round(report.hello.ms) + "ms, " + (report.hello.output ? report.hello.output.length + " bytes" : "no output"));
+  // the same compiler, warm: a second worker loads haxe.js from cache
+  report.hello2 = await compileAnywhere(hello, ["-cp", "/static", "--main", "Hello", "--js", "/static/out/hello.js"], "/static/out/hello.js");
+  say("hello again: exit " + report.hello2.code + " in " + Math.round(report.hello2.ms) + "ms");
+  // run what it made
+  try { var f = new Function("console", report.hello.output); var lines = []; f({ log: function (s) { lines.push(String(s)); } }); report.helloRun = lines; say("ran it: " + lines.join(" | ")); } catch (e) { report.helloRun = "failed: " + e.message; say(report.helloRun); }
+  var parity = await fetchAll(["Main.hx", "Outside.hx", "game/State.hx"]);
+  report.parity = await compileAnywhere(parity, ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml", "-cp", "/static", "--main", "Main", "-D", "hotreload", "--js", "/static/out/parity.js"], "/static/out/parity.js");
+  say("parity with the build macro: exit " + report.parity.code + " in " + Math.round(report.parity.ms) + "ms, " + (report.parity.output ? report.parity.output.length + " bytes" : "no output"));
+  if (report.parity.stderr) say("  stderr: " + report.parity.stderr.slice(0, 600));
+  await fetch("/report", { method: "POST", body: JSON.stringify(report) });
+  say("reported");
+})();
+</script>
+</body></html>

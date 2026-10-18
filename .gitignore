@@ -1,0 +1,6 @@
+# generated: the compiler bundle (python3 build.py) and what the page reports
+web/haxe.js
+web/report*.json
+build/
+__pycache__/
+build-log.txt
