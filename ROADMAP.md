@@ -81,7 +81,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       upstream issue #6414) instead of the service worker rewriting the bundle. Sources
       show under `file://` as `/static/src/...` (the earlier renaming needed the rewrite).
       The branch also fixes Rbuffer under js_of_ocaml (big prints came out as NULs).
-      Not pushed yet: until it is, build with `--haxe-src` from the local branch.
+      Upstream PR for the define: prepared, not opened (Rob's call).
       2026-10-18.
 - [x] CodeMirror 6 in play.html: Haxe highlighting (the legacy-modes Haxe mode), a state
       per file (its own undo), Ctrl-S builds, tabs, dark theme following the system.
