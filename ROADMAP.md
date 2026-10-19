@@ -110,6 +110,18 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       font size, tabs, wrapping, gutters, brackets), kept in localStorage and applied to
       every open file at once. The editor setup is basicSetup's parts, so they can be
       turned off. Vim or Emacs keys would be packages more (not added). 2026-10-18.
+- [x] Real folders: New folder, nested tree (guides, collapsing, a selectable folder),
+      Rename/move of files and folders by dialog or by dragging in the tree, the package
+      line following a .hx file's move, Delete folder (asks when it has anything, counting
+      what the page doesn't show; empty ones go without asking). Moves copy everything
+      (hidden files too), then delete the old, so a failure leaves both rather than
+      neither; ZenFS's own folder rename reads it all into memory, deletes, then writes.
+      2026-10-18.
+- [ ] ZenFS reads a folder on disk once, when it's opened, and doesn't see changes made
+      outside the page after; a folder-wide move or delete reads it again first (~0.3 s).
+      The same gap as noticing outside changes above; if it keeps biting, use directory
+      handles directly for the folder instead of ZenFS's WebAccess.
+- [ ] Fix imports of a moved class in other files (needs the language server's view).
 - [ ] A context menu on the tree's files (Rename, Delete).
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).

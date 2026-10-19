@@ -1,7 +1,8 @@
 // Checks play.html's header menus (File, Project) in a Chromium-based browser, over the
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
-// name refused), Project > Build, every Edit item on the editor, Preferences (applied
+// name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
+// with files and an empty one), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
@@ -27,7 +28,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await key("ArrowDown");
   step("ArrowDown on File opens it on its first item", await ev(openList) === "file-items" && await ev(focused) === "new", [await ev(openList), await ev(focused)]);
   await key("ArrowDown");
-  step("ArrowDown moves to Rename", await ev(focused) === "rename");
+  step("ArrowDown moves to New folder", await ev(focused) === "new-folder");
   await shot("file");
   await key("Escape");
   step("Escape closes it, back on the button", await ev(openList) === "" && await ev(focused) === "file-menu");
@@ -85,6 +86,46 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#build-item"));
   await sleep(1500);
   step("and builds", /^build \d+/.test(await ev("$('status').textContent")), await ev("$('status').textContent"));
+  // ---- folders: New folder…, a rename that selects the folder's name, a file dragged
+  // onto a folder (its package line follows), Delete folder: asked when it has files, not
+  // when it's empty
+  await click(await box("#file-menu"));
+  await click(await box("#new-folder"));
+  await typeInto("src/ui");
+  await key("Enter");
+  await sleep(300);
+  step("File > New folder… makes it, selected in the tree", await ev("dirs.has('src/ui') && !!document.querySelector('#tree [data-dir=\"src/ui\"].on')"));
+  await click(await box("#file-menu"));
+  await click(await box("#rename"));
+  step("Rename with a folder selected renames the folder, its name selected", await ev("$('dialog-title').textContent") === "Rename src/ui"
+       && await ev("$('dialog-input').value.slice($('dialog-input').selectionStart, $('dialog-input').selectionEnd)") === "ui");
+  await key("Escape");
+  await ev("newFile('src/Drag.hx')"); await sleep(1500);
+  // a drag, as the browser sends it: dragstart on the file's row, dragover and drop on the folder's
+  await ev(`(() => { const dt = new DataTransfer();
+    const from = document.querySelector('#tree [data-name="src/Drag.hx"]'), to = document.querySelector('#tree [data-dir="src/ui"]');
+    from.dispatchEvent(new DragEvent('dragstart', { dataTransfer: dt, bubbles: true }));
+    to.dispatchEvent(new DragEvent('dragover', { dataTransfer: dt, bubbles: true, cancelable: true }));
+    to.dispatchEvent(new DragEvent('drop', { dataTransfer: dt, bubbles: true, cancelable: true })); })()`);
+  await sleep(1500);
+  step("dragging a file onto a folder moves it there, its package line too", await ev("'src/ui/Drag.hx' in files && !('src/Drag.hx' in files) && files['src/ui/Drag.hx'].startsWith('package ui;')"),
+       await ev("files['src/ui/Drag.hx'] && files['src/ui/Drag.hx'].split('\\n')[0]"));
+  await click(await box('#tree [data-dir="src/ui"]'));
+  await click(await box("#file-menu"));
+  await click(await box("#delete"));
+  await sleep(300);
+  step("deleting a folder with files asks, and lists them", await ev("$('dialog').open && $('dialog-title').textContent === 'Delete src/ui/?' && $('dialog-list').textContent.includes('src/ui/Drag.hx')"),
+       await ev("[$('dialog-title').textContent, $('dialog-text').textContent]"));
+  await shot("folder-delete");
+  await click(await box("#dialog-ok"));
+  await sleep(1500);
+  step("and Delete removes it and them", await ev("!dirs.has('src/ui') && !('src/ui/Drag.hx' in files)"));
+  await ev("newFolder('src/empty')"); await sleep(200);
+  await click(await box("#file-menu"));
+  await click(await box("#delete"));
+  await sleep(300);
+  step("an empty folder is deleted without asking", await ev("!$('dialog').open && !dirs.has('src/empty')"));
+
   // ---- Edit: each item on the editor
   await send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }).catch(function () {});
   var edit = async function (id) { await click(await box("#edit-menu")); await click(await box("#" + id)); await sleep(150); };

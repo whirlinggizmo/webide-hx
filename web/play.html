@@ -11,7 +11,7 @@
   :root[data-theme="dark"] { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
-  header { position: relative; display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header { position: relative; display: flex; gap: 12px; align-items: center; padding: 8px 16px 8px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
   /* a build in progress: a spinner by the status, and a bar along the header's foot */
   .spinner { display: none; width: 12px; height: 12px; margin-right: -6px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
   body.busy .spinner { display: inline-block; }
@@ -22,7 +22,7 @@
   #progress.guess div { width: 30%; transition: none; animation: slide 1.2s ease-in-out infinite alternate; }
   @keyframes slide { from { margin-left: 0; } to { margin-left: 70%; } }
   @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } #progress.guess div { animation: none; width: 100%; opacity: 0.4; } }
-  header h1 { font-size: 15px; margin: 0; }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   header .status { color: var(--muted); font-size: 13px; }
   header .where { margin-left: auto; color: var(--muted); font-size: 13px; }
   /* the menus: a button in the header, its items in a list below it */
@@ -69,10 +69,12 @@
   .code { display: grid; grid-template-columns: 180px 1fr; min-height: 0; flex: 1; }
   .files { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
   #tree { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; font-size: 13px; }
-  #tree .dir { padding: 6px 10px 2px; color: var(--muted); font-size: 12px; }
-  #tree button { display: flex; width: 100%; border: 0; border-radius: 0; text-align: left; padding: 3px 10px 3px 20px; background: transparent; }
-  #tree button:hover { background: var(--hover); }
-  #tree button.on { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+  #tree .folder { color: var(--muted); }
+  #tree .caret { width: 12px; flex: none; font-size: 10px; line-height: 19px; }
+  #tree button.drop { background-color: var(--hover); box-shadow: inset 0 0 0 1px var(--accent); }
+  #tree button { display: flex; gap: 4px; width: 100%; border: 0; border-radius: 0; text-align: left; padding: 3px 10px 3px 8px; background-color: transparent; }
+  #tree button:hover { background-color: var(--hover); }
+  #tree button.on { background-color: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
   #tree .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
   .edit { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
@@ -91,12 +93,14 @@
 </head>
 <body>
 <header>
-  <h1>Haxe, hot</h1>
+  <h1 class="visually-hidden">Haxe, hot</h1>
   <nav class="menus">
     <div class="menu">
       <button class="menubutton" id="file-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="file-items">File</button>
       <div class="items" id="file-items" role="menu" aria-labelledby="file-menu" hidden>
         <button role="menuitem" id="new" title="src/... for code, anything else is an asset">New file…</button>
+        <button role="menuitem" id="new-folder">New folder…</button>
+        <hr role="separator">
         <button role="menuitem" id="rename">Rename…</button>
         <button role="menuitem" id="delete">Delete…</button>
       </div>
@@ -252,40 +256,77 @@ const project = {
     FS.mount("/folder", mounted);
     this.root = "/folder"; this.folder = handle;
   },
+  // a folder on disk, read again: ZenFS reads its whole tree when it's mounted and doesn't
+  // see what changes outside the page after (another editor, git), so whatever works on a
+  // folder's contents first does this
+  async refresh() {
+    if (this.folder) await this.useFolder(this.folder);
+  },
   useBrowser() {
     if (this.folder) FS.umount("/folder");
     this.root = "/browser"; this.folder = null;
   },
-  // every file, {name: data}; those too big to take, by name, in `skipped`
+  // every file, {name: data}, and every folder; files too big to take, by name, in `skipped`
   async load() {
-    const fsp = FS.fs.promises, files = {}, skipped = [];
+    const fsp = FS.fs.promises, files = {}, skipped = [], dirs = [];
     const walk = async (rel) => {
       for (const e of await fsp.readdir(rel ? this.path(rel) : this.root, { withFileTypes: true })) {
         const name = rel ? rel + "/" + e.name : e.name;
         if (SKIP.test(name)) continue;
-        if (e.isDirectory()) await walk(name);
+        if (e.isDirectory()) { dirs.push(name); await walk(name); }
         else if (!e.isFile()) continue;
         else if ((await fsp.stat(this.path(name))).size > MAX_BYTES) skipped.push(name);
         else files[name] = asData(await fsp.readFile(this.path(name)));
       }
     };
     await walk("");
-    return { files, skipped };
+    return { files, skipped, dirs };
   },
   async put(name, data) {
     const p = this.path(name);
     await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
     await FS.fs.promises.writeFile(p, data);
   },
-  // a file, and the directories that leaves empty
   async remove(name) {
+    await FS.fs.promises.rm(this.path(name), { force: true });
+  },
+  mkdir(name) {
+    return FS.fs.promises.mkdir(this.path(name), { recursive: true });
+  },
+  // a folder, everything in it (what isn't part of the project too)
+  async removeDir(name) {
+    await this.refresh();
+    await FS.fs.promises.rm(this.path(name), { recursive: true, force: true });
+  },
+  // everything under a folder, what isn't part of the project too: {files, dirs}, paths
+  // relative to the project
+  async everything(name) {
+    await this.refresh();
+    const fsp = FS.fs.promises, found = { files: [], dirs: [] };
+    const walk = async (rel) => {
+      for (const e of await fsp.readdir(this.path(rel), { withFileTypes: true })) {
+        const p = rel + "/" + e.name;
+        if (e.isDirectory()) { found.dirs.push(p); await walk(p); } else found.files.push(p);
+      }
+    };
+    await walk(name);
+    return found;
+  },
+  // a file or a folder to a new path: copied (everything in a folder), then the old one
+  // removed, so a failure part way leaves both rather than neither
+  async move(from, to) {
+    await this.refresh();
     const fsp = FS.fs.promises;
-    await fsp.rm(this.path(name), { force: true });
-    for (let dir = name, i; (i = dir.lastIndexOf("/")) > 0;) {
-      dir = dir.slice(0, i);
-      if ((await fsp.readdir(this.path(dir))).length) break;
-      await fsp.rmdir(this.path(dir));
+    if (!(await fsp.stat(this.path(from))).isDirectory()) {
+      await this.put(to, await fsp.readFile(this.path(from)));
+      await this.remove(from);
+      return;
     }
+    const all = await this.everything(from);
+    await this.mkdir(to);
+    for (const d of all.dirs) await this.mkdir(to + d.slice(from.length));
+    for (const f of all.files) await fsp.writeFile(this.path(to + f.slice(from.length)), await fsp.readFile(this.path(f)));
+    await this.removeDir(from);
   },
   // the browser's project only: a folder on disk is never emptied
   async clear() {
@@ -496,24 +537,54 @@ async function save() {
   return { ok: true };
 }
 
-// ---- files: new, rename, remove. A path is relative to the project: src/game/Game.hx
+// ---- files and folders: new, move (rename), delete. A path is relative to the project:
+// src/game/Game.hx. Folders are real (`dirs`, every folder in the project, empty ones
+// too), and the tree has them; a folder can be selected (`selectedDir`) for the menus
+const dirs = new Set();
+let selectedDir = null;
+const collapsed = new Set();
+const parentOf = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+const baseOf = (path) => path.slice(path.lastIndexOf("/") + 1);
+const inside = (path, dir) => path.startsWith(dir + "/");
+// every folder above a path
+function addDirs(path) {
+  for (let d = parentOf(path); d; d = parentOf(d)) dirs.add(d);
+}
 function validName(name) {
   return /^[A-Za-z0-9_.\-]+(\/[A-Za-z0-9_.\-]+)*$/.test(name) && !name.split("/").some((p) => p === "." || p === "..");
 }
 function checkName(name) {
   if (!validName(name)) throw new Error(`not a file name: ${name}`);
   if (SKIP.test(name)) throw new Error(`${name} wouldn't be part of the project (hidden, node_modules, or a build output)`);
-  if (name in files) throw new Error(`${name} is there already`);
+  if (name in files || dirs.has(name)) throw new Error(`${name} is there already`);
+  for (let d = parentOf(name); d; d = parentOf(d)) if (d in files) throw new Error(`${d} is a file, not a folder`);
 }
-// a new .hx file's first text: its package from its directory under src/, a class named for it
+// a .hx file's package, from its folder under src/
+function packageOf(name) {
+  return isCode(name) ? parentOf(name).split("/").slice(1).join(".") : null;
+}
+// a new .hx file's first text: its package, a class named for it
 function template(name) {
   if (!isCode(name)) return "";
-  const parts = name.slice(4, -3).split("/"), cls = parts.pop();
-  return (parts.length ? `package ${parts.join(".")};\n\n` : "") + `class ${cls} {\n}\n`;
+  const pack = packageOf(name), cls = baseOf(name).slice(0, -3);
+  return (pack ? `package ${pack};\n\n` : "") + `class ${cls} {\n}\n`;
 }
+// a .hx file moved from one package to another: its package line follows, if it named the
+// old package (or there was none, for the top). Returns the new text, or null for no change
+function movedPackage(text, from, to) {
+  const was = packageOf(from), now = packageOf(to);
+  if (!isText(text) || was === null || now === null || was === now) return null;
+  const re = /^([ \t]*)package(?:[ \t]+([A-Za-z0-9_.]*))?[ \t]*;[ \t]*\r?\n?/m, m = re.exec(text);
+  if (m && (m[2] || "") !== was) return null; // a package of its own: left alone
+  if (!m && was !== "") return null;
+  if (!m) return `package ${now};\n\n` + text;
+  return now ? text.replace(re, `${m[1]}package ${now};\n`) : text.replace(re, "").replace(/^\r?\n/, "");
+}
+
 async function newFile(name, text) {
   checkName(name);
   files[name] = saved[name] = text !== undefined ? text : template(name);
+  addDirs(name);
   await project.put(name, files[name]);
   renderTree();
   show(name);
@@ -522,26 +593,57 @@ async function newFile(name, text) {
   status(`${name} added`);
   return { ok: true };
 }
-async function renameFile(from, to) {
-  if (!(from in files)) throw new Error(`no file ${from}`);
-  checkName(to);
-  syncEditor();
-  files[to] = files[from]; saved[to] = saved[from];
-  delete files[from]; delete saved[from];
-  if (states.has(from)) { states.set(to, states.get(from)); states.delete(from); }
-  await project.put(to, files[to]);
-  await project.remove(from);
-  if (current === from) current = to;
+async function newFolder(name) {
+  checkName(name);
+  await project.mkdir(name);
+  addDirs(name + "/x");
+  collapsed.delete(name);
+  selectedDir = name;
   renderTree();
-  show(current);
-  const assets = {};
-  if (!isCode(from)) assets[from] = null;
-  if (!isCode(to)) assets[to] = files[to];
-  if (Object.keys(assets).length) await tellAssets(assets, true);
-  if (isCode(from) || isCode(to)) return build();
-  status(`${from} is now ${to}`);
+  status(`${name}/ added`);
   return { ok: true };
 }
+// a file or a folder (with everything in it) to a new path: a rename, or a move. A .hx
+// file whose package changes gets its package line changed
+async function movePath(from, to) {
+  const isDir = dirs.has(from);
+  if (!isDir && !(from in files)) throw new Error(`no file or folder ${from}`);
+  if (isDir && (to === from || inside(to, from))) throw new Error(`${from} can't go inside itself`);
+  checkName(to);
+  syncEditor();
+  await flushWrites();
+  await project.move(from, to);
+  const renamed = (p) => p === from ? to : to + p.slice(from.length);
+  const moved = isDir ? names().filter((n) => inside(n, from)) : [from];
+  const assets = {}, repackaged = [];
+  for (const old of moved) {
+    const now = renamed(old), text = movedPackage(files[old], old, now);
+    if (!isCode(old)) assets[old] = null;
+    files[now] = text === null ? files[old] : text;
+    saved[now] = files[now];
+    if (text !== null) { repackaged.push(now); await project.put(now, files[now]); }
+    if (!isCode(now)) assets[now] = files[now];
+    delete files[old]; delete saved[old];
+    if (states.has(old)) { if (text === null) states.set(now, states.get(old)); states.delete(old); }
+    diagnostics.delete(old);
+    if (current === old) current = now;
+  }
+  for (const d of [...dirs]) if (d === from || inside(d, from)) { dirs.delete(d); dirs.add(renamed(d)); }
+  addDirs(to + (isDir ? "/x" : ""));
+  if (selectedDir !== null && (selectedDir === from || inside(selectedDir, from))) selectedDir = renamed(selectedDir);
+  renderTree();
+  if (current !== null) show(current);
+  if (Object.keys(assets).length) await tellAssets(assets, true);
+  const note = repackaged.length ? `; the package line changed in ${repackaged.join(", ")}` : "";
+  if (moved.some(isCode) || moved.map(renamed).some(isCode)) {
+    const r = await build();
+    if (r.ok) status(`${from} is now ${to}${note}; ` + $("status").textContent);
+    return r;
+  }
+  status(`${from} is now ${to}${note}`);
+  return { ok: true };
+}
+const renameFile = movePath;
 async function deleteFile(name) {
   if (!(name in files)) throw new Error(`no file ${name}`);
   delete files[name]; delete saved[name];
@@ -553,33 +655,88 @@ async function deleteFile(name) {
   if (!isCode(name)) { await tellAssets({ [name]: null }, true); status(`${name} removed`); return { ok: true }; }
   return build();
 }
+// a folder and everything in it, including what the page doesn't show
+async function deleteFolder(dir) {
+  if (!dirs.has(dir)) throw new Error(`no folder ${dir}`);
+  await flushWrites();
+  await project.removeDir(dir);
+  const gone = names().filter((n) => inside(n, dir));
+  const assets = {};
+  for (const n of gone) {
+    if (!isCode(n)) assets[n] = null;
+    delete files[n]; delete saved[n]; states.delete(n); diagnostics.delete(n);
+  }
+  for (const d of [...dirs]) if (d === dir || inside(d, dir)) dirs.delete(d);
+  if (selectedDir !== null && (selectedDir === dir || inside(selectedDir, dir))) selectedDir = null;
+  if (current !== null && !(current in files)) current = names().find(isCode) || names()[0] || null;
+  renderTree();
+  if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
+  if (Object.keys(assets).length) await tellAssets(assets, true);
+  if (gone.some(isCode)) return build();
+  status(`${dir}/ removed`);
+  return { ok: true };
+}
 
+// the tree: folders (collapsible, selectable, drop targets) and files, nested; a file or a
+// folder can be dragged onto a folder, or onto the tree's empty space for the top
 function renderTree() {
   const tree = $("tree");
   tree.textContent = "";
-  let dir = null;
-  for (const name of names()) {
-    const slash = name.lastIndexOf("/");
-    const d = slash < 0 ? "" : name.slice(0, slash + 1);
-    if (d !== dir) {
-      dir = d;
-      const li = document.createElement("li"); li.className = "dir"; li.textContent = d || "./";
-      tree.appendChild(li);
-    }
+  const row = (path, depth, folder) => {
     const li = document.createElement("li"), b = document.createElement("button");
-    b.dataset.name = name;
-    b.classList.toggle("on", name === current);
-    b.title = name;
-    const n = document.createElement("span"); n.className = "name"; n.textContent = name.slice(slash + 1);
-    const c = document.createElement("span"); c.className = "count";
-    const errors = (diagnostics.get(name) || []).filter((x) => x.severity === "error").length;
-    c.textContent = errors ? String(errors) : "";
-    b.append(n, c);
-    b.onclick = () => show(name);
+    // a file's name lines up with its folder's children's names, past the caret
+    b.style.paddingLeft = 8 + depth * 14 + (folder ? 0 : 16) + "px";
+    // a guide line for each folder it's in, under that folder's caret
+    if (depth) Object.assign(b.style, { backgroundImage: "repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 14px)",
+                                        backgroundPosition: "13px 0", backgroundSize: depth * 14 + "px 100%", backgroundRepeat: "no-repeat" });
+    b.title = path;
+    b.draggable = true;
+    b.ondragstart = (e) => { e.dataTransfer.setData("application/x-haxe-path", path); e.dataTransfer.effectAllowed = "move"; };
+    const n = document.createElement("span"); n.className = "name"; n.textContent = baseOf(path);
+    if (folder) {
+      b.className = "folder";
+      b.dataset.dir = path;
+      b.setAttribute("aria-expanded", String(!collapsed.has(path)));
+      b.classList.toggle("on", path === selectedDir);
+      // an empty folder has no caret: nothing to open
+      const empty = ![...dirs].some((d) => inside(d, path)) && !names().some((f) => inside(f, path));
+      const caret = document.createElement("span"); caret.className = "caret"; caret.textContent = empty ? "" : collapsed.has(path) ? "▸" : "▾";
+      b.append(caret, n);
+      b.onclick = () => { selectedDir = path; if (collapsed.has(path)) collapsed.delete(path); else collapsed.add(path); renderTree(); };
+      dropTarget(b, path);
+    } else {
+      b.dataset.name = path;
+      b.classList.toggle("on", path === current && selectedDir === null);
+      const c = document.createElement("span"); c.className = "count";
+      const errors = (diagnostics.get(path) || []).filter((x) => x.severity === "error").length;
+      c.textContent = errors ? String(errors) : "";
+      b.append(n, c);
+      b.onclick = () => show(path);
+    }
     li.appendChild(b);
     tree.appendChild(li);
-  }
+  };
+  const walk = (dir, depth) => {
+    const prefix = dir ? dir + "/" : "";
+    const subdirs = [...dirs].filter((d) => parentOf(d) === dir).sort();
+    for (const d of subdirs) { row(d, depth, true); if (!collapsed.has(d)) walk(d, depth + 1); }
+    for (const f of names().filter((f) => f.startsWith(prefix) && parentOf(f) === dir)) row(f, depth, false);
+  };
+  walk("", 0);
 }
+// the tree's own empty space: the top of the project
+function dropTarget(el, dir) {
+  el.ondragover = (e) => { if (e.dataTransfer.types.includes("application/x-haxe-path")) { e.preventDefault(); e.stopPropagation(); el.classList.add("drop"); } };
+  el.ondragleave = () => el.classList.remove("drop");
+  el.ondrop = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    el.classList.remove("drop");
+    const from = e.dataTransfer.getData("application/x-haxe-path");
+    if (!from || parentOf(from) === dir) return;
+    attempt(() => movePath(from, (dir ? dir + "/" : "") + baseOf(from)));
+  };
+}
+dropTarget($("tree"), "");
 
 // ---- preferences: the editor's, and the page's theme. Kept per browser (localStorage);
 // each is a compartment in every file's editor state, so a change applies to all at once
@@ -656,6 +813,7 @@ function syncEditor() {
 function show(name) {
   if (view && current !== null && states.has(current) && current in files) states.set(current, view.state);
   current = name;
+  if (selectedDir !== null) { selectedDir = null; for (const b of $("tree").querySelectorAll("button.folder")) b.classList.remove("on"); }
   let st = states.get(name);
   if (!st || (isText(files[name]) && st.doc.toString() !== files[name])) st = makeState(name);
   states.set(name, st);
@@ -686,6 +844,9 @@ function showProject(loaded) {
   for (const f of Object.keys(files)) { delete files[f]; delete saved[f]; }
   states.clear(); diagnostics.clear();
   for (const [f, data] of Object.entries(loaded.files)) files[f] = saved[f] = data;
+  dirs.clear(); selectedDir = null;
+  for (const d of loaded.dirs) dirs.add(d);
+  for (const f of names()) addDirs(f);
   current = names().find((n) => n.endsWith("Hello.hx")) || names().find(isCode) || names()[0] || null;
   renderTree();
   if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
@@ -753,7 +914,7 @@ function closeMenus() {
 }
 // what the items can do just now
 function refreshMenus() {
-  $("rename").disabled = $("delete").disabled = current === null;
+  $("rename").disabled = $("delete").disabled = current === null && selectedDir === null;
   const st = view && current !== null ? view.state : null, editable = !!st && !st.readOnly;
   const selected = !!st && st.selection.ranges.some((r) => !r.empty);
   $("undo").disabled = !editable || CM.undoDepth(st) === 0;
@@ -890,24 +1051,53 @@ const attempt = (f) => f().catch((e) => status(e.message));
 if (/Mac|iPhone|iPad/.test(navigator.platform)) for (const k of document.querySelectorAll("kbd.mod")) k.textContent = k.textContent.replace("Ctrl+", "⌘");
 $("build").onclick = () => save();
 $("build-item").onclick = () => save();
+// where a new file or folder goes first: the selected folder, or the shown file's
+function hereDir() {
+  const d = selectedDir !== null ? selectedDir : current !== null ? parentOf(current) : "src";
+  return d ? d + "/" : "";
+}
 $("new").onclick = () => attempt(async () => {
-  const dir = current !== null && current.includes("/") ? current.slice(0, current.lastIndexOf("/") + 1) : "src/";
+  const dir = hereDir();
   const name = await askPerson({ title: "New file", text: "A path in the project: src/... for code, anything else is an asset.",
                                  value: dir, select: [dir.length, dir.length], ok: "Create", check: nameProblem });
   if (name) await newFile(name);
 });
+$("new-folder").onclick = () => attempt(async () => {
+  const dir = hereDir();
+  const name = await askPerson({ title: "New folder", text: "A path in the project; under src/, a folder is a package.",
+                                 value: dir, select: [dir.length, dir.length], ok: "Create", check: (n) => nameProblem(n.replace(/\/$/, "")) });
+  if (name) await newFolder(name.replace(/\/$/, ""));
+});
+// Rename and Delete: the selected folder, or else the shown file
 $("rename").onclick = () => attempt(async () => {
-  if (current === null) return;
-  const from = current;
-  const name = await askPerson({ title: `Rename ${from}`, text: "A new name, or a new path to move it.", value: from, select: baseRange(from),
-                                 ok: "Rename", check: (n) => n === from ? "That's its name already." : nameProblem(n) });
-  if (name) await renameFile(from, name);
+  const from = selectedDir !== null ? selectedDir : current;
+  if (from === null) return;
+  const what = selectedDir !== null ? "folder" : "file";
+  const name = await askPerson({ title: `Rename ${from}`, value: from, select: what === "file" ? baseRange(from) : [parentOf(from) ? parentOf(from).length + 1 : 0, from.length],
+                                 text: `A new name, or a new path to move it${what === "folder" ? " and everything in it" : ""}.` +
+                                       (from.startsWith("src/") ? " A .hx file whose package changes gets its package line changed." : ""),
+                                 ok: "Rename", check: (n) => n === from ? "That's its name already." : dirs.has(from) && inside(n, from) ? "A folder can't go inside itself." : nameProblem(n) });
+  if (name) await movePath(from, name);
 });
 $("delete").onclick = () => attempt(async () => {
+  const onDisk = project.folder ? " They're deleted from the folder on disk, not moved to the trash." : "";
+  if (selectedDir !== null) {
+    const dir = selectedDir;
+    // an empty folder goes without asking; one with anything in it (shown or not) asks
+    const all = await project.everything(dir);
+    if (all.files.length) {
+      const shown = names().filter((n) => inside(n, dir)), hidden = all.files.length - shown.length;
+      const count = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
+      const sure = await askPerson({ title: `Delete ${dir}/?`, ok: "Delete", danger: true, list: shown.slice(0, 200),
+        text: `It has ${count(shown.length, "file")}` + (hidden ? ` and ${count(hidden, "file")} the page doesn't show (hidden, or build output)` : "") +
+              "." + onDisk.replace("They're", "All of it is") });
+      if (!sure) return;
+    }
+    return deleteFolder(dir);
+  }
   if (current === null) return;
   const name = current;
-  const sure = await askPerson({ title: `Delete ${name}?`, ok: "Delete", danger: true,
-                                 text: project.folder ? "It's deleted from the folder on disk, not moved to the trash." : "" });
+  const sure = await askPerson({ title: `Delete ${name}?`, ok: "Delete", danger: true, text: onDisk.replace("They're", "It's").trim() });
   if (sure) await deleteFile(name);
 });
 $("reset").onclick = () => attempt(async () => {
@@ -967,8 +1157,9 @@ const lastTicks = (log, word) => {
 // ?test: edit, build and check without a person, then POST what happened to /report. It
 // uses stores of its own, cleared first, and a directory of the browser's private file
 // system (OPFS) as the folder
+let testReport = null;
 async function test() {
-  const report = { steps: [] };
+  const report = testReport = { steps: [] };
   const step = (name, ok, detail) => { report.steps.push({ name, ok: !!ok, detail }); };
   const t0 = performance.now();
   let before = await until(() => lastTicks(frameLog(), "Hello"), 15000);
@@ -1070,6 +1261,31 @@ async function test() {
   const badName = await newFile("../x.hx").then(() => "made", (e) => e.message);
   step("a bad file name is refused", /not a file name/.test(badName), badName);
 
+  // ---- folders: new (empty), a file in it, moved (its package line follows), deleted
+  await newFolder("src/game");
+  step("New folder: an empty folder, in the tree and the store", dirs.has("src/game") && !!document.querySelector('#tree [data-dir="src/game"]')
+       && (await project.load()).dirs.includes("src/game"));
+  const ng = await newFile("src/game/Board.hx");
+  step("a new file in it is in its package", ng.ok && files["src/game/Board.hx"].startsWith("package game;"), files["src/game/Board.hx"]);
+  const mv = await movePath("src/game", "src/core/game");
+  step("moving the folder moves its files, and their package lines follow, and it builds", mv.ok && !("src/game/Board.hx" in files)
+       && files["src/core/game/Board.hx"].startsWith("package core.game;") && !dirs.has("src/game") && dirs.has("src/core/game"),
+       mv.ok ? files["src/core/game/Board.hx"].split("\n")[0] : mv.r.stderr);
+  const keptDirs = (await project.load()).dirs;
+  step("the store moved them too", keptDirs.includes("src/core/game") && !keptDirs.includes("src/game") && (await project.load()).files["src/core/game/Board.hx"] === files["src/core/game/Board.hx"]);
+  const up = await movePath("src/core/game/Board.hx", "src/Board.hx");
+  step("a file moved to the top loses its package line", up.ok && files["src/Board.hx"] === "class Board {\n}\n", files["src/Board.hx"]);
+  const own = movedPackage("package somewhere.else;\nclass X {}\n", "src/a/X.hx", "src/b/X.hx");
+  step("a package line that didn't follow the folder is left alone", own === null);
+  const into = await movePath("src/core", "src/core/inner").then(() => "moved", (e) => e.message);
+  step("a folder can't move inside itself", /inside itself/.test(into), into);
+  await deleteFolder("src/core");
+  step("Delete folder: it and what's in it go", !dirs.has("src/core") && !dirs.has("src/core/game") && !(await project.load()).dirs.includes("src/core"));
+  await deleteFile("src/Board.hx");
+  const lastOne = await newFile("assets/more/one.txt", "1").then(() => deleteFile("assets/more/one.txt"));
+  step("deleting a folder's last file leaves the folder", lastOne.ok && dirs.has("assets/more"));
+  await deleteFolder("assets/more");
+
   const skipName = await newFile("out/x.txt").then(() => "made", (e) => e.message);
   step("a name outside the project (a build output) is refused", /wouldn't be part/.test(skipName), skipName);
 
@@ -1152,7 +1368,15 @@ async function test() {
   await renameFile("notes/readme.md", "notes/README.md");
   step("a rename moves the file in the folder", await read("notes/README.md") === "# notes\n" && await read("notes/readme.md") === null);
   await deleteFile("src/extra/Extra.hx");
-  step("a delete removes the file, and the directory it left empty", await read("src/extra/Extra.hx") === null && !(await isDir("src/extra")) && await isDir("src"));
+  step("a delete removes the file, and leaves its folder", await read("src/extra/Extra.hx") === null && await isDir("src/extra"));
+  // a folder on disk moves with everything in it, what the page doesn't show too
+  await write("src/extra/.notes", "hidden");
+  await newFile("src/extra/Extra.hx");
+  const fm = await movePath("src/extra", "src/more/extra");
+  step("moving a folder on disk takes everything in it", fm.ok && await read("src/more/extra/Extra.hx") === "package more.extra;\n\nclass Extra {\n}\n"
+       && await read("src/more/extra/.notes") === "hidden" && !(await isDir("src/extra")), await read("src/more/extra/Extra.hx"));
+  await deleteFolder("src/more");
+  step("deleting it removes all of it", !(await isDir("src/more")) && await read("src/more/extra/.notes") === null);
   step("what isn't part of the project is left alone", await read(".git/HEAD") === "ref: refs/heads/main\n" && await read("out/main.js") === "// built" && await read("out/obj/0.o") === "x");
   step("the folder is remembered for the next visit", await remembered.get().then((h) => h && h.isSameEntry(dir)));
   const cf = await closeFolder();
@@ -1194,7 +1418,13 @@ async function test() {
   await serviceWorker();
   const first = await startProgram();
   if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
-  if (TESTING && first.ok) test();
+  // a step that throws ends the test: the report says what ran, and the error
+  if (TESTING && first.ok) test().catch((e) => {
+    testReport.ok = false;
+    testReport.error = String(e && e.stack || e);
+    testReport.log = frameLog().split("\n").slice(-12);
+    fetch("/report", { method: "POST", body: JSON.stringify(testReport) });
+  });
 })();
 </script>
 </body>
