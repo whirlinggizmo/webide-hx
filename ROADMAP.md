@@ -194,8 +194,10 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       definition (display/definition; F12, Ctrl/Cmd-click). 10-40 ms each. The reply is
       the compiler's message, not its output; offsets are code points (bytes were wrong
       after non-ASCII text). 2026-10-19.
-- [ ] Signature help while typing a call's arguments (display/signatureHelp works).
-- [ ] Errors as you type (a --no-output build after a pause, or display/diagnostics).
+- [x] Signature help while typing a call's arguments (display/signatureHelp), a tooltip
+      that follows the call; `)` or Escape closes it. 2026-10-19.
+- [x] Errors as you type: a --no-output build 0.8 s after the last keystroke, its errors
+      marked as a build's are (no write, no reload). 2026-10-19.
 - [ ] Go to definition into the standard library or a library: open it read-only.
 - [ ] Outline, rename, find references (display/references): haxe-language-server's extras,
       if wanted.

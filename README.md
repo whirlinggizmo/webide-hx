@@ -276,9 +276,12 @@ answers take tens of milliseconds:
 - **Hover**: a name's type and documentation.
 - **Go to definition**: F12, Ctrl/Cmd-click, or Edit > Go to definition: the project's file
   at the declaration; one in the standard library or a library is named in the status line.
+- **Signature help**: typing `(` or `,` in a call shows the function's parameters above the
+  cursor, the one being typed highlighted; `)` or Escape closes it.
+- **Errors as you type**: a pause in typing (0.8 s) checks the code (a build with
+  `--no-output`: nothing written, the program not reloaded) and marks what it finds.
 
-Positions are counted in characters (code points), as the compiler counts them. Signature
-help and errors as you type are next.
+Positions are counted in characters (code points), as the compiler counts them.
 
 ## Debugging
 

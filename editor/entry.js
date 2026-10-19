@@ -1,7 +1,7 @@
 // What the IDE (web/index.html) uses of CodeMirror, as one module (build.py bundles it with esbuild).
 // The editor's setup is basicSetup's parts, so preferences can turn them on and off.
-export { EditorState, Compartment } from "@codemirror/state";
-export { EditorView, keymap, hoverTooltip, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor,
+export { EditorState, Compartment, StateField, StateEffect } from "@codemirror/state";
+export { EditorView, keymap, hoverTooltip, showTooltip, lineNumbers, highlightActiveLineGutter, highlightSpecialChars, drawSelection, dropCursor,
          rectangularSelection, crosshairCursor, highlightActiveLine } from "@codemirror/view";
 export { StreamLanguage, indentUnit, foldGutter, indentOnInput, syntaxHighlighting, defaultHighlightStyle, bracketMatching,
          foldKeymap } from "@codemirror/language";

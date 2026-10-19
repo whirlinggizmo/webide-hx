@@ -87,6 +87,7 @@
   #editor .cm-editor { height: 100%; }
   #editor .hover { max-width: 520px; padding: 4px 8px; font-size: 12px; }
   #editor .hover code { font-family: ui-monospace, monospace; white-space: pre-wrap; }
+  #editor .signature b { color: var(--accent); }
   #editor .hover .doc { margin-top: 4px; color: var(--muted); white-space: pre-wrap; font-family: system-ui, sans-serif; }
   #editor .cm-editor.cm-focused { outline: none; }
   #editor .cm-scroller { font-family: ui-monospace, monospace; line-height: 1.45; }
@@ -816,11 +817,85 @@ async function goToDefinition(fileName, view, pos) {
   }
   return true;
 }
+// signature help: typing "(" or "," in a call shows the function's parameters above the
+// cursor, the one being typed in bold, and its documentation; ")" or Escape closes it
+let signatureField = null, setSignature = null;
+function signatureTooltip() {
+  if (signatureField) return signatureField;
+  setSignature = CM.StateEffect.define();
+  signatureField = CM.StateField.define({
+    create: () => null,
+    update(value, tr) {
+      for (const e of tr.effects) if (e.is(setSignature)) return e.value;
+      if (!value) return value;
+      let closed = false;
+      if (tr.isUserEvent("input.type")) tr.changes.iterChanges((a, b, c, d, text) => { if (text.toString() === ")") closed = true; });
+      if (closed) return null;
+      const pos = tr.docChanged ? tr.changes.mapPos(value.pos) : value.pos;
+      if (tr.state.selection.main.head < pos) return null; // the cursor went back out of the call
+      return pos === value.pos ? value : { ...value, pos };
+    },
+    provide: (field) => CM.showTooltip.from(field, (v) => v && { pos: v.pos, above: true, create: () => ({ dom: v.dom }) }),
+  });
+  return signatureField;
+}
+function signatureDom(sig, active) {
+  const dom = document.createElement("div"), code = document.createElement("code");
+  dom.className = "hover signature";
+  code.append("(");
+  (sig.args || []).forEach((a, i) => {
+    if (i) code.append(", ");
+    const p = document.createElement(i === active ? "b" : "span");
+    p.textContent = (a.opt ? "?" : "") + a.name + ":" + typeText(a.t);
+    code.append(p);
+  });
+  code.append(") : " + typeText(sig.ret));
+  dom.append(code);
+  if (sig.documentation) { const d = document.createElement("div"); d.className = "doc"; d.textContent = sig.documentation.trim(); dom.append(d); }
+  return dom;
+}
+async function showSignature(fileName, view) {
+  const doc = view.state.doc, pos = view.state.selection.main.head;
+  const res = await askCompiler("display/signatureHelp", { file: "/static/" + fileName, offset: codeOffset(doc, pos), wasAutoTriggered: true });
+  if (view.state.doc !== doc || current !== fileName) return; // typed on, or another file: a newer one comes
+  const sig = res && res.signatures && res.signatures[res.activeSignature || 0];
+  view.dispatch({ effects: setSignature.of(sig ? { pos, dom: signatureDom(sig, res.activeParameter) } : null) });
+}
+
+// errors as you type: a pause in typing (CHECK_AFTER ms) checks the code with the compiler
+// (a build with --no-output: nothing written, the program not reloaded) and marks what it
+// finds, as a build does; after a build that's running, if one is
+const CHECK_AFTER = 800;
+let checkTimer = null;
+function checkSoon() {
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(checkNow, CHECK_AFTER);
+}
+async function checkNow() {
+  const cfg = buildConfig();
+  if (!compilerUp || cfg.error || (cfg.libs.length && !cfg.libDirs) || current === null || !isCode(current)) return;
+  if (activity) { checkSoon(); return; }
+  const r = await compile(buildArgs(true).concat(["--no-output"]), await codeSources(cfg), null);
+  showDiagnostics(parseMessages(r.stderr).byFile);
+}
+
 function haxeIntelligence(fileName) {
   return [
+    signatureTooltip(),
+    CM.EditorView.updateListener.of((u) => {
+      if (!u.docChanged) return;
+      checkSoon();
+      let typed = "";
+      for (const tr of u.transactions) if (tr.isUserEvent("input.type")) tr.changes.iterChanges((a, b, c, d, text) => { typed += text.toString(); });
+      // "(" (or "()", with brackets closed as they're typed) or ",": a call's arguments
+      if (typed.includes("(") || typed.endsWith(",")) setTimeout(() => showSignature(fileName, u.view), 0);
+    }),
     CM.autocompletion({ override: [haxeCompletion(fileName)] }),
     haxeHover(fileName),
-    CM.keymap.of([{ key: "F12", run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
+    CM.keymap.of([
+      { key: "F12", run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } },
+      { key: "Escape", run: (v) => { if (!v.state.field(signatureField, false)) return false; v.dispatch({ effects: setSignature.of(null) }); return true; } },
+    ]),
     CM.EditorView.domEventHandlers({
       mousedown(e, v) {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
@@ -1811,6 +1886,23 @@ async function test() {
   step("go to definition: the cursor on ticks's declaration", view.state.doc.lineAt(view.state.selection.main.head).number === declLine
        && view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to) === "ticks", view.state.doc.lineAt(view.state.selection.main.head).number);
   step("and the editor's text is as it was", files["src/Hello.hx"] === code0);
+  // signature help: typing "say(" shows say's parameters; ")" closes it
+  const typeAt = (pos, text) => view.dispatch({ changes: { from: pos, insert: text }, selection: { anchor: pos + text.length }, userEvent: "input.type" });
+  const sigAt = view.state.doc.toString().indexOf("ticks++;") + "ticks++;".length;
+  typeAt(sigAt, " say(");
+  const sigShown = await until(() => { const t = document.querySelector("#editor .cm-tooltip.signature"); return t ? t.textContent : null; }, 10000);
+  step("signature help: typing say( shows its parameters", sigShown && /^\(.+:String\)/.test(sigShown),
+       sigShown);
+  typeAt(view.state.selection.main.head, ")");
+  step("and ) closes it", await until(() => !document.querySelector("#editor .cm-tooltip.signature"), 3000));
+  view.dispatch({ changes: { from: sigAt, to: sigAt + 6, insert: "" } });
+  // errors as you type: no save, no build, but the error marked after a pause
+  const builds0 = version, errAt = view.state.doc.toString().indexOf("ticks++;") + "ticks++".length;
+  typeAt(errAt, " oops");
+  const liveMarked = await until(() => CM.diagnosticCount(view.state) > 0, 8000);
+  step("errors as you type: marked after a pause, without a save or a build", liveMarked && version === builds0, CM.diagnosticCount(view.state));
+  view.dispatch({ changes: { from: errAt, to: errAt + 5, insert: "" } });
+  step("and cleared once fixed", await until(() => CM.diagnosticCount(view.state) === 0, 8000) && files["src/Hello.hx"] === code0);
 
   // ---- files: a new class, used by the program; renamed; removed
   const nf = await newFile("src/util/Greeter.hx");
