@@ -2124,7 +2124,7 @@ async function test() {
   const running = lastTicks(frameLog(), "Howdy again");
   $("app-restart").click();
   const restarted = await until(() => { const t = lastTicks(frameLog(), "Howdy again"); return t && running && t.ticks < running.ticks ? t : null; }, 15000);
-  step("Restart: the app starts over, on the latest code", restarted && $("app-restart").getAttribute("aria-disabled") === "false", { running, restarted });
+  step("Restart: the app starts over, on the latest code, @:hot state cleared", restarted && restarted.ticks === restarted.since && $("app-restart").getAttribute("aria-disabled") === "false", { running, restarted });
   // nothing running (as after a failed first build): a build that works starts it
   program.start("about:blank"); showView();
   const greyed = $("app-restart").getAttribute("aria-disabled") === "true";
