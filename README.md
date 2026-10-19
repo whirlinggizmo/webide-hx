@@ -186,9 +186,9 @@ only). **Open in new tab** opens another copy. The app needs nothing from the ed
 the service worker, so it hot-reloads wherever it is; a window the page opened also starts
 over when the project changes, and closing it makes it Embedded again. The editor's page
 has to stay open: it's the compiler.
-**Project** has Build, and Select hxml…: which of the project's hxml files the page builds
-from (see below)
-(also the button, and Ctrl-S), Open folder (local), Import zip, Export zip and Reset to Example project (menus that work by keyboard too:
+**Project** has Build (also the button, and Ctrl-S), Select hxml… (which of the project's
+hxml files the page builds from; see below), Open folder (local)…, Import zip…, Export zip,
+Add library zip… and Reset to Example project… (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
 
@@ -215,7 +215,7 @@ bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs
   Safari don't have it. Edits, new files, renames and
   deletes happen in the folder, so another editor sees them. The page remembers the
   folder and opens it again next time, asking first if the browser wants permission.
-  **Close folder** goes back to the browser's project.
+  **Close folder (local)** goes back to the browser's project.
 - **Import zip** replaces the browser's project with a zip's files; **Export zip** saves
   the project.
 - Hidden files, `node_modules`, and `out/`, `bin/`, `build/`, `dump/` at the top aren't
@@ -224,8 +224,8 @@ bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs
 
 ### The build file
 
-The page builds from one of the project's hxml files: the one picked in Project > Build
-file…, or else `build.hxml`, or else the first at the project's top that builds
+The page builds from one of the project's hxml files: the one picked in Project > Select
+hxml… (or by a click on "hxml:" in the header, which names it), or else `build.hxml`, or else the first at the project's top that builds
 JavaScript (then kept, so if it breaks later, its error shows rather than another file
 being used). With none, it's `src/` and the class `Main`. The example builds from hello's
 `web-build.hxml`. The page reads the hxml, including the hxml files it includes:

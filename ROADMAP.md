@@ -25,7 +25,8 @@ changed.
       XHR from the worker the first time the compiler opens a file (72 files for hello
       world, 152 for the parity program). Bundle 7.8 MB → 3.8 MB; compiles 0.1–0.3 s
       slower than embedded, less once the HTTP cache is warm. No shared memory or
-      special headers needed after all. 2026-10-18.
+      special headers needed after all. 2026-10-18. (Now the fallback: the first build reads
+      the whole library from one pack, `web/std.json.gz`; see 6.)
 
 ## 2. A resident compiler
 
@@ -36,7 +37,7 @@ changed.
       `--wait stdio` registers its loop body as an OCaml callback and returns instead of
       blocking (a commit on the fork branch, server.ml). `stubs.js` adds `hx_request`, `hx_write_file`
       (with a modification time that only rises), and `Unix.stat` for the in-memory
-      filesystem. `web/resident-worker.js` keeps one runtime alive; `play.html` uses it and
+      filesystem. `web/resident-worker.js` keeps one runtime alive; the IDE uses it and
       warms the reload build's cache at start. Reload builds: 69–82 ms in Brave, 93–116 ms
       in Firefox, from ~2.5–3 s. `node tests/resident.js` checks edits, a broken edit
       and its fix. 2026-10-18.
@@ -52,14 +53,14 @@ changed.
 What hotreload-hx's JS client needs from a server is small: the current bundle, and a
 way to learn a new one exists. Nothing here needs a resident compiler.
 
-- [x] Working in Brave, 2026-10-18: `web/play.html` + `web/sw.js` (a service worker plays the
+- [x] Working in Brave, 2026-10-18: `web/index.html` (then play.html) + `web/sw.js` (a service worker plays the
       DevServer) edit, build and hot-reload hotreload-hx's examples/hello; `?test` checks it.
       Firefox passes too (reload builds ~3 s there, ~2.5 s in Brave).
 - [x] An in-page stand-in for the DevServer: after a compile, hand the swap the new
       bundle as a blob URL and signal it. Look at what `hotreload.Reloader` on JS polls
       (`/__hotreload`) and give it the same answers from the page.
 - [x] The program runs in an iframe next to the editor, from the bundle the worker
-      produced, and swaps there (or in a window of its own: see the editor's View).
+      produced, and swaps there (or in a window of its own: see the editor's App menu).
       2026-10-18.
 - [x] Demonstrated with hotreload-hx's `examples/hello`: `?test` edits, builds and checks
       that @:hot state carries over and plain statics start over. 2026-10-18.
@@ -84,7 +85,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       show under `file://` as `/static/src/...` (the earlier renaming needed the rewrite).
       The branch also fixes Rbuffer under js_of_ocaml (big prints came out as NULs).
       2026-10-18.
-- [x] CodeMirror 6 in play.html: Haxe highlighting (the legacy-modes Haxe mode), a state
+- [x] CodeMirror 6 in the IDE: Haxe highlighting (the legacy-modes Haxe mode), a state
       per file (its own undo), Ctrl-S builds, tabs, dark theme following the system.
       Bundled from `editor/` (versions pinned in its lockfile) into
       `web/vendor/codemirror.js` by build.py, so the page needs no CDN. 2026-10-18.
@@ -140,8 +141,9 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       served and zipped as bytes, shown read-only in the editor. Hidden files,
       node_modules and top-level out/, bin/, build/, dump/ aren't part of the project.
       2026-10-18.
-- [x] Open folder (File System Access, so Chromium; hidden where there's no picker,
-      which includes Brave until `brave://flags/#file-system-access-api` is on):
+- [x] Open folder (local) (File System Access, so Chromium; always in the Project menu,
+      greyed where there's no picker, its tooltip and a click saying why: Brave until
+      `chrome://flags/#file-system-access-api` is on, Firefox and Safari not at all):
       the page edits the files on disk, new/rename/delete happen there, and the handle is
       remembered for the next visit (reopened at once if the browser kept the
       permission, else a Reopen button). The test opens a directory of the browser's
@@ -156,7 +158,8 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       tree's handles up front): fine for a project, slow for a huge tree. Measured: 300
       extra files under out/ cost little (folder opened and built in 0.33 s in Brave, 0.65
       s in Firefox).
-- [x] The build from the project's hxml (Project > Build file…; build.hxml, else the first
+- [x] The build from the project's hxml (Project > Select hxml…, or a click on the header's
+      "hxml:"; build.hxml, else the first
       that builds JS, kept once picked): class paths (code, packages), --main, --js,
       includes, other options passed on; another target, --run, --next/--each, --cwd and
       libraries other than hotreload-hx refused on their line. Class paths go to the
@@ -166,16 +169,16 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       `-lib name:version` (the haxelib release, its haxelib.json and extraParams.hxml),
       downloaded once per browser into a shared cache (IndexedDB at /libcache), hashed and
       pinned. haxelib releases: haxelib-files.haxe.org once it allows it (haxelib#693,
-      opened), else the site's haxelib/ relay (serve.py; `hosting/` has an nginx mirror and
-      Apache lines for dev.whirlinggizmo.com, tested in a local nginx), else Project > Add
-      library zip. Git: jsDelivr (GitHub), GitLab's archive. The page test builds with
+      opened), else the site's haxelib/ relay (serve.py locally; `hosting/`'s nginx mirror on a
+      server), else Project > Add library zip…. Git: jsDelivr (GitHub), GitLab's archive. The page test builds with
       format 3.7.0 both ways. 2026-10-18.
 - [ ] Unpinned `-lib name`: the newest version needs haxelib's API (Haxe remoting on
       lib.haxe.org, no CORS); the mirror could pass it through. Until then it asks for a
       version or a lix file.
 - [ ] Add library… (by name and version) writing lix's file, so a project gets one without
       lix on the desktop.
-- [ ] Put the mirror on dev.whirlinggizmo.com (Rob's call): `hosting/README.md`.
+- [x] The mirror on dev.whirlinggizmo.com, with the page: `hosting/` (one nginx container
+      behind Apache). 2026-10-19.
 
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 
@@ -204,16 +207,11 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [x] The standard library in one download for the first build (web/std.json.gz, 0.5 MB,
       read from memory) instead of a request per file: the first build on dev went from
       ~23 s to ~3 s. 2026-10-19.
-- [ ] Outline, rename, find references (display/references): haxe-language-server's extras,
-      if wanted.
-
-- [ ] Port `haxe-language-server` (vshaxe; Haxe compiled to JS) to call the in-page
-      compiler instead of spawning a `haxe` process. The compiler's `--display` protocol
-      is the same binary, so the server's side is the only one that changes.
-- [ ] Connect it to the editor: `@codemirror/lsp-client`, or Monaco with
-      `monaco-languageclient` if the VS Code flavor of the protocol matters.
-- [ ] Without a resident compiler, limit it to diagnostics on save; completion on
-      keystrokes needs the warm server.
+- [ ] Outline, rename, find references (display/references, display/documentSymbols), the
+      same way.
+- Not planned: porting `haxe-language-server` (vshaxe) to call the in-page compiler and
+  connecting it with `@codemirror/lsp-client`. The direct route above does what the IDE
+  needs; the port would matter only for its extras (code actions, formatting).
 
 ## 7. WebAssembly (optional, for speed)
 
@@ -225,12 +223,14 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 ## 8. Hosting
 
-- [ ] A static page is the point: GitHub Pages or any file server, with the bundle
-      cached by the browser. If item 2's option A lands,
-      the host must send the cross-origin isolation headers; GitHub Pages can't, so
-      note that when choosing. (Std on demand turned out not to need them.)
-- [ ] A Docker image is the alternative shape for a team's shared instance, with the
-      real `haxe` behind it; same page, different compiler endpoint.
+- [x] On dev.whirlinggizmo.com/webide-hx/: `hosting/deploy.py` copies `web/` and the
+      service (nginx, with the haxelib mirror) to the server. 2026-10-19.
+- [x] A Docker image, `ghcr.io/whirlinggizmo/webide-hx` (public): the same site and mirror
+      in nginx, built from the repository by GitHub Actions on each push; `docker compose
+      up` at the top runs it. 2026-10-19.
+- [ ] GitHub Pages, or any static file server: `web/` as it is, with no special headers
+      (nothing needs cross-origin isolation). Without the mirror, haxelib releases come
+      from Add library zip… until haxelib#693.
 
 ## Known gaps, not planned
 
