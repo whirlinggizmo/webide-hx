@@ -41,8 +41,11 @@ changed.
       warms the reload build's cache at start. Reload builds: 69–82 ms in Brave, 93–116 ms
       in Firefox, from ~2.5–3 s. `node tests/resident.js` checks edits, a broken edit
       and its fix. 2026-10-18.
-- [ ] Memory over a long session: the server's cache grows; watch it, and use the
-      server's own GC task if it matters.
+- [x] Memory over a long session, measured (`node --expose-gc tests/memory.js`): 600 edits,
+      each an errors-as-you-type check, a reload build and a hover, took the heap from 271
+      to 281 MB (about 17 KB an edit) at a steady ~200 ms a cycle. Nothing to do; the
+      server's own GC task is there if a bigger project says otherwise. The runtime
+      itself is large from the start (~270 MB heap, ~780 MB process in node). 2026-10-19.
 - [x] Built from `4.3-js_of_ocaml` on Rob's fork instead of the 4.3.7 tag and a patch:
       the server skip-reason fix (haxe#13058), the case tables (haxe#13067), resident
       mode and the bytecode build, one commit each, on 4.3.7. The branch still builds a
