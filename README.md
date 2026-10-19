@@ -145,6 +145,12 @@ commands with their shortcuts (Undo, Redo, Cut, Copy, Paste, Select all, Find, R
 Go to line, Toggle comment, Indent, Outdent) and **Preferences**: the theme (the page's,
 the editor's and the program's frame), font size, tab width, tabs or spaces, wrapping,
 line numbers, folding, the current line, bracket matching and closing, kept per browser.
+**View** puts the running program in a window of its own (Program in a window), which
+can go on another screen and is remembered where it was; in a picture-in-picture window
+that stays on top (Chromium); or in a new tab. The program needs nothing from the editor
+but the service worker, so it hot-reloads wherever it is; a window the page opened also
+starts over when the project changes, and closing it brings the program back into the
+page. The editor's page has to stay open: it's the compiler.
 **Project** has Build
 (also the button, and Ctrl-S), Open folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's

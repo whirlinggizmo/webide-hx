@@ -122,6 +122,12 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       The same gap as noticing outside changes above; if it keeps biting, use directory
       handles directly for the folder instead of ZenFS's WebAccess.
 - [ ] Fix imports of a moved class in other files (needs the language server's view).
+- [x] The program out of the page (View): a window of its own (remembered where it was;
+      closing it brings the program back), picture-in-picture (Chromium; not tried yet:
+      headless can't open one), or a new tab. It works because the program only talks to
+      the service worker, which serves every client the same builds. 2026-10-18.
+- [ ] Place the program's window on a chosen screen (Window Management API, Chromium;
+      a permission prompt).
 - [ ] A context menu on the tree's files (Rename, Delete).
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).

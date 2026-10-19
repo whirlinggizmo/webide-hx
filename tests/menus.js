@@ -2,7 +2,8 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), Project > Build, every Edit item on the editor, Preferences (applied
+// with files and an empty one), View (the program in a window: it hot-reloads there, and
+// comes back when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
@@ -126,6 +127,41 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await sleep(300);
   step("an empty folder is deleted without asking", await ev("!$('dialog').open && !dirs.has('src/empty')"));
 
+  // ---- View: the program in a window of its own; it hot-reloads there; closing it brings
+  // it back into the page
+  await click(await box("#view-menu"));
+  await click(await box("#view-window"));
+  await sleep(2500);
+  var popup = null;
+  for (var w = 0; w < 20 && !popup; w++) {
+    popup = (await (await fetch("http://127.0.0.1:" + port + "/json")).json()).find(function (t) { return t.type === "page" && /\/run\/\?start=/.test(t.url); });
+    if (!popup) await sleep(250);
+  }
+  step("View > Program in a window opens it, and the page gives the editor its room", popup && await ev("document.body.classList.contains('program-out') && $('run').src === 'about:blank' && $('view-window').textContent === 'Program back in the page'"),
+       popup && popup.url);
+  if (popup) {
+    var pws = new WebSocket(popup.webSocketDebuggerUrl), pid = 0, pwait = new Map();
+    pws.onmessage = function (e) { var m = JSON.parse(e.data); if (m.id && pwait.has(m.id)) { pwait.get(m.id)(m.result || m); pwait.delete(m.id); } };
+    await new Promise(function (r) { pws.onopen = r; });
+    var pev = async function (x) { var r = await new Promise(function (res) { var i = ++pid; pwait.set(i, res); pws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression: x, returnByValue: true } })); }); return r.result ? r.result.value : undefined; };
+    await ev("(async () => { show('src/Hello.hx'); files['src/Hello.hx'] = files['src/Hello.hx'].replace(\"'$greeting, $name! (ticks\", \"'$greeting out there, $name! (ticks\"); await save(); })()");
+    var seen = false;
+    for (var w2 = 0; w2 < 40 && !seen; w2++) { seen = /out there/.test(await pev("document.getElementById('log').textContent") || ""); if (!seen) await sleep(250); }
+    step("an edit hot-reloads the program in its window", seen);
+    step("the window's place is kept for next time", !!(await ev("localStorage.getItem('haxe-in-browser-program-window')")));
+    pws.close();
+    // the project changing (a folder opened, a zip imported) starts the program over: in its window
+    var before = await ev("program.win.location.href");
+    await ev("startProgram()");
+    await sleep(500);
+    var after = await ev("program.win.location.href");
+    step("starting the program over starts it in its window", /start=/.test(after) && after !== before && await ev("$('run').src === 'about:blank'"), [before, after]);
+  }
+  await ev("program.win && program.win.close()");
+  await sleep(1500);
+  step("closing the window brings the program back into the page", await ev("!document.body.classList.contains('program-out') && /run\\/\\?start=/.test($('run').src) && program.kind === null"),
+       await ev("$('run').src"));
+
   // ---- Edit: each item on the editor
   await send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }).catch(function () {});
   var edit = async function (id) { await click(await box("#edit-menu")); await click(await box("#" + id)); await sleep(150); };
@@ -160,13 +196,14 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await edit("goto-line");
   step("Edit > Go to line… asks for a line", await ev("!!view.dom.querySelector('.cm-panel input') && document.activeElement.tagName === 'INPUT'"));
   await key("Escape");
+  await sleep(1500); // the program back in its frame, loaded
   // ---- Preferences: applied at once, kept for the next visit, Defaults
   await edit("preferences");
   step("Edit > Preferences… opens", await ev("$('prefs').open"));
   var setPref = async function (k, v) { await ev("(() => { const el = $('pref-" + k + "'); if (el.type === 'checkbox') el.checked = " + JSON.stringify(v) + "; else el.value = " + JSON.stringify(String(v)) + "; el.dispatchEvent(new Event('change')); })()"); };
   await setPref("fontSize", 18); await setPref("wrap", true); await setPref("lineNumbers", false); await setPref("theme", "dark"); await setPref("indent", "spaces");
   await shot("prefs");
-  var applied = "JSON.stringify({ font: getComputedStyle(view.contentDOM).fontSize, wrap: view.contentDOM.classList.contains('cm-lineWrapping'), numbers: !!view.dom.querySelector('.cm-lineNumbers'), theme: document.documentElement.dataset.theme || 'system', frame: $('run').contentDocument.documentElement.dataset.theme || 'system', dark: getComputedStyle(view.dom).backgroundColor})";
+  var applied = "JSON.stringify({ font: getComputedStyle(view.contentDOM).fontSize, wrap: view.contentDOM.classList.contains('cm-lineWrapping'), numbers: !!view.dom.querySelector('.cm-lineNumbers'), theme: document.documentElement.dataset.theme || 'system', frame: (program.doc() && program.doc().documentElement && program.doc().documentElement.dataset.theme) || 'system', dark: getComputedStyle(view.dom).backgroundColor})";
   var a1 = JSON.parse(await ev(applied));
   step("they apply at once: font, wrapping, line numbers, theme (the program's frame too)", a1.font === "18px" && a1.wrap && !a1.numbers && a1.theme === "dark" && a1.frame === "dark", a1);
   await ev("$('prefs-done').click()");
