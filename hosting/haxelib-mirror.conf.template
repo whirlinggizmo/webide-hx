@@ -24,7 +24,11 @@ server {
     location ~ ^/files/3\.0/[A-Za-z0-9_.+-]+-[0-9A-Za-z,+-]+\.zip$ {
         limit_req zone=haxelib_requests burst=20 nodelay;
 
-        proxy_pass https://haxelib-files.haxe.org;
+        # looked up as requests come, not when nginx starts: a failed lookup at start would
+        # stop nginx starting at all, and every site it serves with it
+        resolver 127.0.0.53 1.1.1.1 valid=300s ipv6=off;
+        set $haxelib_files https://haxelib-files.haxe.org;
+        proxy_pass $haxelib_files;
         proxy_set_header Host haxelib-files.haxe.org;
         proxy_ssl_server_name on;
         proxy_ssl_name haxelib-files.haxe.org;

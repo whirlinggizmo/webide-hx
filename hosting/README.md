@@ -50,4 +50,7 @@ and with releases added by hand (Project > Add library zip…).
 
 ## The page
 
-`web/` as it is after `build.py` (with `--hotreload`), copied to where `PAGE_DIR` says.
+`web/` as it is after `build.py` (with `--hotreload`), copied to where `PAGE_DIR` says:
+`python3 hosting/deploy.py dev:/var/www/dev.whirlinggizmo.com/haxe/` (rsync over ssh; the
+directory is the page's own, kept the same as `web/`). The page needs https: its service
+worker runs only on a secure page.
