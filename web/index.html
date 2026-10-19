@@ -1924,6 +1924,18 @@ async function test() {
   const t0 = performance.now();
   let before = await until(() => lastTicks(frameLog(), "Hello"), 15000);
   step("v1 runs", before, before);
+  // the program's output follows the end while you're at the end; scrolled up, it stays put
+  const fdoc = $("run").contentDocument, fpage = fdoc.scrollingElement, flog = fdoc.getElementById("log");
+  const atEnd = () => fpage.scrollTop + fpage.clientHeight >= fpage.scrollHeight - 4;
+  const more = (n) => { for (let i = 0; i < n; i++) flog.append("a test line " + i + "\n"); };
+  const settle = () => new Promise((r) => setTimeout(r, 50));
+  more(200); await settle();
+  const followed = atEnd();
+  fpage.scrollTop = 0; await settle(); more(20); await settle();
+  const stayed = fpage.scrollTop === 0;
+  fpage.scrollTop = fpage.scrollHeight; await settle(); more(20); await settle();
+  step("the program's output follows the end, and stays put when scrolled up", followed && stayed && atEnd(), { followed, stayed, atEnd: atEnd() });
+
   // an edit to the code: the message changes, the @:hot tick count carries on
   show("src/Hello.hx");
   files["src/Hello.hx"] = files["src/Hello.hx"].replace("'$greeting, $name! (ticks", "'$greeting again, $name! (ticks");

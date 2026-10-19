@@ -58,6 +58,15 @@ self.addEventListener("message", (e) => {
   if (port) port.postMessage({ ok: true, version: state.version, assetVersion: state.assetVersion });
 });
 
+// the program's page: its output follows the end while you're at the end (new lines keep you
+// there); scrolled up to read, it leaves you where you are
+const FOLLOW = "<script>(function () {" +
+  "var page = document.scrollingElement, atEnd = true;" +
+  "addEventListener('scroll', function () { atEnd = page.scrollTop + page.clientHeight >= page.scrollHeight - 4; });" +
+  "new MutationObserver(function () { if (atEnd) page.scrollTop = page.scrollHeight; })" +
+  ".observe(document.body, { childList: true, characterData: true, subtree: true });" +
+  "})();</script>";
+
 function scopePath() { return new URL(self.registration.scope).pathname; } // "/run/"
 
 function typeOf(path) {
@@ -134,7 +143,7 @@ self.addEventListener("fetch", (e) => {
       '<style>body{margin:0;font:13px/1.4 ui-monospace,monospace;background:#fff;color:#111}' +
       '@media (prefers-color-scheme: dark){:root:not([data-theme=light]) body{background:#111;color:#ddd}}:root[data-theme=dark] body{background:#111;color:#ddd}' +
       'pre{margin:8px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>' +
-      '<body><pre id="log"></pre><script src="' + state.name + '"></script></body></html>', "text/html"));
+      '<body><pre id="log"></pre>' + FOLLOW + '<script src="' + state.name + '"></script></body></html>', "text/html"));
     return;
   }
   if (rest === state.name) {
