@@ -191,7 +191,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       itself, Haxe's display protocol (--display with JSON) through the resident
       compiler, like a build (its options, the editor's unsaved text, its cache):
       completion (CodeMirror's, from display/completion), hover (display/hover), go to
-      definition (display/definition; Alt-B, Ctrl/Cmd-click; not F12 or Ctrl-B, which browsers keep). 10-40 ms each. The reply is
+      definition (display/definition; Alt-J, Ctrl/Cmd-click; not F12, Ctrl-B or Ctrl-D, which browsers keep). 10-40 ms each. The reply is
       the compiler's message, not its output; offsets are code points (bytes were wrong
       after non-ASCII text). 2026-10-19.
 - [x] Signature help while typing a call's arguments (display/signatureHelp), a tooltip

@@ -284,7 +284,7 @@ answers take tens of milliseconds:
 - **Completion**: after a `.`, as a name is typed, or on Ctrl-Space: fields, types, locals
   and keywords, each with its type, and its documentation beside the list.
 - **Hover**: a name's type and documentation.
-- **Go to definition**: Alt+B (Option+B on a Mac; browsers keep F12 and Ctrl+B for themselves), Ctrl/Cmd-click,
+- **Go to definition**: Alt+J (Option+J on a Mac; browsers keep F12, Ctrl+B and Ctrl+D for themselves), Ctrl/Cmd-click,
   or Edit > Go to definition: the file at the declaration, centred. One in the standard
   library or a library opens read-only, with a bar saying which (its × goes back), and
   hover and go to definition work in it too.

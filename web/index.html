@@ -133,7 +133,7 @@
         <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
         <button role="menuitem" id="replace">Replace…</button>
         <button role="menuitem" id="goto-line">Go to line…<kbd class="mod">Ctrl+Alt+G</kbd></button>
-        <button role="menuitem" id="goto-definition">Go to definition<kbd class="alt">Alt+B</kbd></button>
+        <button role="menuitem" id="goto-definition">Go to definition<kbd class="alt">Alt+J</kbd></button>
         <hr role="separator">
         <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
         <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
@@ -947,12 +947,13 @@ async function checkNow() {
   showDiagnostics(parseMessages(r.stderr).byFile);
 }
 
-// hover, and go to definition by Alt-B (browsers keep F12 for their DevTools, and Ctrl-B
-// for themselves too) or Ctrl/Cmd-click: what a library file opened to read has too
+// hover, and go to definition by Alt-J, "jump" (browsers keep F12, Ctrl-B and Ctrl-D for
+// themselves, and Firefox opens its menus by Alt and a letter, but not J) or Ctrl/Cmd-click:
+// what a library file opened to read has too
 function haxeNavigation(fileName) {
   return [
     haxeHover(fileName),
-    CM.keymap.of([{ key: "Alt-b", preventDefault: true, run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
+    CM.keymap.of([{ key: "Alt-j", preventDefault: true, run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
     CM.EditorView.domEventHandlers({
       mousedown(e, v) {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
