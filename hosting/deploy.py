@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """
-Copies play.html and what it needs (web/, as build.py made it) to a server's directory, with
-rsync over ssh, leaving out serve.py and test reports. The directory is the page's own:
-what's there and not in web/ is removed, so it refuses one that has something in it
-but no play.html.
+Puts webide-hx on a server, as a service of its own: the page (web/, as build.py made it,
+without serve.py and test reports) in the service directory's web/, with the service's
+docker-compose.yml and nginx.conf.template next to it, by rsync over ssh. With --up, it
+then starts (or updates) the container there. The directory is the service's own: what's
+in its web/ and not in web/ here is removed, so it refuses a directory with other things
+in it.
 
-    python3 hosting/deploy.py dev:/var/www/dev.whirlinggizmo.com/haxe/
+    python3 hosting/deploy.py dev:services/webide-hx [--up]
 """
 import os, subprocess, sys
 
@@ -13,19 +15,24 @@ WEB = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 
 
 
 def main():
-    if len(sys.argv) != 2 or ":" not in sys.argv[1]:
+    args = [a for a in sys.argv[1:] if a != "--up"]
+    if len(args) != 1 or ":" not in args[0]:
         sys.exit(__doc__)
-    target = sys.argv[1].rstrip("/") + "/"
-    host, path = target.split(":", 1)
+    host, path = args[0].split(":", 1)
+    path = path.rstrip("/")
     if not os.path.exists(os.path.join(WEB, "haxe.js")) or not os.path.exists(os.path.join(WEB, "hello", "files.json")):
         sys.exit("web/ isn't built: run build.py (with --hotreload) first")
-    # the directory must be empty or already the page's
-    check = subprocess.run(["ssh", host, f"test -d '{path}' && {{ test -z \"$(ls -A '{path}')\" || test -f '{path}play.html'; }}"])
+    # the directory must be new, empty, or already this service's
+    check = subprocess.run(["ssh", host, f"mkdir -p '{path}' && cd '{path}' && {{ test -z \"$(ls -A)\" || test -f nginx.conf.template; }}"])
     if check.returncode != 0:
-        sys.exit(f"{target}: not there, or it has other things in it (no play.html): not touching it")
+        sys.exit(f"{host}:{path}: it has other things in it: not touching it")
+    here = os.path.dirname(os.path.abspath(__file__))
+    subprocess.run(["rsync", "-az", os.path.join(here, "docker-compose.yml"), os.path.join(here, "nginx.conf.template"), f"{host}:{path}/"], check=True)
     subprocess.run(["rsync", "-az", "--delete", "--exclude", "serve.py", "--exclude", "report*.json", "--exclude", "__pycache__",
-                    WEB + "/", target], check=True)
-    print(f"copied web/ to {target}")
+                    WEB + "/", f"{host}:{path}/web/"], check=True)
+    print(f"copied the service and web/ to {host}:{path}")
+    if "--up" in sys.argv:
+        subprocess.run(["ssh", host, f"cd '{path}' && docker compose up -d"], check=True)
 
 
 if __name__ == "__main__":

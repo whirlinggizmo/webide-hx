@@ -1,0 +1,58 @@
+# The page at /webide-hx/ (play.html), and at /webide-hx/haxelib/files/3.0/ a caching mirror
+# of haxelib's release files: haxelib's file server doesn't let web pages read its zips, so
+# the page asks its own site, and this fetches each release from haxelib-files.haxe.org once
+# and keeps it. A release never changes, so a kept one is served for as long as it's kept
+# (ten years unused, 20 GB at most). Only release files: it isn't a general proxy.
+
+proxy_cache_path /var/cache/nginx/haxelib levels=1:2 keys_zone=haxelib:10m max_size=20g inactive=3650d use_temp_path=off;
+# per visitor, so one can't run the mirror's traffic up
+limit_req_zone $binary_remote_addr zone=haxelib_requests:10m rate=5r/s;
+
+server {
+    listen 80;
+    server_name _;
+    server_tokens off;
+    absolute_redirect off;   # behind another web server: redirects relative to where the browser is
+
+    # the visitor's address, as the site's web server passes it on
+    set_real_ip_from 127.0.0.1;
+    set_real_ip_from 172.16.0.0/12;
+    real_ip_header X-Forwarded-For;
+
+    location = /webide-hx {
+        return 301 /webide-hx/;
+    }
+
+    location /webide-hx/ {
+        alias /usr/share/nginx/webide-hx/;
+        index play.html;
+        # checked each time (cheaply, by ETag), so a deploy shows at once
+        add_header Cache-Control "no-cache" always;
+    }
+
+    location ~ ^/webide-hx/haxelib/files/3\.0/([A-Za-z0-9_.+-]+-[0-9A-Za-z,+-]+\.zip)$ {
+        limit_req zone=haxelib_requests burst=20 nodelay;
+
+        # looked up as requests come, not when nginx starts (a failed lookup at start would
+        # stop it starting); 127.0.0.11 is Docker's DNS
+        resolver 127.0.0.11 1.1.1.1 valid=300s ipv6=off;
+        set $haxelib_files https://haxelib-files.haxe.org;
+        proxy_pass $haxelib_files/files/3.0/$1;
+        proxy_set_header Host haxelib-files.haxe.org;
+        proxy_ssl_server_name on;
+        proxy_ssl_name haxelib-files.haxe.org;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+
+        proxy_cache haxelib;
+        proxy_cache_key $1;
+        proxy_cache_valid 200 3650d;
+        proxy_cache_valid 404 10m;       # a release that isn't there (yet): asked again later
+        proxy_cache_lock on;             # one fetch for many asking at once
+        proxy_ignore_headers Cache-Control Expires Set-Cookie;
+        proxy_hide_header Set-Cookie;
+
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        add_header X-Cache-Status $upstream_cache_status always;
+    }
+}

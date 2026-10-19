@@ -1,0 +1,18 @@
+# webide-hx on a server: one nginx container serving the page (web/, as build.py made it)
+# and a caching mirror of haxelib's releases, on this machine only (127.0.0.1:10081). The
+# site's own web server forwards /webide-hx/ to it (see README.md), so the page and the
+# mirror are one site to the browser.
+services:
+  webide-hx:
+    container_name: webide-hx
+    image: nginx:stable
+    restart: always
+    ports:
+      - "127.0.0.1:10081:80"   # not 10080: browsers refuse that port (testing it directly fails)
+    volumes:
+      - ./web:/usr/share/nginx/webide-hx:ro
+      - ./nginx.conf.template:/etc/nginx/templates/default.conf.template:ro
+      - haxelib-cache:/var/cache/nginx/haxelib
+
+volumes:
+  haxelib-cache:
