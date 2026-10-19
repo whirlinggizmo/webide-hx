@@ -42,7 +42,8 @@ consumer of it, not part of it.
   `~/keys/ca`, which Brave trusts). `python3 web/serve.py --tls` with those, then
   `https://192.168.1.200:8443/play.html?test`. `~/keys/localdev` is expired; don't use it.
 - The page's own test, headless: `python3 tests/page.py brave|firefox [PORT]` (serves web/,
-  runs play.html?test in a throwaway profile, prints the report, stops both by PID).
+  runs play.html?test in a throwaway profile, prints the report, stops both by PID). Its
+  library steps need the network: haxelib (through serve.py's relay) and jsDelivr.
 - Reloads: `node tests/reload.js PORT WEBCOPY`, against play.html served from a copy of
   `web/` (it changes the copy's `sw.js`): edits and new files survive a reload, and the
   page starts when a new service worker takes over from one holding long polls.

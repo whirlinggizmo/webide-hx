@@ -150,6 +150,7 @@
         <button role="menuitem" id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder…</button>
         <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
         <button role="menuitem" id="export">Export zip</button>
+        <button role="menuitem" id="add-library" title="a haxelib release's zip, from lib.haxe.org, for when the page can't download it">Add library zip…</button>
         <hr role="separator">
         <button role="menuitem" id="reset" title="back to the example, losing your changes">Reset to the example…</button>
       </div>
@@ -160,6 +161,7 @@
   <span class="status" id="status" role="status">starting</span>
   <span class="where" id="where"></span>
   <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
+  <input type="file" id="libfile" accept=".zip,application/zip" hidden>
   <div id="progress"><div></div></div>
 </header>
 <dialog id="prefs" aria-labelledby="prefs-title">
@@ -264,7 +266,10 @@ const project = {
   folder: null, // the open folder's handle; null when the project is the browser's
   path(name) { return this.root + "/" + name; },
   open() {
-    return FS.configure({ mounts: { "/browser": { backend: FS.IndexedDB, storeName: TESTING ? "haxe-in-browser-test-project" : "haxe-in-browser-project" } } });
+    return FS.configure({ mounts: {
+      "/browser": { backend: FS.IndexedDB, storeName: TESTING ? "haxe-in-browser-test-project" : "haxe-in-browser-project" },
+      [LIBCACHE]: { backend: FS.IndexedDB, storeName: TESTING ? "haxe-in-browser-test-libraries" : "haxe-in-browser-libraries" },
+    } });
   },
   async useFolder(handle) {
     const mounted = await FS.resolveMountConfig({ backend: FS.WebAccess, handle });
@@ -439,15 +444,18 @@ async function serviceWorker() {
 // project's). What the page can't do is refused, on the hxml's line: another target,
 // --run, --next, --each, --cwd, and a library other than hotreload-hx, which the page
 // has built in; --cmd and the compilation server's options are left out
-const DEFAULT_BUILD = { file: null, cps: ["src"], main: "Main", out: "out/hello.js", args: ["-cp", "/static/src", "--main", "Main"], error: null };
+const DEFAULT_BUILD = { file: null, cps: ["src"], main: "Main", out: "out/hello.js", args: ["-cp", "/static/src", "--main", "Main"], libs: [], libArgs: [], error: null };
 const LIBRARIES = { "hotreload-hx": HOTRELOAD, "hotreload": HOTRELOAD };
 const OTHER_TARGETS = ["--cpp", "--cppia", "--hl", "--neko", "--php", "--python", "--lua", "--java", "--jvm", "--cs", "--swf", "--as3", "--interp", "--xml"];
 const LEFT_OUT = ["--cmd", "--connect", "--wait", "--server-listen", "--server-connect", "--display"];
 const unquote = (t) => /^".*"$|^'.*'$/.test(t) ? t.slice(1, -1) : t;
 function parseHxml(file) {
-  const cfg = { file, cps: [], main: null, out: null, args: [], libs: [], error: null };
+  const cfg = { file, cps: [], main: null, out: null, args: [], libs: [], libArgs: [], error: null };
+  const seenLibs = new Set();
   const fail = (at, message) => { if (!cfg.error) cfg.error = { file: at.file, line: at.line, message }; };
-  const read = (f, at, stack) => {
+  // a library's own hxml (lix's haxe_libraries/<name>.hxml) is read the same way, but its
+  // class paths are the library's (in the cache), not the project's
+  const read = (f, at, stack, lib) => {
     if (stack.includes(f)) return fail(at, `${f} includes itself`);
     if (!(f in files) || !isText(files[f])) return fail(at, `there's no ${f} in the project`);
     files[f].split(/\r?\n/).forEach((raw, i) => {
@@ -457,11 +465,13 @@ function parseHxml(file) {
       let opt = l, arg = null;
       if (l.startsWith("-")) { const sp = l.search(/\s/); if (sp >= 0) { opt = l.slice(0, sp); arg = unquote(l.slice(sp).trim()); } }
       else opt = unquote(l);
+      if (lib && arg !== null) arg = arg.replace(/\$\{HAXE_LIBCACHE\}|\$HAXE_LIBCACHE\b/g, LIBCACHE);
       const long = opt.startsWith("--") ? opt : "-" + opt;
       if (!opt.startsWith("-")) {
-        if (opt.endsWith(".hxml")) read(opt, here, stack.concat([f]));
+        if (opt.endsWith(".hxml")) read(opt, here, stack.concat([f]), lib);
         else cfg.args.push(opt); // a class to compile
-      } else if (long === "--js") cfg.out = arg;
+      } else if (long === "--js" && !lib) cfg.out = arg;
+      else if ((long === "--class-path" || long === "--cp" || opt === "-p") && lib) cfg.args.push(opt, arg);
       else if (long === "--class-path" || long === "--cp" || opt === "-p") {
         // absolute for the compiler: the compilation server doesn't see edits to files it
         // found on a relative class path
@@ -469,11 +479,21 @@ function parseHxml(file) {
         cfg.cps.push(cp);
         cfg.args.push(opt, arg.startsWith("/") ? arg : "/static/" + cp);
       }
-      else if (long === "--main" || opt === "-m") { cfg.main = arg; cfg.args.push(opt, arg); }
+      else if ((long === "--main" || opt === "-m") && !lib) { cfg.main = arg; cfg.args.push(opt, arg); }
       else if (long === "--library" || long === "--lib" || opt === "-L") {
-        const name = (arg || "").split(":")[0];
-        if (!LIBRARIES[name]) fail(here, `-lib ${name}: the page has no haxelib; of libraries, it has hotreload-hx only`);
-        else if (!cfg.libs.includes(name)) cfg.libs.push(name);
+        const [name, version] = (arg || "").split(":");
+        if (LIBRARIES[name] || seenLibs.has(name)) return; // the page's own, or had already
+        seenLibs.add(name);
+        const lix = `haxe_libraries/${name}.hxml`;
+        if (lix in files) {
+          // lix: where it comes from, then its hxml
+          const m = /^#\s*@install:\s*lix\s+(?:--silent\s+)?download\s+"([^"]+)"\s+into\s+(\S+)/m.exec(files[lix]);
+          if (!m) return fail({ file: lix, line: 1 }, `${lix} has no "# @install: lix download ... into ..." line, so the page can't tell where ${name} comes from`);
+          cfg.libs.push({ name, source: m[1], dir: m[2], at: { file: lix, line: files[lix].slice(0, m.index).split("\n").length } });
+          read(lix, here, stack.concat([f]), true);
+        } else if (version) {
+          cfg.libs.push({ name, version, source: `haxelib:/${name}#${version}`, dir: `${name}/${version}/haxelib`, at: here, haxelib: true });
+        } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml`);
       }
       else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
       else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: the page builds JavaScript (--js)`);
@@ -482,7 +502,7 @@ function parseHxml(file) {
       else if (!LEFT_OUT.includes(long)) cfg.args.push(...(arg === null ? [opt] : [opt, arg]));
     });
   };
-  read(file, { file, line: 1 }, []);
+  read(file, { file, line: 1 }, [], false);
   if (!cfg.error && !cfg.out) fail({ file, line: 1 }, `${file} doesn't build JavaScript: it has no --js`);
   if (!cfg.cps.length) { cfg.cps.push(""); cfg.args.push("-cp", "/static"); }
   return cfg;
@@ -518,13 +538,165 @@ function classPathOf(name) {
 }
 const outPath = (cfg) => cfg.out.startsWith("/") ? cfg.out : "/static/" + cfg.out;
 
+// ---- libraries (-lib). hotreload-hx comes with the page. Any other is read as lix does,
+// when the project has haxe_libraries/<name>.hxml (an "@install" line saying where it comes
+// from, then hxml, ${HAXE_LIBCACHE} standing for the library cache), or else as haxelib
+// would, from -lib name:version (that haxelib release, its haxelib.json for the class path
+// and dependencies, its extraParams.hxml). A library is downloaded once per browser, into a
+// cache every project shares (IndexedDB, mounted at /libcache), and the compiler gets its
+// files there. Where from:
+//   haxelib:/name#version         haxelib-files.haxe.org if it lets pages read it, else
+//                                 this site's haxelib/ (serve.py's relay, or a server set
+//                                 up like it), else a zip the person adds (Project menu)
+//   gh://github.com/o/r#ref       jsDelivr, file by file (a page can't read GitHub's zips)
+//   gitlab://gitlab.com/o/r#ref   GitLab's archive
+//   https://...                   a zip, as it is
+// What's downloaded is hashed the first time; a different download later is refused
+const LIBCACHE = "/libcache";
+const HAXELIB_FILES = "https://haxelib-files.haxe.org/files/3.0/";
+const libHashesKey = "haxe-in-browser-library-hashes" + (TESTING ? "-test" : "");
+const libFiles = new Map(); // a library's dir -> its files the compiler gets {"/libcache/...": text}
+class LibraryError extends Error { constructor(message, at) { super(message); this.at = at; } }
+const libPath = (dir, rel = "") => LIBCACHE + "/" + dir + (rel ? "/" + rel : "");
+async function libHas(dir) {
+  try { await FS.fs.promises.stat(libPath(dir, ".haxe-in-browser.json")); return true; } catch (e) { return false; }
+}
+async function sha256(chunks) {
+  const all = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.length; }
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", all))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+// a zip's files, from its root: where haxelib.json is (a haxelib release), or else inside
+// the one folder everything is in (an archive of a repo)
+function zipFiles(bytes, haxelib) {
+  const entries = FS.unzipSync(bytes), names = Object.keys(entries).filter((n) => !n.endsWith("/"));
+  let root = "";
+  const meta = names.filter((n) => n === "haxelib.json" || n.endsWith("/haxelib.json")).sort((a, b) => a.split("/").length - b.split("/").length)[0];
+  if (haxelib && meta) root = meta.slice(0, -"haxelib.json".length);
+  else if (names.length && names.every((n) => n.includes("/") && n.split("/")[0] === names[0].split("/")[0])) root = names[0].split("/")[0] + "/";
+  const out = {};
+  for (const n of names) if (n.startsWith(root)) out[n.slice(root.length)] = entries[n];
+  return out;
+}
+async function fetchBytes(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+// a library's files, from where its source says, and a hash of what came
+async function downloadLibrary(lib) {
+  const src = lib.source;
+  let m;
+  if ((m = /^haxelib:\/([^#]+)#(.+)$/.exec(src))) {
+    const file = `${m[1]}-${m[2].replace(/\./g, ",")}.zip`;
+    const tried = [];
+    for (const url of [HAXELIB_FILES + file, new URL("haxelib/files/3.0/" + file, location.href).href]) {
+      try { const bytes = await fetchBytes(url); return { files: zipFiles(bytes, true), hash: await sha256([bytes]), from: url }; }
+      catch (e) { tried.push(url); }
+    }
+    throw new LibraryError(`${m[1]} ${m[2]}: the page couldn't download it (haxelib doesn't let pages read its files, and this site has no haxelib relay). Download it from https://lib.haxe.org/p/${m[1]}/${m[2]}/download/ and add it with Project > Add library zip…`, lib.at);
+  }
+  if ((m = /^gh:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?#(.+)$/.exec(src))) {
+    const [, owner, repo, ref] = m;
+    const listing = await (await fetch(`https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${ref}?structure=flat`)).json().catch(() => null);
+    if (!listing || !listing.files) throw new LibraryError(`${lib.name}: jsDelivr has no ${owner}/${repo} at ${ref}`, lib.at);
+    const wanted = listing.files.filter((f) => f.size <= 4 << 20), files = {};
+    for (let i = 0; i < wanted.length; i += 8)
+      await Promise.all(wanted.slice(i, i + 8).map(async (f) => {
+        // jsDelivr won't serve some kinds of file (a .bat, say): fine, unless the compiler needs it
+        try { files[f.name.slice(1)] = await fetchBytes(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}${f.name}`); }
+        catch (e) { if (/\.(hx|hxml|json)$/.test(f.name)) throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); }
+      }));
+    const names = Object.keys(files).sort();
+    return { files, hash: await sha256(names.flatMap((n) => [new TextEncoder().encode(n + "\0"), files[n]])), from: `jsDelivr (${owner}/${repo}@${ref})` };
+  }
+  if ((m = /^gitlab:\/\/gitlab\.com\/([^#]+)#(.+)$/.exec(src))) {
+    const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(m[1])}/repository/archive.zip?sha=${encodeURIComponent(m[2])}`;
+    const bytes = await fetchBytes(url).catch((e) => { throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); });
+    return { files: zipFiles(bytes, false), hash: await sha256([bytes]), from: url };
+  }
+  if (/^https:\/\//.test(src)) {
+    const bytes = await fetchBytes(src).catch((e) => { throw new LibraryError(`${lib.name}: ${e.message} (or the server doesn't let pages read it)`, lib.at); });
+    return { files: zipFiles(bytes, false), hash: await sha256([bytes]), from: src };
+  }
+  throw new LibraryError(`${lib.name}: the page can't download from ${src}`, lib.at);
+}
+// files into the cache, the hash checked against the first download's
+async function storeLibrary(lib, got) {
+  let hashes = {};
+  try { hashes = JSON.parse(localStorage.getItem(libHashesKey)) || {}; } catch (e) {}
+  if (hashes[lib.source] && hashes[lib.source] !== got.hash)
+    throw new LibraryError(`${lib.name}: what was downloaded (${got.from}) isn't what was downloaded before for ${lib.source}; refused`, lib.at);
+  for (const [rel, data] of Object.entries(got.files)) {
+    const p = libPath(lib.dir, rel);
+    await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
+    await FS.fs.promises.writeFile(p, data);
+  }
+  await FS.fs.promises.writeFile(libPath(lib.dir, ".haxe-in-browser.json"), JSON.stringify({ source: lib.source, from: got.from, sha256: got.hash, files: Object.keys(got.files).length }));
+  hashes[lib.source] = got.hash;
+  try { localStorage.setItem(libHashesKey, JSON.stringify(hashes)); } catch (e) {}
+}
+async function libText(dir, rel) {
+  try { return new TextDecoder().decode(await FS.fs.promises.readFile(libPath(dir, rel))); } catch (e) { return null; }
+}
+// every library the build needs in the cache (downloaded if not), the options the haxelib
+// ones add (a lix one's are in its hxml), and their dependencies; sets cfg.libArgs and
+// cfg.libDirs
+async function prepareLibraries(cfg) {
+  const queue = cfg.libs.slice(), done = new Set(), args = [], dirs = [];
+  while (queue.length) {
+    const lib = queue.shift();
+    if (done.has(lib.dir)) continue;
+    done.add(lib.dir); dirs.push(lib.dir);
+    if (!(await libHas(lib.dir))) {
+      status(`${lib.name}: downloading (${lib.source})`);
+      await storeLibrary(lib, await downloadLibrary(lib));
+    }
+    if (!lib.haxelib) continue;
+    let meta = {};
+    try { meta = JSON.parse(await libText(lib.dir, "haxelib.json") || "{}"); } catch (e) {}
+    const cp = (meta.classPath || "").replace(/^\.?\/?/, "").replace(/\/+$/, "");
+    args.push("-cp", libPath(lib.dir, cp), "-D", `${lib.name}=${lib.version}`);
+    // its extraParams.hxml: options only, a line each
+    for (const line of (await libText(lib.dir, "extraParams.hxml") || "").split(/\r?\n/)) {
+      const l = line.trim();
+      if (!l || l.startsWith("#") || !l.startsWith("-")) continue;
+      const sp = l.search(/\s/);
+      args.push(...(sp < 0 ? [l] : [l.slice(0, sp), unquote(l.slice(sp).trim())]));
+    }
+    for (const [dep, v] of Object.entries(meta.dependencies || {})) {
+      if (LIBRARIES[dep] || cfg.libs.some((x) => x.name === dep)) continue;
+      if (!v) throw new LibraryError(`${lib.name} ${lib.version} needs ${dep}, with no version: pin one in the hxml (-lib ${dep}:1.2.3)`, lib.at);
+      queue.push({ name: dep, version: v, source: `haxelib:/${dep}#${v}`, dir: `${dep}/${v}/haxelib`, at: lib.at, haxelib: true });
+    }
+  }
+  cfg.libArgs = args;
+  cfg.libDirs = dirs;
+}
+// a library's .hx files for the compiler (read from the cache once a session)
+async function librarySources(dir) {
+  if (libFiles.has(dir)) return libFiles.get(dir);
+  const out = {}, fsp = FS.fs.promises;
+  const walk = async (rel) => {
+    for (const e of await fsp.readdir(libPath(dir, rel), { withFileTypes: true })) {
+      const r = rel ? rel + "/" + e.name : e.name;
+      if (e.isDirectory()) await walk(r);
+      else if (/\.(hx|hxml|json)$/.test(e.name)) out[libPath(dir, r)] = new TextDecoder().decode(await fsp.readFile(libPath(dir, r)));
+    }
+  };
+  await walk("");
+  libFiles.set(dir, out);
+  return out;
+}
+
 function buildArgs(reload) {
   // -debug, with the map inside the bundle and the sources inside the map: DevTools loads
   // a map over the network itself, past the service worker, and the .hx files live only
   // in the compiler's in-memory filesystem (-D source-map-inline: the fork's Haxe, and
   // proposed upstream)
   const cfg = buildConfig();
-  const args = HOTRELOAD.concat(cfg.args, ["-D", "hotreload", "-debug", "-D", "source-map-inline", "-D", "source-map-content", "--js", outPath(cfg)]);
+  const args = HOTRELOAD.concat(cfg.args, cfg.libArgs || [], ["-D", "hotreload", "-debug", "-D", "source-map-inline", "-D", "source-map-content", "--js", outPath(cfg)]);
   if (reload) args.push("-D", "hotreload_reload");
   return args;
 }
@@ -610,9 +782,20 @@ async function build() {
     try { return await startProgram(); } finally { restarting = false; }
   }
   builtWith = configMemo.key;
-  // a build file the page can't use: said on its line, as the compiler's errors are
-  if (cfg.error) {
-    const e = cfg.error;
+  // the libraries it uses, downloaded if they aren't yet; their files for the compiler
+  let libError = null;
+  if (!cfg.error && cfg.libs.length) {
+    try {
+      await prepareLibraries(cfg);
+      for (const dir of cfg.libDirs) Object.assign(sources, await librarySources(dir));
+    } catch (e) {
+      libError = { file: e.at ? e.at.file : cfg.file, line: e.at ? e.at.line : 1, message: e.message };
+    }
+  }
+  // a build file the page can't use, or a library it can't get: said on its line, as the
+  // compiler's errors are
+  if (cfg.error || libError) {
+    const e = cfg.error || libError;
     showDiagnostics(new Map([[e.file, [{ line: e.line, from: null, to: null, lastLine: null, severity: "error", message: e.message }]]]));
     status(`build failed: ${e.file} can't be built here`);
     out(`${e.file}:${e.line}: ${e.message}`);
@@ -1351,6 +1534,27 @@ $("zipfile").onchange = () => attempt(async () => {
                          ok: "Import", danger: !project.folder })) return;
   return importZip(new Uint8Array(await file.arrayBuffer()));
 });
+// a haxelib release's zip, added by hand to the library cache (as -lib name:version and
+// lix's haxelib: entries expect it), for when the page can't download it
+async function addLibraryZip(bytes) {
+  const files = zipFiles(bytes, true);
+  let meta = null;
+  try { meta = JSON.parse(new TextDecoder().decode(files["haxelib.json"])); } catch (e) {}
+  if (!meta || !meta.name || !meta.version) throw new Error("that zip has no haxelib.json with a name and version: is it a haxelib release?");
+  const lib = { name: meta.name, version: meta.version, source: `haxelib:/${meta.name}#${meta.version}`, dir: `${meta.name}/${meta.version}/haxelib` };
+  await storeLibrary(lib, { files, hash: await sha256([bytes]), from: "a zip added by hand" });
+  libFiles.delete(lib.dir);
+  status(`${meta.name} ${meta.version} added to the libraries`);
+  return lib;
+}
+$("add-library").onclick = () => $("libfile").click();
+$("libfile").onchange = () => attempt(async () => {
+  const file = $("libfile").files[0];
+  $("libfile").value = "";
+  if (!file) return;
+  await addLibraryZip(new Uint8Array(await file.arrayBuffer()));
+  return build();
+});
 $("export").onclick = () => {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([exportZip()], { type: "application/zip" }));
@@ -1547,6 +1751,64 @@ async function test() {
   step("Build file: none builds src/ with Main", hn.ok && buildConfig().file === null && $("where").textContent.includes("src/, Main"), hn.ok ? null : hn.r.stderr);
   localStorage.removeItem(buildChoiceKey());
   await build();
+
+  // ---- libraries: a haxelib release, pinned in the hxml (through serve.py's relay, since
+  // haxelib doesn't let pages read its files); the same library pinned to a GitHub commit
+  // by lix's haxe_libraries file (through jsDelivr); what can't be had, said on its line
+  const base = files["web-build.hxml"], hello0 = files["src/Hello.hx"];
+  // the Adler-32 of "abc" is 0x024d0127
+  await newFile("src/UsesFormat.hx", "class UsesFormat {\n\tpublic static function check():Bool {\n\t\tvar a = new format.tools.Adler32();\n\t\ta.update(haxe.io.Bytes.ofString(\"abc\"), 0, 3);\n\t\tvar expected = haxe.io.Bytes.alloc(4);\n\t\texpected.set(0, 0x02); expected.set(1, 0x4d); expected.set(2, 0x01); expected.set(3, 0x27);\n\t\treturn a.equals(format.tools.Adler32.read(new haxe.io.BytesInput(expected)));\n\t}\n}\n");
+  show("web-build.hxml");
+  files["web-build.hxml"] = base + "-lib format:3.7.0\n";
+  await save();
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = hello0.replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); say("adler " + UsesFormat.check());');
+  const lb = await save();
+  step("-lib format:3.7.0: downloaded (haxelib, through this site's relay) and built with", lb.ok && await until(() => frameLog().includes("adler true"), 15000),
+       lb.ok ? frameLog().split("\n").slice(-2) : lb.r.stderr);
+  const relayed = () => performance.getEntriesByType("resource").filter((e) => e.name.includes("/haxelib/files/3.0/format-3,7,0.zip")).length;
+  await build();
+  step("once: the next build has it from the library cache", relayed() === 1 && await libHas("format/3.7.0/haxelib"), relayed());
+  // lix: the same library, pinned to a commit, from GitHub through jsDelivr
+  const sha = "775a06f0a7aa64cbd060b5c3ba62f65d7fed684a";
+  await newFile("haxe_libraries/format.hxml", `# @install: lix --silent download "gh://github.com/HaxeFoundation/format#${sha}" into format/3.7.0/github/${sha}\n-cp \${HAXE_LIBCACHE}/format/3.7.0/github/${sha}/\n-D format=3.7.0\n`);
+  show("web-build.hxml");
+  files["web-build.hxml"] = base + "-lib format\n";
+  const lx = await save();
+  // a changed build file starts the program over; an edit then reloads it, which says the check again
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace('say("adler " + UsesFormat.check());', 'say("adler again " + UsesFormat.check());');
+  const lx2 = await save();
+  step("-lib format with lix's haxe_libraries/format.hxml: the GitHub commit, through jsDelivr", lx.ok && lx2.ok && await libHas(`format/3.7.0/github/${sha}`)
+       && await until(() => frameLog().includes("adler again true"), 15000), lx.ok ? (lx2.ok ? frameLog().split("\n").slice(-3) : lx2.r.stderr) : lx.r.stderr);
+  const marker = JSON.parse(await libText(`format/3.7.0/github/${sha}`, ".haxe-in-browser.json"));
+  step("and says where it came from", /jsDelivr/.test(marker.from) && marker.files > 100, marker);
+  // what can't be had: on its line
+  files["web-build.hxml"] = base + "-lib nosuchlib\n";
+  const nv = await save();
+  const nvd = diagnostics.get("web-build.hxml") || [];
+  step("-lib without a version, nor a lix file: asked to pin one, on its line", !nv.ok && nvd.length === 1 && /which version/.test(nvd[0].message), nvd);
+  files["web-build.hxml"] = base + "-lib nosuchlib:9.9.9\n";
+  const nd = await save();
+  step("a release that can't be downloaded: said, with what to do", !nd.ok && /couldn't download it.*Add library zip/.test((diagnostics.get("web-build.hxml") || [{}])[0].message || ""),
+       (diagnostics.get("web-build.hxml") || [{}])[0].message);
+  // the hash: a different download for the same source is refused
+  const pinned = await storeLibrary({ name: "x", source: "haxelib:/format#3.7.0", dir: "x/0/test", at: null }, { files: {}, hash: "something else", from: "a test" }).then(() => "stored", (e) => e.message);
+  step("a download that isn't what was had before is refused", /refused/.test(pinned), pinned);
+  // a release added by hand, as when the page can't download it
+  const zip = new Uint8Array(await (await fetch("haxelib/files/3.0/format-3,7,0.zip")).arrayBuffer());
+  const added = await addLibraryZip(zip);
+  step("Add library zip: a haxelib release, into the library cache", added.dir === "format/3.7.0/haxelib" && await libHas(added.dir), added.dir);
+  // back as it was
+  await deleteFolder("haxe_libraries");
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = hello0;
+  await save();
+  await deleteFile("src/UsesFormat.hx");
+  show("web-build.hxml");
+  files["web-build.hxml"] = base;
+  const back2 = await save();
+  step("and back without libraries", back2.ok, back2.ok ? null : back2.r.stderr);
 
   // ---- the project is kept: what the browser's store holds is what the page has
   await flushWrites();

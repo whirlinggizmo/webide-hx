@@ -162,10 +162,20 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       libraries other than hotreload-hx refused on their line. Class paths go to the
       compiler absolute (/static/...): through a relative one, the resident compiler
       didn't see edits (worth a look in the server's file checks). 2026-10-18.
-- [ ] Libraries (-lib): no haxelib in the page. lib.haxe.org's zips and GitHub's archives
-      send no CORS headers, so a static page can't fetch them; serve.py could proxy them,
-      or a library could come from jsDelivr (GitHub repos, with CORS), or from a lix-style
-      `haxe_libraries/<name>.hxml` with the library in the project.
+- [x] Libraries: lix's `haxe_libraries/<name>.hxml` (its @install source, its hxml) or
+      `-lib name:version` (the haxelib release, its haxelib.json and extraParams.hxml),
+      downloaded once per browser into a shared cache (IndexedDB at /libcache), hashed and
+      pinned. haxelib releases: haxelib-files.haxe.org once it allows it (haxelib#693,
+      opened), else the site's haxelib/ relay (serve.py; `hosting/` has an nginx mirror and
+      Apache lines for dev.whirlinggizmo.com, tested in a local nginx), else Project > Add
+      library zip. Git: jsDelivr (GitHub), GitLab's archive. The page test builds with
+      format 3.7.0 both ways. 2026-10-18.
+- [ ] Unpinned `-lib name`: the newest version needs haxelib's API (Haxe remoting on
+      lib.haxe.org, no CORS); the mirror could pass it through. Until then it asks for a
+      version or a lix file.
+- [ ] Add library… (by name and version) writing lix's file, so a project gets one without
+      lix on the desktop.
+- [ ] Put the mirror on dev.whirlinggizmo.com (Rob's call): `hosting/README.md`.
 
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 

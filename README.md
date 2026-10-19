@@ -202,7 +202,37 @@ being used). With none, it's `src/` and the class `Main`. The example builds fro
   but hotreload-hx (the page has no haxelib); `--cmd` and the compilation server's options
   are left out.
 
+`serve.py` relays haxelib releases while it listens on this machine only (`--haxelib-relay
+on` when it listens on the network, as with `--tls`), keeping them in `build/haxelib-cache`.
+
 Saving an hxml builds, starting the program over when what's built changed.
+
+### Libraries
+
+`-lib` works for libraries the page can download, kept in the browser's storage and shared
+by every project in it (each version downloaded once):
+
+- **lix's way**: with `haxe_libraries/<name>.hxml` in the project, its `# @install:` line says
+  where the library comes from and the rest is read as hxml (`${HAXE_LIBCACHE}` is the
+  page's library cache). A project set up with lix works as it is, and one set up in the page
+  works with lix.
+- **haxelib's way**: `-lib name:version`, that release, with its `haxelib.json` (class path,
+  dependencies, which need versions too) and `extraParams.hxml`. A `-lib` with neither a
+  version nor a lix file is refused, asking for one: the page can't ask haxelib for the
+  newest.
+
+Where from:
+
+| Source | How |
+|---|---|
+| `haxelib:/name#1.2.3`, `-lib name:1.2.3` | haxelib-files.haxe.org, if it ever lets pages read it (HaxeFoundation/haxelib#693); else this site's `haxelib/` relay (`serve.py`, or the mirror in `hosting/`); else a zip you download from lib.haxe.org and add with Project > Add library zip… |
+| `gh://github.com/owner/repo#commit` | jsDelivr, file by file: works on any hosting |
+| `gitlab://gitlab.com/owner/repo#ref` | GitLab's archive |
+| `https://…` | a zip, as it is |
+
+The first download of each is hashed; a later one that differs (the cache cleared, say) is
+refused rather than used. hotreload-hx is the page's own and needs none of this. Libraries
+that need native code or tools at build time won't work in the page.
 
 `?test` uses stores of its own, and a directory in the browser's private file system
 (OPFS) for the folder steps.
