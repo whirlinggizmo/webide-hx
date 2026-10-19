@@ -35,7 +35,7 @@
   .items[hidden] { display: none; }
   .items button { border: 0; border-radius: 0; text-align: left; padding: 5px 14px; background: transparent; }
   .items button:hover, .items button:focus-visible, .items button:focus { background: var(--hover); outline: none; }
-  .items button:disabled { color: var(--muted); background: transparent; cursor: default; }
+  .items button:disabled, .items button[aria-disabled="true"] { color: var(--muted); background: transparent; cursor: default; }
   .items hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
   .items button { display: flex; gap: 24px; }
   .items kbd { margin-left: auto; font: inherit; font-size: 12px; color: var(--muted); }
@@ -152,7 +152,7 @@
         <button role="menuitem" id="build-item">Build<kbd class="mod">Ctrl+S</kbd></button>
         <button role="menuitem" id="build-file" title="which of the project's hxml files the page builds from">Build file…</button>
         <hr role="separator">
-        <button role="menuitem" id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder…</button>
+        <button role="menuitem" id="folder">Open folder (local)…</button>
         <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
         <button role="menuitem" id="export">Export zip</button>
         <button role="menuitem" id="add-library" title="a haxelib release's zip, from lib.haxe.org, for when the page can't download it">Add library zip…</button>
@@ -1464,12 +1464,24 @@ async function switchTo(loaded) {
 }
 function showWhere() {
   const cfg = buildConfig();
-  $("where").textContent = (project.folder ? "folder: " + project.folder.name : "kept in this browser") + " · " + (cfg.file || "src/, Main");
-  $("folder").textContent = project.folder ? "Close folder" : reopen ? `Reopen ${reopen.name}…` : "Open folder…";
-  $("folder").hidden = !project.folder && !reopen && !("showDirectoryPicker" in window);
+  $("where").textContent = (project.folder ? "local folder: " + project.folder.name : "kept in this browser") + " · " + (cfg.file || "src/, Main");
+  $("folder").textContent = project.folder ? "Close folder (local)" : reopen ? `Reopen ${reopen.name} (local)…` : "Open folder (local)…";
+  // always shown; where the browser can't open folders, greyed, saying why and how to have it
+  const can = !!project.folder || !!reopen || folderPicker();
+  $("folder").setAttribute("aria-disabled", String(!can));
+  $("folder").title = can ? FOLDER_ABOUT + " The browser asks first." : FOLDER_ABOUT + " " + folderUnavailable();
   $("reset").hidden = !!project.folder;
 }
 let reopen = null; // a folder from the last visit, waiting for the person's permission
+// Open folder (local): the File System Access API, which only Chromium browsers have, and
+// which Brave turns off unless its flag is on
+const FOLDER_ABOUT = "Work on a folder on this computer: edits, new files and deletes happen in it, so other editors and git see them.";
+const folderPicker = () => "showDirectoryPicker" in window;
+function folderUnavailable() {
+  return navigator.brave
+    ? "Brave turns this off: enable chrome://flags/#file-system-access-api (brave://flags works too), then restart Brave."
+    : "This browser can't open folders for a page (the File System Access API): Chrome and Edge can, and Brave with chrome://flags/#file-system-access-api.";
+}
 async function openFolder(handle) {
   await flushWrites();
   await project.useFolder(handle);
@@ -1736,6 +1748,8 @@ $("reset").onclick = () => attempt(async () => {
   location.reload();
 });
 $("folder").onclick = () => attempt(async () => {
+  if ($("folder").getAttribute("aria-disabled") === "true")
+    return askPerson({ title: "Open folder (local)", text: FOLDER_ABOUT + " " + folderUnavailable(), ok: "OK" });
   if (project.folder) return closeFolder();
   if (reopen) {
     if (await reopen.requestPermission({ mode: "readwrite" }) !== "granted") return;
@@ -2134,7 +2148,7 @@ async function test() {
   step("Open folder: its files, without hidden files and build outputs", of.ok &&
        JSON.stringify(names()) === JSON.stringify(["assets/greeting.txt", "notes/readme.md", "src/Hello.hx", "src/Main.hx"]), names());
   step("the folder's program runs", await until(() => lastTicks(frameLog(), "Hey from the folder"), 15000), frameLog().split("\n").slice(-2));
-  step("Reset is hidden for a folder", $("reset").hidden && $("folder").textContent === "Close folder");
+  step("Reset is hidden for a folder", $("reset").hidden && $("folder").textContent === "Close folder (local)");
   show("src/Hello.hx");
   files["src/Hello.hx"] = files["src/Hello.hx"].replace("from the folder", "from the disk");
   const fe = await save();

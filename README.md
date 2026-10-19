@@ -206,9 +206,12 @@ bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs
 
 - In the browser (IndexedDB) by default, seeded from the example; Project > Reset to the
   example goes back to it.
-- **Open folder** works on a folder on disk through the File System Access API
-  (Chromium browsers; the button is hidden elsewhere). Brave turns the API off: enable
-  `brave://flags/#file-system-access-api` first. Edits, new files, renames and
+- **Open folder (local)** works on a folder on this computer through the File System
+  Access API ("local", as against the project's own folders). It's in the Project menu in
+  every browser; where it can't work it's greyed, and its tooltip, or a click, says how
+  to have it: Chrome and Edge have it; Brave turns it off unless
+  `chrome://flags/#file-system-access-api` is on (`brave://flags` works too); Firefox and
+  Safari don't have it. Edits, new files, renames and
   deletes happen in the folder, so another editor sees them. The page remembers the
   folder and opens it again next time, asking first if the browser wants permission.
   **Close folder** goes back to the browser's project.

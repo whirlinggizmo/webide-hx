@@ -127,6 +127,17 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await sleep(300);
   step("an empty folder is deleted without asking", await ev("!$('dialog').open && !dirs.has('src/empty')"));
 
+  // ---- Project > Open folder (local)…: always there; where the browser can't (headless Brave,
+  // without its flag), greyed, and saying how to have it
+  step("Open folder (local)… is there, greyed, its tooltip saying how to enable it", await ev("!$('folder').hidden && $('folder').getAttribute('aria-disabled') === 'true' && /chrome:\\/\\/flags\\/#file-system-access-api/.test($('folder').title)"),
+       await ev("[$('folder').textContent, $('folder').getAttribute('aria-disabled'), $('folder').title]"));
+  await click(await box("#project-menu"));
+  await click(await box("#folder"));
+  await sleep(300);
+  step("and clicking it says so too", await ev("$('dialog').open && /chrome:\\/\\/flags/.test($('dialog-text').textContent)"), await ev("$('dialog-text').textContent"));
+  await click(await box("#dialog-ok"));
+  await sleep(200);
+
   // ---- Project > Build file…: the hxml files, those the page can't use shown and off
   await click(await box("#project-menu"));
   await click(await box("#build-file"));
