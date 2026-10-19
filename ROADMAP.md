@@ -77,8 +77,8 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       DevTools loads maps past the service worker (a served map was a 404 to it; Rob
       saw "Source map failed to load"). `node tests/devtools.js PORT` checks it in Brave over the
       DevTools protocol: a breakpoint on a Hello.hx line hits at that line, with state
-      readable, in the first bundle and in a reloaded one. Firefox: not checked (no
-      such protocol headless); try it by hand. No debug adapter. 2026-10-18.
+      readable, in the first bundle and in a reloaded one. Firefox: Rob checked by hand
+      (2026-10-19): breakpoints work, on the .hx file. No debug adapter. 2026-10-18.
 - [x] Maps inline from the compiler: `-D source-map-inline` (a fork branch commit, for
       upstream issue #6414) instead of the service worker rewriting the bundle. Sources
       show under `file://` as `/static/src/...` (the earlier renaming needed the rewrite).
