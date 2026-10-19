@@ -1,5 +1,5 @@
 {
-  "name": "haxe-in-browser-editor",
+  "name": "webide-hx-editor",
   "private": true,
   "description": "play.html's libraries, bundled by build.py into web/vendor/: CodeMirror 6 (entry.js), ZenFS and fflate (fs.js)",
   "dependencies": {

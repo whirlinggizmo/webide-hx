@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Haxe hot reload in a page</title>
+<title>webide-hx</title>
 <style>
   :root { --bg: #fafafa; --fg: #111; --muted: #666; --line: #ddd; --panel: #fff; --accent: #0b6bcb; --hover: #eef3fa; --error: #c62828; }
   /* dark: the system's, unless Preferences say light; or Preferences say dark */
@@ -99,7 +99,7 @@
 </head>
 <body>
 <header>
-  <h1 class="visually-hidden">Haxe, hot</h1>
+  <h1 class="visually-hidden">webide-hx</h1>
   <nav class="menus">
     <div class="menu">
       <button class="menubutton" id="file-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="file-items">File</button>
@@ -267,8 +267,8 @@ const project = {
   path(name) { return this.root + "/" + name; },
   open() {
     return FS.configure({ mounts: {
-      "/browser": { backend: FS.IndexedDB, storeName: TESTING ? "haxe-in-browser-test-project" : "haxe-in-browser-project" },
-      [LIBCACHE]: { backend: FS.IndexedDB, storeName: TESTING ? "haxe-in-browser-test-libraries" : "haxe-in-browser-libraries" },
+      "/browser": { backend: FS.IndexedDB, storeName: TESTING ? "webide-hx-test-project" : "webide-hx-project" },
+      [LIBCACHE]: { backend: FS.IndexedDB, storeName: TESTING ? "webide-hx-test-libraries" : "webide-hx-libraries" },
     } });
   },
   async useFolder(handle) {
@@ -360,7 +360,7 @@ const project = {
 const remembered = {
   db() {
     return new Promise((resolve, reject) => {
-      const r = indexedDB.open(TESTING ? "haxe-in-browser-test-folder" : "haxe-in-browser-folder", 1);
+      const r = indexedDB.open(TESTING ? "webide-hx-test-folder" : "webide-hx-folder", 1);
       r.onupgradeneeded = () => r.result.createObjectStore("handles");
       r.onsuccess = () => resolve(r.result);
       r.onerror = () => reject(r.error);
@@ -511,7 +511,7 @@ function parseHxml(file) {
 function buildFiles() {
   return names().filter((n) => !n.includes("/") && n.endsWith(".hxml") && isText(files[n]) && !parseHxml(n).error);
 }
-const buildChoiceKey = () => "haxe-in-browser-build-file:" + (TESTING ? "test:" : "") + (project.folder ? "folder:" + project.folder.name : "browser");
+const buildChoiceKey = () => "webide-hx-build-file:" + (TESTING ? "test:" : "") + (project.folder ? "folder:" + project.folder.name : "browser");
 function chosenBuildFile() {
   let chosen = null;
   try { chosen = localStorage.getItem(buildChoiceKey()); } catch (e) {}
@@ -554,12 +554,12 @@ const outPath = (cfg) => cfg.out.startsWith("/") ? cfg.out : "/static/" + cfg.ou
 // What's downloaded is hashed the first time; a different download later is refused
 const LIBCACHE = "/libcache";
 const HAXELIB_FILES = "https://haxelib-files.haxe.org/files/3.0/";
-const libHashesKey = "haxe-in-browser-library-hashes" + (TESTING ? "-test" : "");
+const libHashesKey = "webide-hx-library-hashes" + (TESTING ? "-test" : "");
 const libFiles = new Map(); // a library's dir -> its files the compiler gets {"/libcache/...": text}
 class LibraryError extends Error { constructor(message, at) { super(message); this.at = at; } }
 const libPath = (dir, rel = "") => LIBCACHE + "/" + dir + (rel ? "/" + rel : "");
 async function libHas(dir) {
-  try { await FS.fs.promises.stat(libPath(dir, ".haxe-in-browser.json")); return true; } catch (e) { return false; }
+  try { await FS.fs.promises.stat(libPath(dir, ".webide-hx.json")); return true; } catch (e) { return false; }
 }
 async function sha256(chunks) {
   const all = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
@@ -633,7 +633,7 @@ async function storeLibrary(lib, got) {
     await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
     await FS.fs.promises.writeFile(p, data);
   }
-  await FS.fs.promises.writeFile(libPath(lib.dir, ".haxe-in-browser.json"), JSON.stringify({ source: lib.source, from: got.from, sha256: got.hash, files: Object.keys(got.files).length }));
+  await FS.fs.promises.writeFile(libPath(lib.dir, ".webide-hx.json"), JSON.stringify({ source: lib.source, from: got.from, sha256: got.hash, files: Object.keys(got.files).length }));
   hashes[lib.source] = got.hash;
   try { localStorage.setItem(libHashesKey, JSON.stringify(hashes)); } catch (e) {}
 }
@@ -744,7 +744,7 @@ function showDiagnostics(byFile) {
 // takes longer than BUSY_AFTER, so quick ones don't flicker
 const BUSY_AFTER = 150;
 let activity = null, compilerUp = false;
-const lastBuilds = (() => { try { return JSON.parse(localStorage.getItem("haxe-in-browser-builds")) || {}; } catch (e) { return {}; } })();
+const lastBuilds = (() => { try { return JSON.parse(localStorage.getItem("webide-hx-builds")) || {}; } catch (e) { return {}; } })();
 function busy(label, kind) {
   const a = { files: 0, t0: performance.now() };
   activity = a;
@@ -764,7 +764,7 @@ function busy(label, kind) {
     document.body.classList.remove("busy");
     $("progress").firstChild.style.width = "0";
     lastBuilds[kind] = { ms: performance.now() - a.t0, files: a.files };
-    try { localStorage.setItem("haxe-in-browser-builds", JSON.stringify(lastBuilds)); } catch (e) {}
+    try { localStorage.setItem("webide-hx-builds", JSON.stringify(lastBuilds)); } catch (e) {}
   };
 }
 
@@ -1056,7 +1056,7 @@ dropTarget($("tree"), "");
 // each is a compartment in every file's editor state, so a change applies to all at once
 const PREF_DEFAULTS = { theme: "system", fontSize: 13, tabSize: 4, indent: "tabs", wrap: false, lineNumbers: true, folding: true,
                         activeLine: true, brackets: true, closeBrackets: true };
-const prefs = Object.assign({}, PREF_DEFAULTS, (() => { try { return JSON.parse(localStorage.getItem("haxe-in-browser-prefs")) || {}; } catch (e) { return {}; } })());
+const prefs = Object.assign({}, PREF_DEFAULTS, (() => { try { return JSON.parse(localStorage.getItem("webide-hx-prefs")) || {}; } catch (e) { return {}; } })());
 const dark = matchMedia("(prefers-color-scheme: dark)");
 const isDark = () => prefs.theme === "dark" || (prefs.theme === "system" && dark.matches);
 let slots = null; // name -> Compartment, once CodeMirror is loaded
@@ -1090,7 +1090,7 @@ function applyPrefs() {
   if (view) view.dispatch({ effects: effects(view.state) });
 }
 function savePrefs() {
-  try { localStorage.setItem("haxe-in-browser-prefs", JSON.stringify(prefs)); } catch (e) {}
+  try { localStorage.setItem("webide-hx-prefs", JSON.stringify(prefs)); } catch (e) {}
 }
 dark.addEventListener("change", applyPrefs);
 $("run").addEventListener("load", () => { try { applyTheme($("run").contentDocument); } catch (e) {} });
@@ -1144,7 +1144,7 @@ let starts = 0;
 // so it hot-reloads wherever it is; the page only starts it over (a new project) and
 // keeps the theme. A window is remembered where it was, and closing it brings the program
 // back into the page
-const PROGRAM_WINDOW = "haxe-in-browser-program-window";
+const PROGRAM_WINDOW = "webide-hx-program-window";
 const program = {
   kind: null, win: null, frame: null, watch: null,
   url: "about:blank",
@@ -1781,7 +1781,7 @@ async function test() {
   const lx2 = await save();
   step("-lib format with lix's haxe_libraries/format.hxml: the GitHub commit, through jsDelivr", lx.ok && lx2.ok && await libHas(`format/3.7.0/github/${sha}`)
        && await until(() => frameLog().includes("adler again true"), 15000), lx.ok ? (lx2.ok ? frameLog().split("\n").slice(-3) : lx2.r.stderr) : lx.r.stderr);
-  const marker = JSON.parse(await libText(`format/3.7.0/github/${sha}`, ".haxe-in-browser.json"));
+  const marker = JSON.parse(await libText(`format/3.7.0/github/${sha}`, ".webide-hx.json"));
   step("and says where it came from", /jsDelivr/.test(marker.from) && marker.files > 100, marker);
   // what can't be had: on its line
   files["web-build.hxml"] = base + "-lib nosuchlib\n";

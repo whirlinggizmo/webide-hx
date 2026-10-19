@@ -79,7 +79,7 @@ def main():
             path = os.path.join(HAXELIB_CACHE, name)
             if not os.path.exists(path):
                 try:
-                    request = urllib.request.Request(HAXELIB_FILES + name, headers={"User-Agent": "haxe-in-browser serve.py"})
+                    request = urllib.request.Request(HAXELIB_FILES + name, headers={"User-Agent": "webide-hx serve.py"})
                     with urllib.request.urlopen(request, timeout=60) as r:
                         data = r.read()
                 except Exception as e:

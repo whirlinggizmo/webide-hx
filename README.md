@@ -1,6 +1,13 @@
-# haxe-in-browser
+# webide-hx
 
-The Haxe compiler, running in a web page. `web/haxe.js` is Haxe 4.3.7 compiled from
+A Haxe development environment in a browser tab, with nothing to install: an editor, the
+Haxe compiler and the running program side by side, with
+[hotreload-hx](https://github.com/whirlinggizmo/hotreload-hx) swapping the program's code
+on each save while it keeps its state. Projects live in the browser or in a folder on
+disk; libraries come the lix or haxelib way; debugging is the browser's DevTools, by
+source map. `web/play.html` is the page.
+
+Underneath is the Haxe compiler, running in a web page. `web/haxe.js` is Haxe 4.3.7 compiled from
 its OCaml bytecode with js_of_ocaml; `stubs.js` stands in for the C libraries it links.
 A page hands it source files and arguments in a Web Worker and reads the JavaScript it
 produces back out. Macros work: eval, the macro interpreter, is pure OCaml and comes

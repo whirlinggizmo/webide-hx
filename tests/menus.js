@@ -166,7 +166,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
     var seen = false;
     for (var w2 = 0; w2 < 40 && !seen; w2++) { seen = /out there/.test(await pev("document.getElementById('log').textContent") || ""); if (!seen) await sleep(250); }
     step("an edit hot-reloads the program in its window", seen);
-    step("the window's place is kept for next time", !!(await ev("localStorage.getItem('haxe-in-browser-program-window')")));
+    step("the window's place is kept for next time", !!(await ev("localStorage.getItem('webide-hx-program-window')")));
     pws.close();
     // the project changing (a folder opened, a zip imported) starts the program over: in its window
     var before = await ev("program.win.location.href");
