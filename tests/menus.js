@@ -1,7 +1,9 @@
 // Checks play.html's header menus (File, Project) in a Chromium-based browser, over the
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
-// name refused), Project > Build, and items turned off when they can't apply.
+// name refused), Project > Build, every Edit item on the editor, Preferences (applied
+// at once, to every file, kept for the next visit, Defaults), and items turned off when
+// they can't apply.
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
 //     node tests/menus.js 9333 [SCREENSHOT_PREFIX]
 // Prints each step; exits 1 if one fails.
@@ -83,6 +85,63 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#build-item"));
   await sleep(1500);
   step("and builds", /^build \d+/.test(await ev("$('status').textContent")), await ev("$('status').textContent"));
+  // ---- Edit: each item on the editor
+  await send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }).catch(function () {});
+  var edit = async function (id) { await click(await box("#edit-menu")); await click(await box("#" + id)); await sleep(150); };
+  var doc = "view.state.doc.toString()";
+  await ev("show('src/Hello.hx'); view.focus(); view.dispatch({ selection: { anchor: 0 } })");
+  var before = await ev(doc);
+  await send("Input.insertText", { text: "// typed\n" }); await sleep(100);
+  await edit("undo");
+  step("Edit > Undo takes back the typing", await ev(doc) === before);
+  await edit("redo");
+  step("Edit > Redo puts it back", (await ev(doc)).startsWith("// typed\n"));
+  await edit("undo");
+  await ev("view.dispatch({ selection: { anchor: 0, head: 5 } })"); // "using"
+  await edit("cut");
+  step("Edit > Cut takes the selection", (await ev(doc)).startsWith(" Lambda;"), (await ev(doc)).slice(0, 12));
+  await edit("paste");
+  step("Edit > Paste puts it back", await ev(doc) === before, (await ev(doc)).slice(0, 12));
+  await edit("select-all");
+  step("Edit > Select all", await ev("view.state.selection.main.from === 0 && view.state.selection.main.to === view.state.doc.length"));
+  await ev("view.dispatch({ selection: { anchor: 0 } })");
+  await edit("comment");
+  step("Edit > Toggle comment comments the line", (await ev(doc)).startsWith("//"), (await ev(doc)).slice(0, 12));
+  await edit("comment");
+  step("and again uncomments it", await ev(doc) === before);
+  await edit("indent");
+  step("Edit > Indent", (await ev(doc)).startsWith("\tusing"));
+  await edit("outdent");
+  step("Edit > Outdent", await ev(doc) === before);
+  await edit("find");
+  step("Edit > Find… opens the search panel, focused", await ev("!!view.dom.querySelector('.cm-search') && document.activeElement.name === 'search'"));
+  await ev("view.focus()"); await key("Escape");
+  await edit("goto-line");
+  step("Edit > Go to line… asks for a line", await ev("!!view.dom.querySelector('.cm-panel input') && document.activeElement.tagName === 'INPUT'"));
+  await key("Escape");
+  // ---- Preferences: applied at once, kept for the next visit, Defaults
+  await edit("preferences");
+  step("Edit > Preferences… opens", await ev("$('prefs').open"));
+  var setPref = async function (k, v) { await ev("(() => { const el = $('pref-" + k + "'); if (el.type === 'checkbox') el.checked = " + JSON.stringify(v) + "; else el.value = " + JSON.stringify(String(v)) + "; el.dispatchEvent(new Event('change')); })()"); };
+  await setPref("fontSize", 18); await setPref("wrap", true); await setPref("lineNumbers", false); await setPref("theme", "dark"); await setPref("indent", "spaces");
+  await shot("prefs");
+  var applied = "JSON.stringify({ font: getComputedStyle(view.contentDOM).fontSize, wrap: view.contentDOM.classList.contains('cm-lineWrapping'), numbers: !!view.dom.querySelector('.cm-lineNumbers'), theme: document.documentElement.dataset.theme || 'system', frame: $('run').contentDocument.documentElement.dataset.theme || 'system', dark: getComputedStyle(view.dom).backgroundColor})";
+  var a1 = JSON.parse(await ev(applied));
+  step("they apply at once: font, wrapping, line numbers, theme (the program's frame too)", a1.font === "18px" && a1.wrap && !a1.numbers && a1.theme === "dark" && a1.frame === "dark", a1);
+  await ev("$('prefs-done').click()");
+  step("Done closes them", !(await ev("$('prefs').open")));
+  await ev("show('src/Main.hx')");
+  var a2 = JSON.parse(await ev(applied));
+  step("and every file has them", a2.font === "18px" && a2.wrap && !a2.numbers, a2);
+  await send("Page.reload");
+  for (var w = 0; w < 60 && !/^build 1/.test(await ev("typeof $ === 'function' && $('status').textContent") || ""); w++) await sleep(250);
+  var a3 = JSON.parse(await ev(applied));
+  step("kept for the next visit", a3.font === "18px" && a3.wrap && !a3.numbers && a3.theme === "dark", a3);
+  await ev("$('preferences').click()");
+  await ev("$('prefs-defaults').click()");
+  var a4 = JSON.parse(await ev(applied));
+  step("Defaults puts them back", a4.font === "13px" && !a4.wrap && a4.numbers && a4.theme === "system", a4);
+  await ev("$('prefs-done').click()");
   await ev("current = null; refreshMenus()");
   step("Rename and Delete are off with no file shown", await ev("$('rename').disabled && $('delete').disabled"));
   console.log(fails ? fails + " failed" : "all ok");

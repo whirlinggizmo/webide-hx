@@ -104,6 +104,12 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [x] File and Project menus in the header instead of rows of buttons (keyboard: arrows,
       Home, End, Escape; items off when they can't apply). `node tests/menus.js PORT`.
       2026-10-18.
+- [x] Project > Build first in its menu; the page's own dialogs instead of the browser's
+      prompt and confirm (names checked in place; every delete asks). 2026-10-18.
+- [x] Edit menu: CodeMirror's commands with their shortcuts, and Preferences (theme,
+      font size, tabs, wrapping, gutters, brackets), kept in localStorage and applied to
+      every open file at once. The editor setup is basicSetup's parts, so they can be
+      turned off. Vim or Emacs keys would be packages more (not added). 2026-10-18.
 - [ ] A context menu on the tree's files (Rename, Delete).
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).

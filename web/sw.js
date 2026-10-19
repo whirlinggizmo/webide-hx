@@ -132,7 +132,8 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(respond(
       '<!doctype html><html><head><meta charset="utf-8"><title>running</title>' +
       '<style>body{margin:0;font:13px/1.4 ui-monospace,monospace;background:#fff;color:#111}' +
-      '@media (prefers-color-scheme: dark){body{background:#111;color:#ddd}}pre{margin:8px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>' +
+      '@media (prefers-color-scheme: dark){:root:not([data-theme=light]) body{background:#111;color:#ddd}}:root[data-theme=dark] body{background:#111;color:#ddd}' +
+      'pre{margin:8px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>' +
       '<body><pre id="log"></pre><script src="' + state.name + '"></script></body></html>', "text/html"));
     return;
   }

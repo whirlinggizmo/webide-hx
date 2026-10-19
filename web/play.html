@@ -6,7 +6,9 @@
 <title>Haxe hot reload in a page</title>
 <style>
   :root { --bg: #fafafa; --fg: #111; --muted: #666; --line: #ddd; --panel: #fff; --accent: #0b6bcb; --hover: #eef3fa; --error: #c62828; }
-  @media (prefers-color-scheme: dark) { :root { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; } }
+  /* dark: the system's, unless Preferences say light; or Preferences say dark */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; } }
+  :root[data-theme="dark"] { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
   header { position: relative; display: flex; gap: 12px; align-items: center; padding: 8px 16px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
@@ -53,6 +55,13 @@
   /* OK first in the form, so Enter picks it; shown on the right */
   dialog .actions { display: flex; flex-direction: row-reverse; gap: 8px; margin-top: 4px; }
   dialog .actions .danger { border-color: var(--error); color: var(--error); }
+  #prefs { width: min(500px, calc(100vw - 32px)); }
+  #prefs .grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; }
+  #prefs select, #prefs input[type=number] { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); justify-self: start; }
+  #prefs input[type=number] { width: 70px; }
+  #prefs .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+  #prefs label.check { display: flex; gap: 6px; align-items: center; }
+  #prefs .actions { justify-content: flex-start; }
   button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
   button.primary { border-color: var(--accent); color: var(--accent); }
   main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
@@ -68,7 +77,7 @@
   #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
   .edit { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #editor { flex: 1; min-height: 0; overflow: hidden; }
-  #editor .cm-editor { height: 100%; font-size: 13px; }
+  #editor .cm-editor { height: 100%; }
   #editor .cm-editor.cm-focused { outline: none; }
   #editor .cm-scroller { font-family: ui-monospace, monospace; line-height: 1.45; }
   iframe { flex: 1; border: 0; background: var(--panel); min-height: 0; }
@@ -93,6 +102,28 @@
       </div>
     </div>
     <div class="menu">
+      <button class="menubutton" id="edit-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="edit-items">Edit</button>
+      <div class="items" id="edit-items" role="menu" aria-labelledby="edit-menu" hidden>
+        <button role="menuitem" id="undo">Undo<kbd class="mod">Ctrl+Z</kbd></button>
+        <button role="menuitem" id="redo">Redo<kbd class="mod">Ctrl+Shift+Z</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="cut">Cut<kbd class="mod">Ctrl+X</kbd></button>
+        <button role="menuitem" id="copy">Copy<kbd class="mod">Ctrl+C</kbd></button>
+        <button role="menuitem" id="paste">Paste<kbd class="mod">Ctrl+V</kbd></button>
+        <button role="menuitem" id="select-all">Select all<kbd class="mod">Ctrl+A</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
+        <button role="menuitem" id="replace">Replace…</button>
+        <button role="menuitem" id="goto-line">Go to line…<kbd class="mod">Ctrl+Alt+G</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
+        <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
+        <button role="menuitem" id="outdent">Outdent<kbd class="mod">Ctrl+[</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="preferences">Preferences…</button>
+      </div>
+    </div>
+    <div class="menu">
       <button class="menubutton" id="project-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="project-items">Project</button>
       <div class="items" id="project-items" role="menu" aria-labelledby="project-menu" hidden>
         <button role="menuitem" id="build-item">Build<kbd class="mod">Ctrl+S</kbd></button>
@@ -112,6 +143,33 @@
   <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
   <div id="progress"><div></div></div>
 </header>
+<dialog id="prefs" aria-labelledby="prefs-title">
+  <form method="dialog">
+    <h2 id="prefs-title">Preferences</h2>
+    <div class="grid">
+      <label for="pref-theme">Theme</label>
+      <select id="pref-theme"><option value="system">As the system</option><option value="light">Light</option><option value="dark">Dark</option></select>
+      <label for="pref-fontSize">Font size</label>
+      <input type="number" id="pref-fontSize" min="9" max="28" step="1">
+      <label for="pref-tabSize">Tab width</label>
+      <select id="pref-tabSize"><option value="2">2</option><option value="4">4</option><option value="8">8</option></select>
+      <label for="pref-indent">Indent with</label>
+      <select id="pref-indent"><option value="tabs">Tabs</option><option value="spaces">Spaces</option></select>
+    </div>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="pref-wrap"> Wrap long lines</label>
+      <label class="check"><input type="checkbox" id="pref-lineNumbers"> Line numbers</label>
+      <label class="check"><input type="checkbox" id="pref-folding"> Folding</label>
+      <label class="check"><input type="checkbox" id="pref-activeLine"> Highlight the current line</label>
+      <label class="check"><input type="checkbox" id="pref-brackets"> Match brackets</label>
+      <label class="check"><input type="checkbox" id="pref-closeBrackets"> Close brackets and quotes</label>
+    </div>
+    <div class="actions">
+      <button value="ok" class="primary" id="prefs-done">Done</button>
+      <button value="defaults" id="prefs-defaults" formnovalidate>Defaults</button>
+    </div>
+  </form>
+</dialog>
 <dialog id="dialog">
   <form method="dialog">
     <h2 id="dialog-title"></h2>
@@ -523,19 +581,62 @@ function renderTree() {
   }
 }
 
+// ---- preferences: the editor's, and the page's theme. Kept per browser (localStorage);
+// each is a compartment in every file's editor state, so a change applies to all at once
+const PREF_DEFAULTS = { theme: "system", fontSize: 13, tabSize: 4, indent: "tabs", wrap: false, lineNumbers: true, folding: true,
+                        activeLine: true, brackets: true, closeBrackets: true };
+const prefs = Object.assign({}, PREF_DEFAULTS, (() => { try { return JSON.parse(localStorage.getItem("haxe-in-browser-prefs")) || {}; } catch (e) { return {}; } })());
 const dark = matchMedia("(prefers-color-scheme: dark)");
-let theme = null;
+const isDark = () => prefs.theme === "dark" || (prefs.theme === "system" && dark.matches);
+let slots = null; // name -> Compartment, once CodeMirror is loaded
+// what each preference puts in the editor
+const prefParts = {
+  theme: () => isDark() ? CM.oneDark : [],
+  fontSize: () => CM.EditorView.theme({ "&": { fontSize: prefs.fontSize + "px" } }),
+  tabs: () => [CM.EditorState.tabSize.of(+prefs.tabSize), CM.indentUnit.of(prefs.indent === "tabs" ? "\t" : " ".repeat(+prefs.tabSize))],
+  wrap: () => prefs.wrap ? CM.EditorView.lineWrapping : [],
+  lineNumbers: () => prefs.lineNumbers ? [CM.lineNumbers(), CM.highlightActiveLineGutter()] : [],
+  folding: () => prefs.folding ? CM.foldGutter() : [],
+  activeLine: () => prefs.activeLine ? CM.highlightActiveLine() : [],
+  brackets: () => prefs.brackets ? CM.bracketMatching() : [],
+  closeBrackets: () => prefs.closeBrackets ? CM.closeBrackets() : [],
+};
+function prefExtensions(only) {
+  return Object.keys(prefParts).filter((k) => !only || only.includes(k)).map((k) => slots[k].of(prefParts[k]()));
+}
+// the page's theme, and the running program's frame (its page, from sw.js, reads data-theme too)
+function applyTheme(doc) {
+  if (prefs.theme === "system") delete doc.documentElement.dataset.theme;
+  else doc.documentElement.dataset.theme = prefs.theme;
+}
+function applyPrefs() {
+  applyTheme(document);
+  try { applyTheme($("run").contentDocument); } catch (e) {}
+  if (!slots) return;
+  const effects = (st) => Object.keys(prefParts).filter((k) => slots[k].get(st) !== undefined).map((k) => slots[k].reconfigure(prefParts[k]()));
+  for (const [f, st] of states) if (f !== current) states.set(f, st.update({ effects: effects(st) }).state);
+  if (view) view.dispatch({ effects: effects(view.state) });
+}
+function savePrefs() {
+  try { localStorage.setItem("haxe-in-browser-prefs", JSON.stringify(prefs)); } catch (e) {}
+}
+dark.addEventListener("change", applyPrefs);
+$("run").addEventListener("load", () => { try { applyTheme($("run").contentDocument); } catch (e) {} });
+
 function makeState(name) {
   if (!isText(files[name]))
     return CM.EditorState.create({ doc: `${name}: ${files[name].length} bytes, not text; it can't be edited here`,
-                                   extensions: [CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), theme.of(dark.matches ? CM.oneDark : [])] });
+                                   extensions: [CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), prefExtensions(["theme", "fontSize"])] });
   const ext = [
-    CM.basicSetup,
-    CM.keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { save(); return true; } }, CM.indentWithTab]),
-    CM.indentUnit.of("\t"),
-    CM.EditorState.tabSize.of(4),
+    // CodeMirror's basicSetup, in parts; those a preference turns on and off are in prefExtensions
+    CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.dropCursor(), CM.EditorState.allowMultipleSelections.of(true),
+    CM.indentOnInput(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }), CM.autocompletion(),
+    CM.rectangularSelection(), CM.crosshairCursor(), CM.highlightSelectionMatches(),
+    CM.keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { save(); return true; } }, CM.indentWithTab,
+                  ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.foldKeymap,
+                  ...CM.completionKeymap, ...CM.lintKeymap]),
+    prefExtensions(),
     CM.lintGutter(),
-    theme.of(dark.matches ? CM.oneDark : []),
     CM.EditorView.updateListener.of((u) => {
       if (u.docChanged && name === current && name in files) { files[name] = u.state.doc.toString(); keep(name); }
     }),
@@ -561,10 +662,6 @@ function show(name) {
   view.setState(st);
   for (const b of $("tree").querySelectorAll("button")) b.classList.toggle("on", b.dataset.name === name);
 }
-dark.addEventListener("change", () => {
-  for (const [f, st] of states) states.set(f, st.update({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) }).state);
-  view.dispatch({ effects: theme.reconfigure(dark.matches ? CM.oneDark : []) });
-});
 // ---- the whole project: a build from scratch and the program started on it, at first and
 // when the project changes (a folder opened or closed, a zip imported)
 let starts = 0;
@@ -657,6 +754,14 @@ function closeMenus() {
 // what the items can do just now
 function refreshMenus() {
   $("rename").disabled = $("delete").disabled = current === null;
+  const st = view && current !== null ? view.state : null, editable = !!st && !st.readOnly;
+  const selected = !!st && st.selection.ranges.some((r) => !r.empty);
+  $("undo").disabled = !editable || CM.undoDepth(st) === 0;
+  $("redo").disabled = !editable || CM.redoDepth(st) === 0;
+  $("cut").disabled = !editable || !selected;
+  $("copy").disabled = !selected;
+  for (const id of ["paste", "replace", "comment", "indent", "outdent"]) $(id).disabled = !editable;
+  for (const id of ["select-all", "find", "goto-line"]) $(id).disabled = !st;
 }
 for (const m of document.querySelectorAll(".menu")) {
   const button = m.querySelector(".menubutton"), list = m.querySelector(".items");
@@ -732,6 +837,52 @@ function baseRange(path) {
   const start = path.lastIndexOf("/") + 1, dot = path.lastIndexOf(".");
   return [start, dot > start ? dot : path.length];
 }
+
+// ---- the Edit menu: CodeMirror's commands, on the editor, which gets the focus back
+function editCommand(id, run) {
+  $(id).onclick = () => attempt(async () => { view.focus(); await run(view); });
+}
+const selectedText = (st) => st.selection.ranges.filter((r) => !r.empty).map((r) => st.sliceDoc(r.from, r.to)).join(st.lineBreak);
+editCommand("undo", (v) => CM.undo(v));
+editCommand("redo", (v) => CM.redo(v));
+editCommand("cut", async (v) => { await navigator.clipboard.writeText(selectedText(v.state)); v.dispatch(v.state.replaceSelection("")); });
+editCommand("copy", (v) => navigator.clipboard.writeText(selectedText(v.state)));
+editCommand("paste", async (v) => {
+  let text;
+  try { text = await navigator.clipboard.readText(); } catch (e) { throw new Error(`the browser didn't let the menu paste; ${$("paste").querySelector("kbd").textContent} does`); }
+  v.dispatch(v.state.replaceSelection(text));
+});
+editCommand("select-all", (v) => CM.selectAll(v));
+editCommand("find", (v) => CM.openSearchPanel(v));
+editCommand("replace", (v) => { CM.openSearchPanel(v); const r = v.dom.querySelector(".cm-search [name=replace]"); if (r) r.focus(); });
+editCommand("goto-line", (v) => CM.gotoLine(v));
+editCommand("comment", (v) => CM.toggleComment(v));
+editCommand("indent", (v) => CM.indentMore(v));
+editCommand("outdent", (v) => CM.indentLess(v));
+// Preferences: each change applies at once; Done closes, Defaults puts them all back
+function showPrefs() {
+  for (const k of Object.keys(PREF_DEFAULTS)) {
+    const el = $("pref-" + k);
+    if (el.type === "checkbox") el.checked = prefs[k]; else el.value = prefs[k];
+  }
+}
+for (const k of Object.keys(PREF_DEFAULTS)) {
+  $("pref-" + k).onchange = $("pref-" + k).oninput = () => {
+    const el = $("pref-" + k);
+    let v = el.type === "checkbox" ? el.checked : el.value;
+    if (k === "fontSize") { v = Math.round(+v); if (!(v >= 9 && v <= 28)) return; }
+    if (k === "tabSize") v = +v;
+    prefs[k] = v;
+    savePrefs(); applyPrefs();
+  };
+}
+$("preferences").onclick = () => { showPrefs(); $("prefs").showModal(); };
+$("prefs").querySelector("form").onsubmit = (e) => {
+  e.preventDefault();
+  if (e.submitter && e.submitter.value === "defaults") { Object.assign(prefs, PREF_DEFAULTS); savePrefs(); applyPrefs(); showPrefs(); return; }
+  $("prefs").close();
+  if (view) view.focus();
+};
 
 // a file operation's failure, for a person: in the status line
 const attempt = (f) => f().catch((e) => status(e.message));
@@ -1019,8 +1170,9 @@ async function test() {
 (async function () {
   if (!("serviceWorker" in navigator)) { status("this page needs service workers (and http://localhost or https)"); return; }
   if (!("indexedDB" in window)) { status("this page needs IndexedDB"); return; }
+  applyPrefs(); // the page's theme, before anything shows
   [CM, FS] = await Promise.all([import("./vendor/codemirror.js"), import("./vendor/fs.js")]);
-  theme = new CM.Compartment();
+  slots = Object.fromEntries(Object.keys(prefParts).map((k) => [k, new CM.Compartment()]));
   await project.open();
   if (TESTING) { await project.clear(); await remembered.set(null); }
   // the folder from the last visit, if the browser still lets the page have it

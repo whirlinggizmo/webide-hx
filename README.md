@@ -140,7 +140,12 @@ takes more than a moment shows a spinner, its time so far and the library files 
 compiler has read, with a bar estimated from the last build of the same kind (the
 compiler reports no progress of its own; the worker counts its reads from `std/`).
 
-The header's **File** menu has New file, Rename and Delete; its **Project** menu has Build
+The header's **File** menu has New file, Rename and Delete. **Edit** has the editor's
+commands with their shortcuts (Undo, Redo, Cut, Copy, Paste, Select all, Find, Replace,
+Go to line, Toggle comment, Indent, Outdent) and **Preferences**: the theme (the page's,
+the editor's and the program's frame), font size, tab width, tabs or spaces, wrapping,
+line numbers, folding, the current line, bracket matching and closing, kept per browser.
+**Project** has Build
 (also the button, and Ctrl-S), Open folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason. The project is kept as it's edited: in the browser, or in a
