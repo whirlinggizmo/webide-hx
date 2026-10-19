@@ -16,7 +16,19 @@ along, so a build macro like hotreload-hx's runs inside the page too.
 Started 2026-10-18 as a probe for a browser playground with hot reload: an editor, the
 compiler and the running program all in one page, nothing installed.
 
-## Run it
+## Run it in Docker
+
+    docker run -p 8080:80 ghcr.io/whirlinggizmo/webide-hx
+    # open http://localhost:8080/
+
+The image is the built site in nginx, with the haxelib mirror (so `-lib name:version`
+works). `-e WEBIDE_PATH=/ide/` serves it under `/ide/` instead of `/`; `-v
+webide-hx-cache:/var/cache/nginx/haxelib` keeps downloaded libraries between containers.
+`localhost` needs no https; for other machines, put it behind a web server with https
+(`hosting/README.md`). To build the image yourself: `docker build -t webide-hx .` (about
+twenty minutes the first time: it builds OCaml, Haxe and js_of_ocaml).
+
+## Run it from source
 
     python3 tools/serve.py
     # open http://127.0.0.1:8765/ (the IDE)

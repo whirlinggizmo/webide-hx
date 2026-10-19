@@ -1,0 +1,11 @@
+# what the image builds for itself, or doesn't need
+.git
+build
+build-log.txt
+editor/node_modules
+web/haxe.js
+web/std
+web/hello
+web/vendor
+web/report*.json
+**/__pycache__

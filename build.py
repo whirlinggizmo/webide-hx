@@ -10,6 +10,8 @@ Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
                                              parity test needs it)
     python3 build.py --embed-std             the standard library inside the bundle (7.8 MB)
                                              instead of fetched on demand from web/std
+    python3 build.py --toolchain             only the toolchain below (the Dockerfile's
+                                             first step, cached apart from the source)
 
 Self-contained: opam, OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml are
 installed under build/ the first time (about ten minutes). From the system it needs
@@ -228,7 +230,13 @@ def main():
     ap.add_argument("--embed", action="append", default=[], metavar="SRC:DEST", help="a file or directory to embed in the bundle's filesystem")
     ap.add_argument("--hotreload", metavar="DIR", help="embed hotreload-hx from DIR at /lib/hotreload")
     ap.add_argument("--embed-std", action="store_true", help="embed the standard library in the bundle instead of serving it from web/std")
+    ap.add_argument("--toolchain", action="store_true", help="only install the toolchain (opam, OCaml, Haxe's libraries, js_of_ocaml, mbedtls) under build/")
     args = ap.parse_args()
+    if args.toolchain:
+        os.makedirs(BUILD, exist_ok=True)
+        print("toolchain"); env = toolchain()
+        print("mbedtls"); mbedtls(env)
+        return
     if args.hotreload:
         d = os.path.expanduser(args.hotreload)
         args.embed += [f"{d}/src:/lib/hotreload/src", f"{d}/extraParams.hxml:/lib/hotreload/extraParams.hxml"]

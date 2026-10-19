@@ -1,4 +1,5 @@
-# The IDE at /webide-hx/ (web/index.html), and at /webide-hx/haxelib/files/3.0/ a caching mirror
+# The IDE at WEBIDE_PATH (web/index.html; "/" in the image, "/webide-hx/" on dev.whirlinggizmo.com),
+# and at WEBIDE_PATH haxelib/files/3.0/ a caching mirror
 # of haxelib's release files: haxelib's file server doesn't let web pages read its zips, so
 # the page asks its own site, and this fetches each release from haxelib-files.haxe.org once
 # and keeps it. A release never changes, so a kept one is served for as long as it's kept
@@ -19,17 +20,13 @@ server {
     set_real_ip_from 172.16.0.0/12;
     real_ip_header X-Forwarded-For;
 
-    location = /webide-hx {
-        return 301 /webide-hx/;
-    }
-
-    location /webide-hx/ {
+    location ${WEBIDE_PATH} {
         alias /usr/share/nginx/webide-hx/;
         # checked each time (cheaply, by ETag), so a deploy shows at once
         add_header Cache-Control "no-cache" always;
     }
 
-    location ~ ^/webide-hx/haxelib/files/3\.0/([A-Za-z0-9_.+-]+-[0-9A-Za-z,+-]+\.zip)$ {
+    location ~ ^${WEBIDE_PATH}haxelib/files/3\.0/([A-Za-z0-9_.+-]+-[0-9A-Za-z,+-]+\.zip)$ {
         limit_req zone=haxelib_requests burst=20 nodelay;
 
         # looked up as requests come, not when nginx starts (a failed lookup at start would
