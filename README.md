@@ -189,7 +189,7 @@ over when the project changes, and closing it makes it Embedded again. The edito
 has to stay open: it's the compiler.
 **Project** has Build (also the button, and Ctrl-S), Select hxml… (which of the project's
 hxml files the page builds from; see below), Open folder (local)…, Import zip…, Export zip,
-Add library…, Add library zip… and Reset to Example project… (menus that work by keyboard too:
+Add library…, Add library zip…, Clear library cache… and Reset to Example project… (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
 
@@ -206,7 +206,11 @@ The project's files go through [ZenFS](https://github.com/zen-fs/core), a node-l
 bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs.js` into
 `web/vendor/fs.js`:
 
-- In the browser (IndexedDB) by default, seeded from the Example project (hotreload-hx's
+- In the browser (IndexedDB) by default. The page asks the browser to keep it
+  (`navigator.storage.persist()`); otherwise browsers may delete a site's storage when space
+  runs low. Chromium decides by itself (a bookmarked or often-used site gets it), Firefox
+  asks. The header's tooltip says which it is; Export zip keeps a copy either way.
+  It's seeded from the Example project (hotreload-hx's
   hello, in `web/example/`); Project > Reset to Example project goes back to it.
 - **Open folder (local)** works on a folder on this computer through the File System
   Access API ("local", as against the project's own folders). It's in the Project menu in
@@ -268,6 +272,11 @@ dependencies' `-lib`, its class path, its `extraParams.hxml`), the same for each
 that names a version (a file the project has is kept), and adds `-lib <name>` to the
 build's hxml. A dependency without a version (haxelib's "any") is named in the status, to
 add the same way. A library already in the project is replaced only after asking.
+
+**Project > Clear library cache…** removes the libraries downloaded into this browser
+(they come again at the next build that uses them). It touches nothing of the project's,
+in the browser or in a local folder; the first download's hashes are kept, so a library
+downloaded again is still checked against them.
 
 Where from:
 

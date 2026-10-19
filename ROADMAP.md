@@ -155,6 +155,10 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       2026-10-18.
 - [x] Import zip (replaces the browser's project; a single top folder, as GitHub's zips
       have, is taken off) and Export zip. 2026-10-18.
+- [x] The browser's project kept: the page asks for persistent storage (Chromium decides by
+      engagement, Firefox asks), and the header's tooltip says whether the browser keeps it
+      or may delete it when space runs low. Project > Clear library cache… empties the
+      library cache only. 2026-10-19.
 - [ ] A folder changed outside the page (another editor, git) isn't noticed until it's
       opened again: poll the files' modification times, or FileSystemObserver where it
       exists.

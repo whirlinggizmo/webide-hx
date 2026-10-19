@@ -171,6 +171,7 @@
         <hr role="separator">
         <button role="menuitem" id="add-library" title="A haxelib release or a GitHub repository: its haxe_libraries file, as lix writes it, and -lib in the build's hxml">Add library…</button>
         <button role="menuitem" id="add-library-zip" title="A haxelib release's zip, from lib.haxe.org, for when the page cannot download it">Add library zip…</button>
+        <button role="menuitem" id="clear-libraries" title="Remove the libraries downloaded into this browser; the project's files are not touched">Clear library cache…</button>
         <hr role="separator">
         <button role="menuitem" id="reset" title="Back to the Example project, losing your changes">Reset to Example project…</button>
       </div>
@@ -1573,7 +1574,8 @@ function showWhere() {
   // where the project is (browsers tell a page a local folder's name, never its path), and
   // what it builds from
   $("where-project").textContent = project.folder ? `[ Local Folder: ${project.folder.name} ]` : "[ Browser Hosted ]";
-  $("where-project").title = project.folder ? `The project is stored on this computer, in the folder ${project.folder.name}` : "The project is stored in this browser";
+  $("where-project").title = project.folder ? `The project is stored on this computer, in the folder ${project.folder.name}`
+    : "The project is stored in this browser" + (storageKept ? ", which keeps it until the site's data is cleared" : ", which may delete it when space runs low (Export zip keeps a copy)");
   $("where-build").textContent = "hxml: " + (cfg.file || "none");
   $("where-build").title = cfg.file ? "The hxml file used for builds" : "No hxml file: builds use src/ and the class Main";
   $("folder").textContent = project.folder ? "Close folder (local)" : reopen ? `Reopen ${reopen.name} (local)…` : "Open folder (local)…";
@@ -1584,6 +1586,15 @@ function showWhere() {
   $("reset").hidden = !!project.folder;
 }
 let reopen = null; // a folder from the last visit, waiting for the person's permission
+// the browser's storage is "best effort" unless the page asks for it to be kept: then it
+// isn't cleared when space runs low. Chromium decides by itself; Firefox asks the person,
+// and the answer can take as long as they like, so nothing waits for it
+let storageKept = false;
+async function keepStorage() {
+  try { storageKept = await navigator.storage.persisted() || await navigator.storage.persist(); } catch (e) { storageKept = false; }
+  showWhere();
+  return storageKept;
+}
 // Open folder (local): the File System Access API, which only Chromium browsers have, and
 // which Brave turns off unless its flag is on
 const FOLDER_ABOUT = "Open a folder local to this computer";
@@ -2018,6 +2029,42 @@ async function addLibraryZip(bytes) {
   return lib;
 }
 $("add-library-zip").onclick = () => $("libfile").click();
+// ---- Clear library cache…: the libraries downloaded into this browser, gone; they come
+// again at the next build that uses them. Only /libcache: the project (the browser's, or a
+// folder on this computer) is another store. The hashes stay, so a new download is still
+// checked against the first
+async function libraryCacheUsage() {
+  const fsp = FS.fs.promises;
+  let libraries = 0, bytes = 0;
+  const walk = async (dir) => {
+    for (const e of await fsp.readdir(dir, { withFileTypes: true })) {
+      const p = dir + "/" + e.name;
+      if (e.isDirectory()) await walk(p);
+      else { bytes += (await fsp.stat(p)).size; if (e.name === ".webide-hx.json") libraries++; }
+    }
+  };
+  await walk(LIBCACHE).catch(() => {});
+  return { libraries, bytes };
+}
+async function clearLibraryCache() {
+  const fsp = FS.fs.promises;
+  for (const name of await fsp.readdir(LIBCACHE)) {
+    const p = LIBCACHE + "/" + name;
+    if (!p.startsWith(LIBCACHE + "/") || name.includes("/") || name === "." || name === "..") continue;
+    await fsp.rm(p, { recursive: true, force: true });
+  }
+  libFiles.clear();
+  if (libraryView) leaveLibraryFile();
+}
+$("clear-libraries").onclick = () => attempt(async () => {
+  const use = await libraryCacheUsage();
+  if (!use.libraries) return askPerson({ title: "Clear library cache", ok: "OK", text: "No libraries are downloaded in this browser." });
+  const size = use.bytes >= 1 << 20 ? `${(use.bytes / (1 << 20)).toFixed(1)} MB` : `${Math.ceil(use.bytes / 1024)} KB`;
+  if (!await askPerson({ title: "Clear the library cache?", ok: "Clear", danger: true,
+    text: `The ${use.libraries === 1 ? "library" : use.libraries + " libraries"} downloaded into this browser (${size}) are removed. The project's files are not touched, in this browser or in a local folder. A library is downloaded again by the next build that uses it.` })) return;
+  await clearLibraryCache();
+  status(`library cache cleared (${use.libraries === 1 ? "1 library" : use.libraries + " libraries"}, ${size})`);
+});
 $("libfile").onchange = () => attempt(async () => {
   const file = $("libfile").files[0];
   $("libfile").value = "";
@@ -2064,6 +2111,11 @@ async function test() {
   const t0 = performance.now();
   let before = await until(() => lastTicks(frameLog(), "Hello"), 15000);
   step("v1 runs", before, before);
+  // the header says whether the browser keeps the project for good or may delete it
+  storageKept = true; showWhere();
+  const keptTip = $("where-project").title;
+  storageKept = false; showWhere();
+  step("the header says whether the browser keeps the project", /keeps it until the site's data is cleared/.test(keptTip) && /may delete it.*Export zip/.test($("where-project").title), [keptTip, $("where-project").title]);
   // the program's output follows the end while you're at the end; scrolled up, it stays put
   const fdoc = $("run").contentDocument, fpage = fdoc.scrollingElement, flog = fdoc.getElementById("log");
   const atEnd = () => fpage.scrollTop + fpage.clientHeight >= fpage.scrollHeight - 4;
@@ -2388,6 +2440,15 @@ async function test() {
   files["web-build.hxml"] = base;
   const back2 = await save();
   step("and back without libraries", back2.ok, back2.ok ? null : back2.r.stderr);
+  // Clear library cache: the downloads go; the project's files stay, in the page and the store
+  await flushWrites();
+  const before0 = JSON.stringify((await project.load()).files), use0 = await libraryCacheUsage();
+  await clearLibraryCache();
+  const use1 = await libraryCacheUsage();
+  step("Clear library cache: the downloaded libraries go", use0.libraries >= 3 && use1.libraries === 0 && use1.bytes === 0 && !(await libHas("format/3.7.0/haxelib")), [use0, use1]);
+  step("and the project's files stay as they were", JSON.stringify((await project.load()).files) === before0);
+  const again = await build();
+  step("a build without libraries still works", again.ok, again.ok ? null : again.r.stderr);
 
   // ---- the project is kept: what the browser's store holds is what the page has
   await flushWrites();
@@ -2463,6 +2524,16 @@ async function test() {
   const fe = await save();
   step("an edit is written to the folder", fe.ok && /from the disk/.test(await read("src/Hello.hx") || ""));
   step("and runs", await until(() => lastTicks(frameLog(), "Hey from the disk"), 15000));
+  // Clear library cache with a folder open: the folder's files, all of them, stay
+  const enc1 = new TextEncoder();
+  await addLibraryZip(FS.zipSync({ "haxelib.json": enc1.encode(JSON.stringify({ name: "webidefolderlib", version: "1.0.0" })), "WebideFolderLib.hx": enc1.encode("class WebideFolderLib {}\n") }));
+  const onDisk = {};
+  for (const f of names().concat(["out/obj/0.o", "out/obj/299.o"])) onDisk[f] = await read(f);
+  const browserFiles = JSON.stringify((await project.load()).files);
+  await clearLibraryCache();
+  const diskSame = await Promise.all(Object.entries(onDisk).map(async ([f, t]) => t !== null && await read(f) === t));
+  step("Clear library cache with a folder open: the folder's files stay, build outputs too", (await libraryCacheUsage()).libraries === 0 && diskSame.every((x) => x)
+       && JSON.stringify((await project.load()).files) === browserFiles, Object.keys(onDisk));
   await newFile("src/extra/Extra.hx");
   step("a new file is made in the folder", await read("src/extra/Extra.hx") === "package extra;\n\nclass Extra {\n}\n", await read("src/extra/Extra.hx"));
   await renameFile("notes/readme.md", "notes/README.md");
@@ -2499,6 +2570,7 @@ async function test() {
   slots = Object.fromEntries(Object.keys(prefParts).map((k) => [k, new CM.Compartment()]));
   await project.open();
   if (TESTING) { await project.clear(); await remembered.set(null); }
+  else keepStorage();
   // the folder from the last visit, if the browser still lets the page have it
   const handle = await remembered.get().catch(() => null);
   if (handle && await handle.queryPermission({ mode: "readwrite" }) === "granted") await project.useFolder(handle).catch(() => null);
