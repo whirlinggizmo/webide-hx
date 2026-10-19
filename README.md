@@ -284,8 +284,10 @@ answers take tens of milliseconds:
 - **Completion**: after a `.`, as a name is typed, or on Ctrl-Space: fields, types, locals
   and keywords, each with its type, and its documentation beside the list.
 - **Hover**: a name's type and documentation.
-- **Go to definition**: F12, Ctrl/Cmd-click, or Edit > Go to definition: the project's file
-  at the declaration; one in the standard library or a library is named in the status line.
+- **Go to definition**: Alt+B (Option+B on a Mac; browsers keep F12 and Ctrl+B for themselves), Ctrl/Cmd-click,
+  or Edit > Go to definition: the file at the declaration, centred. One in the standard
+  library or a library opens read-only, with a bar saying which (its × goes back), and
+  hover and go to definition work in it too.
 - **Signature help**: typing `(` or `,` in a call shows the function's parameters above the
   cursor, the one being typed highlighted; `)` or Escape closes it.
 - **Errors as you type**: a pause in typing (0.8 s) checks the code (a build with

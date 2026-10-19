@@ -191,6 +191,14 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("closing the window brings the program back into the page", await ev("!document.body.classList.contains('program-out') && /run\\/\\?start=/.test($('run').src) && program.kind === null"),
        await ev("$('run').src"));
 
+  // ---- go to definition by Alt+B: the page gets the key (F12 and Ctrl+B are the browser's)
+  await ev("show('src/Hello.hx'); view.focus(); view.dispatch({ selection: { anchor: view.state.doc.toString().indexOf('ticks++;') + 2 } })");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "b", code: "KeyB", windowsVirtualKeyCode: 66, modifiers: 1 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "b", code: "KeyB", windowsVirtualKeyCode: 66, modifiers: 1 });
+  await sleep(1500);
+  step("Alt+B goes to the definition", await ev("view.state.doc.lineAt(view.state.selection.main.head).number === view.state.doc.lineAt(view.state.doc.toString().indexOf('static var ticks')).number"),
+       await ev("view.state.doc.lineAt(view.state.selection.main.head).number"));
+
   // ---- Edit: each item on the editor
   await send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }).catch(function () {});
   var edit = async function (id) { await click(await box("#edit-menu")); await click(await box("#" + id)); await sleep(150); };

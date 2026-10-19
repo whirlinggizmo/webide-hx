@@ -191,14 +191,16 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       itself, Haxe's display protocol (--display with JSON) through the resident
       compiler, like a build (its options, the editor's unsaved text, its cache):
       completion (CodeMirror's, from display/completion), hover (display/hover), go to
-      definition (display/definition; F12, Ctrl/Cmd-click). 10-40 ms each. The reply is
+      definition (display/definition; Alt-B, Ctrl/Cmd-click; not F12 or Ctrl-B, which browsers keep). 10-40 ms each. The reply is
       the compiler's message, not its output; offsets are code points (bytes were wrong
       after non-ASCII text). 2026-10-19.
 - [x] Signature help while typing a call's arguments (display/signatureHelp), a tooltip
       that follows the call; `)` or Escape closes it. 2026-10-19.
 - [x] Errors as you type: a --no-output build 0.8 s after the last keystroke, its errors
       marked as a build's are (no write, no reload). 2026-10-19.
-- [ ] Go to definition into the standard library or a library: open it read-only.
+- [x] Go to definition into the standard library or a library: the file opened read-only
+      (std/ or the library cache), a bar saying which with a × back, hover and go to
+      definition in it. 2026-10-19.
 - [x] The standard library in one download for the first build (web/std.json.gz, 0.5 MB,
       read from memory) instead of a request per file: the first build on dev went from
       ~23 s to ~3 s. 2026-10-19.

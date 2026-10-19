@@ -84,6 +84,10 @@
   #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
   .edit { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #editor { flex: 1; min-height: 0; overflow: hidden; }
+  #viewing { display: flex; align-items: center; gap: 8px; padding: 3px 6px 3px 10px; border-bottom: 1px solid var(--line); background: var(--hover); font-size: 12px; color: var(--muted); }
+  #viewing[hidden] { display: none; }
+  #viewing span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #viewing button { border: 0; background: transparent; padding: 0 6px; font-size: 15px; line-height: 1; color: var(--muted); }
   #editor .cm-editor { height: 100%; }
   #editor .hover { max-width: 520px; padding: 4px 8px; font-size: 12px; }
   #editor .hover code { font-family: ui-monospace, monospace; white-space: pre-wrap; }
@@ -129,7 +133,7 @@
         <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
         <button role="menuitem" id="replace">Replace…</button>
         <button role="menuitem" id="goto-line">Go to line…<kbd class="mod">Ctrl+Alt+G</kbd></button>
-        <button role="menuitem" id="goto-definition">Go to definition<kbd>F12</kbd></button>
+        <button role="menuitem" id="goto-definition">Go to definition<kbd class="alt">Alt+B</kbd></button>
         <hr role="separator">
         <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
         <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
@@ -217,6 +221,7 @@
         <ul id="tree"></ul>
       </div>
       <div class="edit">
+        <div id="viewing" hidden><span id="viewing-what"></span><button id="viewing-close" title="back to the project file">×</button></div>
         <div id="editor"></div>
         <pre id="out"></pre>
       </div>
@@ -721,6 +726,9 @@ async function askCompiler(method, params) {
   const line = (r.stderr || "").split("\n").find((l) => l.startsWith("{"));
   try { const reply = JSON.parse(line); return reply.result ? reply.result.result : null; } catch (e) { return null; }
 }
+// a file's path for the compiler: a project file's under /static/; a library file (the
+// standard library's, or a library's, opened to read) is named by that path already
+const compilerPath = (name) => name.startsWith("/") ? name : "/static/" + name;
 const codeOffset = (doc, pos) => [...doc.sliceString(0, pos)].length;
 // a {line, character} of the compiler's (from 0) as a position
 function docPos(doc, at) {
@@ -765,7 +773,7 @@ function haxeCompletion(fileName) {
     const from = word ? word.from : context.pos;
     const afterDot = from > 0 && context.state.sliceDoc(from - 1, from) === ".";
     if (!context.explicit && !afterDot && !word) return null;
-    const res = await askCompiler("display/completion", { file: "/static/" + fileName, offset: codeOffset(context.state.doc, from), wasAutoTriggered: !context.explicit });
+    const res = await askCompiler("display/completion", { file: compilerPath(fileName), offset: codeOffset(context.state.doc, from), wasAutoTriggered: !context.explicit });
     if (context.aborted || !res || !res.items) return null;
     const seen = new Set(), options = [];
     for (const item of res.items) {
@@ -780,7 +788,7 @@ function haxeCompletion(fileName) {
 // hover: what's under the pointer, its type and documentation
 function haxeHover(fileName) {
   return CM.hoverTooltip(async (view, pos) => {
-    const res = await askCompiler("display/hover", { file: "/static/" + fileName, offset: codeOffset(view.state.doc, pos) });
+    const res = await askCompiler("display/hover", { file: compilerPath(fileName), offset: codeOffset(view.state.doc, pos) });
     if (!res || !res.item) return null;
     const p = itemParts(res.item), doc = view.state.doc;
     return {
@@ -800,7 +808,7 @@ function haxeHover(fileName) {
 // go to definition: the project's file, at the name; one in the standard library or a
 // library is said where it is (not opened here)
 async function goToDefinition(fileName, view, pos) {
-  const res = await askCompiler("display/definition", { file: "/static/" + fileName, offset: codeOffset(view.state.doc, pos) });
+  const res = await askCompiler("display/definition", { file: compilerPath(fileName), offset: codeOffset(view.state.doc, pos) });
   const at = res && res[0];
   if (!at) { status("no definition found there"); return false; }
   const line = at.range.start.line + 1;
@@ -808,14 +816,74 @@ async function goToDefinition(fileName, view, pos) {
     const target = at.file.slice(8);
     if (target !== current) show(target);
     const p = docPos(view.state.doc, at.range.start);
-    view.dispatch({ selection: { anchor: p, head: docPos(view.state.doc, at.range.end) }, scrollIntoView: true });
+    view.dispatch({ selection: { anchor: p, head: docPos(view.state.doc, at.range.end) }, effects: CM.EditorView.scrollIntoView(p, { y: "center" }) });
     view.focus();
     status(`${target}:${line}`);
-  } else {
-    const where = at.file.replace(/^\/haxe\/std\//, "the standard library: ").replace(/^\/libcache\/([^/]+)\/[^/]+\/[^/]+\//, "library $1: ");
-    status(`defined in ${where}:${line}`);
+  } else if (!(await showLibraryFile(at.file, at.range))) {
+    status(`defined in ${at.file}:${line}, which the page can't open`);
   }
   return true;
+}
+
+// ---- a file of the standard library or of a library, opened to read (from go to
+// definition): read-only, with hover and go to definition in it too. While one is shown,
+// no project file is current (saving and building are the project's, as ever); a bar
+// above the editor says what it is, and its × goes back to the project file
+let libraryView = null; // {path, back}: what's shown, and the project file to go back to
+const libraryStates = new Map(); // path -> its editor state, kept while the page is open
+async function libraryText(path) {
+  try {
+    if (path.startsWith("/haxe/std/")) { const r = await fetch("std/" + path.slice("/haxe/std/".length)); return r.ok ? await r.text() : null; }
+    if (path.startsWith(LIBCACHE + "/")) return new TextDecoder().decode(await FS.fs.promises.readFile(path));
+  } catch (e) {}
+  return null;
+}
+// what the bar says: "standard library · haxe/ds/StringMap.hx", "library format 3.7.0 · format/tools/Adler32.hx"
+function libraryLabel(path) {
+  if (path.startsWith("/haxe/std/")) return "standard library · " + path.slice("/haxe/std/".length);
+  const parts = path.slice(LIBCACHE.length + 1).split("/");
+  const rest = parts.slice(["github", "gitlab"].includes(parts[2]) ? 4 : 3).join("/");
+  return `library ${parts[0]} ${parts[1]} · ${rest}`;
+}
+function libraryState(path, text) {
+  return CM.EditorState.create({ doc: text, extensions: [
+    CM.highlightSpecialChars(), CM.drawSelection(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
+    CM.highlightSelectionMatches(), CM.keymap.of([...CM.defaultKeymap, ...CM.searchKeymap, ...CM.foldKeymap]),
+    prefExtensions(), CM.StreamLanguage.define(CM.haxe), CM.EditorState.readOnly.of(true), haxeNavigation(path),
+  ] });
+}
+async function showLibraryFile(path, range) {
+  let st = libraryStates.get(path);
+  if (!st) {
+    const text = await libraryText(path);
+    if (text === null) return false;
+    st = libraryState(path, text);
+  }
+  // leaving a project file (kept as it is), or another library file
+  if (current !== null) {
+    if (states.has(current) && current in files) states.set(current, view.state);
+    libraryView = { path, back: current };
+    current = null;
+  } else if (libraryView) {
+    libraryStates.set(libraryView.path, view.state);
+    libraryView = { path, back: libraryView.back };
+  }
+  libraryStates.set(path, st);
+  view.setState(st);
+  // the definition in the middle of the editor, where the eye is
+  if (range) { const p = docPos(view.state.doc, range.start); view.dispatch({ selection: { anchor: p, head: docPos(view.state.doc, range.end) }, effects: CM.EditorView.scrollIntoView(p, { y: "center" }) }); }
+  view.focus();
+  for (const b of $("tree").querySelectorAll("button")) b.classList.remove("on");
+  $("viewing-what").textContent = libraryLabel(path) + " · read-only";
+  $("viewing").hidden = false;
+  status(`${libraryLabel(path)}${range ? ":" + (range.start.line + 1) : ""}`);
+  return true;
+}
+function leaveLibraryFile() {
+  if (!libraryView) return;
+  libraryStates.set(libraryView.path, view.state);
+  libraryView = null;
+  $("viewing").hidden = true;
 }
 // signature help: typing "(" or "," in a call shows the function's parameters above the
 // cursor, the one being typed in bold, and its documentation; ")" or Escape closes it
@@ -856,7 +924,7 @@ function signatureDom(sig, active) {
 }
 async function showSignature(fileName, view) {
   const doc = view.state.doc, pos = view.state.selection.main.head;
-  const res = await askCompiler("display/signatureHelp", { file: "/static/" + fileName, offset: codeOffset(doc, pos), wasAutoTriggered: true });
+  const res = await askCompiler("display/signatureHelp", { file: compilerPath(fileName), offset: codeOffset(doc, pos), wasAutoTriggered: true });
   if (view.state.doc !== doc || current !== fileName) return; // typed on, or another file: a newer one comes
   const sig = res && res.signatures && res.signatures[res.activeSignature || 0];
   view.dispatch({ effects: setSignature.of(sig ? { pos, dom: signatureDom(sig, res.activeParameter) } : null) });
@@ -879,6 +947,25 @@ async function checkNow() {
   showDiagnostics(parseMessages(r.stderr).byFile);
 }
 
+// hover, and go to definition by Alt-B (browsers keep F12 for their DevTools, and Ctrl-B
+// for themselves too) or Ctrl/Cmd-click: what a library file opened to read has too
+function haxeNavigation(fileName) {
+  return [
+    haxeHover(fileName),
+    CM.keymap.of([{ key: "Alt-b", preventDefault: true, run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
+    CM.EditorView.domEventHandlers({
+      mousedown(e, v) {
+        if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
+        const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos === null) return false;
+        e.preventDefault();
+        goToDefinition(fileName, v, pos);
+        return true;
+      },
+    }),
+  ];
+}
+
 function haxeIntelligence(fileName) {
   return [
     signatureTooltip(),
@@ -891,21 +978,10 @@ function haxeIntelligence(fileName) {
       if (typed.includes("(") || typed.endsWith(",")) setTimeout(() => showSignature(fileName, u.view), 0);
     }),
     CM.autocompletion({ override: [haxeCompletion(fileName)] }),
-    haxeHover(fileName),
+    haxeNavigation(fileName),
     CM.keymap.of([
-      { key: "F12", run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } },
       { key: "Escape", run: (v) => { if (!v.state.field(signatureField, false)) return false; v.dispatch({ effects: setSignature.of(null) }); return true; } },
     ]),
-    CM.EditorView.domEventHandlers({
-      mousedown(e, v) {
-        if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
-        const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
-        if (pos === null) return false;
-        e.preventDefault();
-        goToDefinition(fileName, v, pos);
-        return true;
-      },
-    }),
   ];
 }
 
@@ -1344,6 +1420,7 @@ function syncEditor() {
 }
 
 function show(name) {
+  leaveLibraryFile();
   if (view && current !== null && states.has(current) && current in files) states.set(current, view.state);
   current = name;
   if (selectedDir !== null) { selectedDir = null; for (const b of $("tree").querySelectorAll("button.folder")) b.classList.remove("on"); }
@@ -1531,7 +1608,7 @@ function closeMenus() {
 // what the items can do just now
 function refreshMenus() {
   $("rename").disabled = $("delete").disabled = current === null && selectedDir === null;
-  const st = view && current !== null ? view.state : null, editable = !!st && !st.readOnly;
+  const st = view && (current !== null || libraryView) ? view.state : null, editable = !!st && !st.readOnly;
   const selected = !!st && st.selection.ranges.some((r) => !r.empty);
   $("undo").disabled = !editable || CM.undoDepth(st) === 0;
   $("redo").disabled = !editable || CM.redoDepth(st) === 0;
@@ -1539,7 +1616,7 @@ function refreshMenus() {
   $("copy").disabled = !selected;
   for (const id of ["paste", "replace", "comment", "indent", "outdent"]) $(id).disabled = !editable;
   for (const id of ["select-all", "find", "goto-line"]) $(id).disabled = !st;
-  $("goto-definition").disabled = !st || current === null || !isCode(current);
+  $("goto-definition").disabled = !st || !(libraryView || (current !== null && isCode(current)));
 }
 for (const m of document.querySelectorAll(".menu")) {
   const button = m.querySelector(".menubutton"), list = m.querySelector(".items");
@@ -1640,7 +1717,7 @@ editCommand("select-all", (v) => CM.selectAll(v));
 editCommand("find", (v) => CM.openSearchPanel(v));
 editCommand("replace", (v) => { CM.openSearchPanel(v); const r = v.dom.querySelector(".cm-search [name=replace]"); if (r) r.focus(); });
 editCommand("goto-line", (v) => CM.gotoLine(v));
-editCommand("goto-definition", (v) => goToDefinition(current, v, v.state.selection.main.head));
+editCommand("goto-definition", (v) => goToDefinition(libraryView ? libraryView.path : current, v, v.state.selection.main.head));
 editCommand("comment", (v) => CM.toggleComment(v));
 editCommand("indent", (v) => CM.indentMore(v));
 editCommand("outdent", (v) => CM.indentLess(v));
@@ -1672,8 +1749,15 @@ $("prefs").querySelector("form").onsubmit = (e) => {
 // a file operation's failure, for a person: in the status line
 const attempt = (f) => f().catch((e) => status(e.message));
 // Ctrl-S, or Cmd-S on a Mac: the menu shows which
-if (/Mac|iPhone|iPad/.test(navigator.platform)) for (const k of document.querySelectorAll("kbd.mod")) k.textContent = k.textContent.replace("Ctrl+", "⌘");
+if (/Mac|iPhone|iPad/.test(navigator.platform)) {
+  for (const k of document.querySelectorAll("kbd.mod")) k.textContent = k.textContent.replace("Ctrl+", "⌘");
+  for (const k of document.querySelectorAll("kbd.alt")) k.textContent = k.textContent.replace("Alt+", "⌥");
+}
 $("build").onclick = () => save();
+$("viewing-close").onclick = () => {
+  const back = libraryView && libraryView.back in files ? libraryView.back : names().find(isCode) || names()[0] || null;
+  if (back !== null) show(back); else leaveLibraryFile();
+};
 $("view-window").onclick = () => attempt(async () => { if (program.kind === "window") program.back(); else await program.out("window"); });
 $("view-pip").onclick = () => attempt(async () => { if (program.kind === "pip") program.back(); else await program.out("pip"); });
 $("view-tab").onclick = () => { window.open("run/", "_blank"); };
@@ -1900,6 +1984,18 @@ async function test() {
   step("go to definition: the cursor on ticks's declaration", view.state.doc.lineAt(view.state.selection.main.head).number === declLine
        && view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to) === "ticks", view.state.doc.lineAt(view.state.selection.main.head).number);
   step("and the editor's text is as it was", files["src/Hello.hx"] === code0);
+  // into the standard library: text.trim() is StringTools.trim (by "using"), its file opened
+  // to read at the function, with hover in it; × goes back
+  await goToDefinition("src/Hello.hx", view, view.state.doc.toString().indexOf("text.trim()") + 6);
+  const libSel = view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to);
+  step("go to definition into the standard library: its file, read-only, at the function", libraryView && libraryView.path === "/haxe/std/StringTools.hx"
+       && view.state.readOnly && /class StringTools/.test(view.state.doc.toString()) && libSel === "trim"
+       && !$("viewing").hidden && /^standard library · StringTools\.hx/.test($("viewing-what").textContent), [libraryView && libraryView.path, libSel, $("viewing-what").textContent]);
+  const encAt = view.state.doc.toString().indexOf("function urlEncode") + "function ".length;
+  const libHover = await askCompiler("display/hover", { file: libraryView.path, offset: codeOffset(view.state.doc, encAt) });
+  step("hover works in it", libHover && libHover.item && itemParts(libHover.item).name === "urlEncode", libHover && libHover.item && itemParts(libHover.item));
+  $("viewing-close").click();
+  step("and × goes back to the project file", current === "src/Hello.hx" && $("viewing").hidden && view.state.doc.toString() === files["src/Hello.hx"]);
   // signature help: typing "say(" shows say's parameters; ")" closes it
   const typeAt = (pos, text) => view.dispatch({ changes: { from: pos, insert: text }, selection: { anchor: pos + text.length }, userEvent: "input.type" });
   const sigAt = view.state.doc.toString().indexOf("ticks++;") + "ticks++;".length;
@@ -2053,6 +2149,11 @@ async function test() {
        && await until(() => frameLog().includes("adler again true"), 15000), lx.ok ? (lx2.ok ? frameLog().split("\n").slice(-3) : lx2.r.stderr) : lx.r.stderr);
   const marker = JSON.parse(await libText(`format/3.7.0/github/${sha}`, ".webide-hx.json"));
   step("and says where it came from", /jsDelivr/.test(marker.from) && marker.files > 100, marker);
+  show("src/UsesFormat.hx");
+  await goToDefinition("src/UsesFormat.hx", view, view.state.doc.toString().indexOf("Adler32()") + 2);
+  step("go to definition into a library: its file, read-only", libraryView && libraryView.path.startsWith(`/libcache/format/3.7.0/github/${sha}/`)
+       && /^library format 3\.7\.0 · format\/tools\/Adler32\.hx/.test($("viewing-what").textContent) && view.state.readOnly, [libraryView && libraryView.path, $("viewing-what").textContent]);
+  $("viewing-close").click();
   // what can't be had: on its line
   files["web-build.hxml"] = base + "-lib nosuchlib\n";
   const nv = await save();
