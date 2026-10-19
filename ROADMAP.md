@@ -58,14 +58,16 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [x] An in-page stand-in for the DevServer: after a compile, hand the swap the new
       bundle as a blob URL and signal it. Look at what `hotreload.Reloader` on JS polls
       (`/__hotreload`) and give it the same answers from the page.
-- [ ] Run the program in an iframe next to the compiler, from the bundle the worker
-      produced; the swap happens inside that iframe.
-- [ ] Demonstrate it: edit a file, compile, swap, and watch state survive, with the
-      parity program first (its report line says what was kept) and hotreload-hx's
-      `examples/hello` second.
-- [ ] Assets: the DevServer also watches an assets directory and tells the program
-      about changed files. In the page the editor is the only source of changes, so
-      this is a message, not a watcher.
+- [x] The program runs in an iframe next to the editor, from the bundle the worker
+      produced, and swaps there (or in a window of its own: see the editor's View).
+      2026-10-18.
+- [x] Demonstrated with hotreload-hx's `examples/hello`: `?test` edits, builds and checks
+      that @:hot state carries over and plain statics start over. 2026-10-18.
+- [ ] The same with the parity program, in the page (its report line says what was
+      kept); index.html only compiles it today.
+- [x] Assets: the page tells the service worker, which tells the program
+      (`/__hotreload_assets`), as the DevServer's watcher would; added, changed and
+      removed ones, and bytes as well as text. 2026-10-18.
 
 ## 4. The editor
 
