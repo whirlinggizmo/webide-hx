@@ -2,7 +2,7 @@
 // (the run/ scope), so every request the program makes comes here:
 //   run/            the program's page: a log, and the bundle
 //   run/<bundle>    the latest build (any ?v=), stamped with its number as the DevServer does
-//                   (built with -D source-map-inline, it carries its source map inside)
+//                   (built with -D source-map=inline, it carries its source map inside)
 //   run/assets/...  files the page gave it
 //   /__hotreload?since=N         held until there's a build newer than N (or 20 s), then
 //                                {version, url}: the JS reloader imports url next

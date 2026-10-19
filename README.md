@@ -299,12 +299,12 @@ Positions are counted in characters (code points), as the compiler counts them.
 
 ## Debugging
 
-The IDE builds with `-debug -D source-map-inline -D source-map-content`: each bundle
+The IDE builds with `-debug -D source-map=inline -D source-map-content`: each bundle
 carries its source map inside, as a `data:` URL, with the `.hx` text in it. Inline
 matters: DevTools loads a separate map over the network itself, past the page's service
 worker, so a `.map` only the service worker knows would fail to load. `-D
-source-map-inline` is a commit on the fork branch, proposed upstream for Haxe
-([#6414](https://github.com/HaxeFoundation/haxe/issues/6414)). The sources show in
+source-map=inline` is in Haxe's development branch
+([#13068](https://github.com/HaxeFoundation/haxe/pull/13068)), and backported on the fork branch. The sources show in
 DevTools under `file://` as the compiler's paths (`/static/src/Hello.hx`). Open DevTools on the page, find
 `Hello.hx` among the sources, and set breakpoints; they keep working across reloads.
 `node tests/devtools.js PORT` checks this against a Chromium-based browser started with

@@ -79,11 +79,10 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       DevTools protocol: a breakpoint on a Hello.hx line hits at that line, with state
       readable, in the first bundle and in a reloaded one. Firefox: Rob checked by hand
       (2026-10-19): breakpoints work, on the .hx file. No debug adapter. 2026-10-18.
-- [x] Maps inline from the compiler: `-D source-map-inline` (a fork branch commit, for
-      upstream issue #6414) instead of the service worker rewriting the bundle. Sources
+- [x] Maps inline from the compiler: `-D source-map=inline` (merged upstream as
+      haxe#13068, 2026-10-19; backported on the fork branch) instead of the service worker rewriting the bundle. Sources
       show under `file://` as `/static/src/...` (the earlier renaming needed the rewrite).
       The branch also fixes Rbuffer under js_of_ocaml (big prints came out as NULs).
-      Upstream PR for the define: prepared, not opened (Rob's call).
       2026-10-18.
 - [x] CodeMirror 6 in play.html: Haxe highlighting (the legacy-modes Haxe mode), a state
       per file (its own undo), Ctrl-S builds, tabs, dark theme following the system.

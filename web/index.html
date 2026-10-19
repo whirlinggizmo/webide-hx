@@ -711,10 +711,10 @@ async function librarySources(dir) {
 function buildArgs(reload) {
   // -debug, with the map inside the bundle and the sources inside the map: DevTools loads
   // a map over the network itself, past the service worker, and the .hx files live only
-  // in the compiler's in-memory filesystem (-D source-map-inline: the fork's Haxe, and
-  // proposed upstream)
+  // in the compiler's in-memory filesystem (-D source-map=inline: in Haxe's development
+  // branch, backported on the fork's)
   const cfg = buildConfig();
-  const args = HOTRELOAD.concat(cfg.args, cfg.libArgs || [], ["-D", "hotreload", "-debug", "-D", "source-map-inline", "-D", "source-map-content", "--js", outPath(cfg)]);
+  const args = HOTRELOAD.concat(cfg.args, cfg.libArgs || [], ["-D", "hotreload", "-debug", "-D", "source-map=inline", "-D", "source-map-content", "--js", outPath(cfg)]);
   if (reload) args.push("-D", "hotreload_reload");
   return args;
 }
