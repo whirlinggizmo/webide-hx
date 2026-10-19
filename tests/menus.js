@@ -191,12 +191,12 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("closing the window brings the app back, Embedded checked", await ev("!document.body.classList.contains('program-out') && /run\\/\\?start=/.test($('run').src) && program.kind === null && $('app-embedded').getAttribute('aria-checked') === 'true'"),
        await ev("$('run').src"));
 
-  // ---- go to definition by Alt+J: the page gets the key (F12 and Ctrl+B are the browser's)
+  // ---- go to definition by Ctrl+Alt+J: the page gets the key (F12 and Ctrl+B are the browser's)
   await ev("show('src/Hello.hx'); view.focus(); view.dispatch({ selection: { anchor: view.state.doc.toString().indexOf('ticks++;') + 2 } })");
-  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "j", code: "KeyJ", windowsVirtualKeyCode: 74, modifiers: 1 });
-  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "j", code: "KeyJ", windowsVirtualKeyCode: 74, modifiers: 1 });
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "j", code: "KeyJ", windowsVirtualKeyCode: 74, modifiers: 3 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "j", code: "KeyJ", windowsVirtualKeyCode: 74, modifiers: 3 });
   await sleep(1500);
-  step("Alt+J goes to the definition", await ev("view.state.doc.lineAt(view.state.selection.main.head).number === view.state.doc.lineAt(view.state.doc.toString().indexOf('static var ticks')).number"),
+  step("Ctrl+Alt+J goes to the definition", await ev("view.state.doc.lineAt(view.state.selection.main.head).number === view.state.doc.lineAt(view.state.doc.toString().indexOf('static var ticks')).number"),
        await ev("view.state.doc.lineAt(view.state.selection.main.head).number"));
 
   // ---- Edit: each item on the editor

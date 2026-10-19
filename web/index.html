@@ -139,7 +139,7 @@
         <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
         <button role="menuitem" id="replace">Replace…</button>
         <button role="menuitem" id="goto-line">Go to line…<kbd class="mod">Ctrl+Alt+G</kbd></button>
-        <button role="menuitem" id="goto-definition">Go to definition<kbd class="alt">Alt+J</kbd></button>
+        <button role="menuitem" id="goto-definition">Go to definition<kbd class="ctrlalt">Ctrl+Alt+J</kbd></button>
         <hr role="separator">
         <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
         <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
@@ -955,13 +955,14 @@ async function checkNow() {
   showDiagnostics(parseMessages(r.stderr).byFile);
 }
 
-// hover, and go to definition by Alt-J, "jump" (browsers keep F12, Ctrl-B and Ctrl-D for
-// themselves, and Firefox opens its menus by Alt and a letter, but not J) or Ctrl/Cmd-click:
-// what a library file opened to read has too
+// hover, and go to definition by Ctrl-Alt-J, "jump", next to go to line's Ctrl-Alt-G
+// (browsers keep F12, Ctrl-B and Ctrl-D for themselves; on a Mac it's Control-Option-J,
+// since Chrome takes Cmd-Option-J for its console) or Ctrl/Cmd-click: what a library file
+// opened to read has too
 function haxeNavigation(fileName) {
   return [
     haxeHover(fileName),
-    CM.keymap.of([{ key: "Alt-j", preventDefault: true, run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
+    CM.keymap.of([{ key: "Ctrl-Alt-j", preventDefault: true, run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
     CM.EditorView.domEventHandlers({
       mousedown(e, v) {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
@@ -1770,7 +1771,7 @@ const attempt = (f) => f().catch((e) => status(e.message));
 // Ctrl-S, or Cmd-S on a Mac: the menu shows which
 if (/Mac|iPhone|iPad/.test(navigator.platform)) {
   for (const k of document.querySelectorAll("kbd.mod")) k.textContent = k.textContent.replace("Ctrl+", "⌘");
-  for (const k of document.querySelectorAll("kbd.alt")) k.textContent = k.textContent.replace("Alt+", "⌥");
+  for (const k of document.querySelectorAll("kbd.ctrlalt")) k.textContent = k.textContent.replace("Ctrl+Alt+", "⌃⌥");
 }
 $("build").onclick = () => save();
 $("where-build").onclick = () => $("build-file").click();
