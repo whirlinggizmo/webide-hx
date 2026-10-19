@@ -25,6 +25,9 @@
   .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
   header .status { color: var(--muted); font-size: 13px; }
   header .where { margin-left: auto; color: var(--muted); font-size: 13px; }
+  /* the build file: a click chooses another */
+  header .where button { border: 0; padding: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline dotted; text-underline-offset: 3px; }
+  header .where button:hover { color: var(--fg); }
   /* the menus: a button in the header, its items in a list below it */
   .menus { display: flex; gap: 2px; }
   .menu { position: relative; }
@@ -168,7 +171,7 @@
   <button class="primary" id="build" title="Ctrl-S">Build</button>
   <span class="spinner" aria-hidden="true"></span>
   <span class="status" id="status" role="status">starting</span>
-  <span class="where" id="where"></span>
+  <span class="where" id="where"><span id="where-project"></span> · <button id="where-build"></button></span>
   <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
   <input type="file" id="libfile" accept=".zip,application/zip" hidden>
   <div id="progress"><div></div></div>
@@ -1542,7 +1545,12 @@ async function switchTo(loaded) {
 }
 function showWhere() {
   const cfg = buildConfig();
-  $("where").textContent = (project.folder ? "local folder: " + project.folder.name : "kept in this browser") + " · " + (cfg.file || "src/, Main");
+  // where the project is (browsers tell a page a local folder's name, never its path), and
+  // what it builds from
+  $("where-project").textContent = project.folder ? `[ Local Folder: ${project.folder.name} ]` : "[ Browser Hosted ]";
+  $("where-project").title = project.folder ? `The project is stored on this computer, in the folder ${project.folder.name}` : "The project is stored in this browser";
+  $("where-build").textContent = "build: " + (cfg.file || "src/, Main");
+  $("where-build").title = cfg.file ? "The hxml the IDE builds from. Click to choose another." : "No build file: src/ is the code, Main the main class. Click to choose an hxml.";
   $("folder").textContent = project.folder ? "Close folder (local)" : reopen ? `Reopen ${reopen.name} (local)…` : "Open folder (local)…";
   // always shown; where the browser can't open folders, greyed, saying why and how to have it
   const can = !!project.folder || !!reopen || folderPicker();
@@ -1755,6 +1763,7 @@ if (/Mac|iPhone|iPad/.test(navigator.platform)) {
   for (const k of document.querySelectorAll("kbd.alt")) k.textContent = k.textContent.replace("Alt+", "⌥");
 }
 $("build").onclick = () => save();
+$("where-build").onclick = () => $("build-file").click();
 $("viewing-close").onclick = () => {
   const back = libraryView && libraryView.back in files ? libraryView.back : names().find(isCode) || names()[0] || null;
   if (back !== null) show(back); else leaveLibraryFile();
