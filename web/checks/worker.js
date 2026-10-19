@@ -14,12 +14,12 @@ onmessage = function (ev) {
     exit: function (c) { code = c; throw { hx_exit: c }; },
   };
   // the standard library, fetched as the compiler opens its files (see stubs.js)
-  globalThis.HX_STD = { url: new URL("std/", location.href).href };
+  globalThis.HX_STD = { url: new URL("../std/", location.href).href };
   console.log = function () { out.push(Array.prototype.join.call(arguments, " ")); };
   console.error = function () { err.push(Array.prototype.join.call(arguments, " ")); };
   var result = null;
   try {
-    importScripts("haxe.js");
+    importScripts("../haxe.js");
     if (code === null) code = 0;
   } catch (e) {
     if (!(e && e.hx_exit !== undefined)) { err.push("exception: " + (e && e.message ? e.message : String(e)) + "\n" + (e && e.stack ? String(e.stack).split("\n").slice(0, 12).join("\n") : "")); if (code === null) code = -1; }

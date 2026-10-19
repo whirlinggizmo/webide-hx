@@ -14,7 +14,7 @@ Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
 Self-contained: opam, OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml are
 installed under build/ the first time (about ten minutes). From the system it needs
 git, cmake, make, a C compiler, libpcre2-dev and zlib1g-dev (and bubblewrap, or opam's
-sandboxing is turned off), and node with npm for play.html's editor.
+sandboxing is turned off), and node with npm for the IDE's editor.
 """
 import argparse, filecmp, glob, json, os, re, shutil, subprocess, sys, tarfile, urllib.request
 
@@ -205,13 +205,13 @@ def bundle(src, bc, env, embeds, embed_std):
 
 
 def editor():
-    """web/vendor/: play.html's libraries, from editor/ (pinned in its package-lock.json),
+    """web/vendor/: the IDE's libraries, from editor/ (pinned in its package-lock.json),
     bundled with esbuild: codemirror.js (the editor) and fs.js (ZenFS and fflate, for the
     project's files). Needs node and npm on the PATH"""
     d = os.path.join(HERE, "editor")
     npm = shutil.which("npm")
     if npm is None:
-        sys.exit("npm not found: play.html's editor is built with it (node 18 or later)")
+        sys.exit("npm not found: the IDE's editor is built with it (node 18 or later)")
     if not os.path.exists(os.path.join(d, "node_modules", ".package-lock.json")):
         run([npm, "ci", "--no-audit", "--no-fund"], cwd=d, quiet=True)
     esbuild = os.path.join(d, "node_modules", ".bin", "esbuild")
@@ -232,7 +232,7 @@ def main():
     if args.hotreload:
         d = os.path.expanduser(args.hotreload)
         args.embed += [f"{d}/src:/lib/hotreload/src", f"{d}/extraParams.hxml:/lib/hotreload/extraParams.hxml"]
-        # its hello example, for web/play.html to edit and run
+        # its hello example, for the IDE (web/index.html) to edit and run
         hello = os.path.join(HERE, "web", "hello")
         shutil.rmtree(hello, ignore_errors=True)
         for sub in ["src", "assets"]:
@@ -251,7 +251,7 @@ def main():
     print("haxe bytecode"); bc = haxe_bytecode(src, env, prefix)
     print("bundle"); bundle(src, bc, env, args.embed, args.embed_std)
     print("editor"); editor()
-    print("done: python3 web/serve.py, then http://127.0.0.1:8765/play.html")
+    print("done: python3 tools/serve.py, then http://127.0.0.1:8765/")
 
 
 if __name__ == "__main__":

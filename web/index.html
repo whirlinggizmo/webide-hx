@@ -1,61 +1,1952 @@
 <!doctype html>
-<html><head><meta charset="utf-8"><title>webide-hx: compiler checks</title></head>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>webide-hx</title>
+<style>
+  :root { --bg: #fafafa; --fg: #111; --muted: #666; --line: #ddd; --panel: #fff; --accent: #0b6bcb; --hover: #eef3fa; --error: #c62828; }
+  /* dark: the system's, unless Preferences say light; or Preferences say dark */
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; } }
+  :root[data-theme="dark"] { --bg: #161616; --fg: #e6e6e6; --muted: #999; --line: #333; --panel: #1e1e1e; --accent: #5aa9ff; --hover: #26303c; --error: #ff8a80; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.4 system-ui, sans-serif; }
+  header { position: relative; display: flex; gap: 12px; align-items: center; padding: 8px 16px 8px 8px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  /* a build in progress: a spinner by the status, and a bar along the header's foot */
+  .spinner { display: none; width: 12px; height: 12px; margin-right: -6px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+  body.busy .spinner { display: inline-block; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #progress { position: absolute; left: 0; right: 0; bottom: -1px; height: 2px; overflow: hidden; visibility: hidden; }
+  body.busy #progress { visibility: visible; }
+  #progress div { height: 100%; width: 0; background: var(--accent); transition: width 0.1s linear; }
+  #progress.guess div { width: 30%; transition: none; animation: slide 1.2s ease-in-out infinite alternate; }
+  @keyframes slide { from { margin-left: 0; } to { margin-left: 70%; } }
+  @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } #progress.guess div { animation: none; width: 100%; opacity: 0.4; } }
+  .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  header .status { color: var(--muted); font-size: 13px; }
+  header .where { margin-left: auto; color: var(--muted); font-size: 13px; }
+  /* the menus: a button in the header, its items in a list below it */
+  .menus { display: flex; gap: 2px; }
+  .menu { position: relative; }
+  .menubutton { border-color: transparent; background: transparent; }
+  .menubutton:hover, .menubutton[aria-expanded="true"] { background: var(--hover); }
+  .items { position: absolute; top: calc(100% + 4px); left: 0; z-index: 10; display: flex; flex-direction: column; min-width: 220px; padding: 4px 0;
+           background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); }
+  .items[hidden] { display: none; }
+  .items button { border: 0; border-radius: 0; text-align: left; padding: 5px 14px; background: transparent; }
+  .items button:hover, .items button:focus-visible, .items button:focus { background: var(--hover); outline: none; }
+  .items button:disabled { color: var(--muted); background: transparent; cursor: default; }
+  .items hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+  .items button { display: flex; gap: 24px; }
+  .items kbd { margin-left: auto; font: inherit; font-size: 12px; color: var(--muted); }
+  .items button[hidden] { display: none; }
+  /* the page's own dialog: a question, or a name to type */
+  dialog { width: min(440px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--fg);
+           box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3); }
+  dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+  dialog form { display: flex; flex-direction: column; gap: 10px; padding: 16px 18px; }
+  dialog h2 { margin: 0; font-size: 15px; }
+  dialog p { margin: 0; }
+  dialog p:empty, dialog ul:empty { display: none; }
+  dialog ul { margin: 0; padding: 6px 10px 6px 26px; max-height: 160px; overflow: auto; background: var(--bg); border-radius: 4px; font: 12px/1.5 ui-monospace, monospace; }
+  dialog input { font: 13px ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+  dialog input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  dialog select { font: inherit; padding: 5px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+  dialog select[hidden] { display: none; }
+  dialog .error { color: var(--error); font-size: 13px; }
+  /* OK first in the form, so Enter picks it; shown on the right */
+  dialog .actions { display: flex; flex-direction: row-reverse; gap: 8px; margin-top: 4px; }
+  dialog .actions .danger { border-color: var(--error); color: var(--error); }
+  #prefs { width: min(500px, calc(100vw - 32px)); }
+  #prefs .grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; }
+  #prefs select, #prefs input[type=number] { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); justify-self: start; }
+  #prefs input[type=number] { width: 70px; }
+  #prefs .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; }
+  #prefs label.check { display: flex; gap: 6px; align-items: center; }
+  #prefs .actions { justify-content: flex-start; }
+  button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
+  button.primary { border-color: var(--accent); color: var(--accent); }
+  main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
+  /* the program in a window of its own: the editor has the page */
+  body.program-out main { grid-template-columns: 1fr; }
+  body.program-out #program-pane { display: none; }
+  section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .code { display: grid; grid-template-columns: 180px 1fr; min-height: 0; flex: 1; }
+  .files { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  #tree { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; font-size: 13px; }
+  #tree .folder { color: var(--muted); }
+  #tree .caret { width: 12px; flex: none; font-size: 10px; line-height: 19px; }
+  #tree button.drop { background-color: var(--hover); box-shadow: inset 0 0 0 1px var(--accent); }
+  #tree button { display: flex; gap: 4px; width: 100%; border: 0; border-radius: 0; text-align: left; padding: 3px 10px 3px 8px; background-color: transparent; }
+  #tree button:hover { background-color: var(--hover); }
+  #tree button.on { background-color: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+  #tree .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
+  .edit { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  #editor { flex: 1; min-height: 0; overflow: hidden; }
+  #editor .cm-editor { height: 100%; }
+  #editor .cm-editor.cm-focused { outline: none; }
+  #editor .cm-scroller { font-family: ui-monospace, monospace; line-height: 1.45; }
+  iframe { flex: 1; border: 0; background: var(--panel); min-height: 0; }
+  #out { margin: 0; padding: 6px 8px; max-height: 30%; overflow: auto; font: 12px/1.4 ui-monospace, monospace; border-top: 1px solid var(--line); color: var(--muted); white-space: pre-wrap; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 3fr 2fr; }
+    body.program-out main { grid-template-rows: 1fr; }
+    .code { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .files { border-right: 0; border-bottom: 1px solid var(--line); max-height: 140px; }
+  }
+</style>
+</head>
 <body>
-<pre id="log">starting</pre>
+<header>
+  <h1 class="visually-hidden">webide-hx</h1>
+  <nav class="menus">
+    <div class="menu">
+      <button class="menubutton" id="file-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="file-items">File</button>
+      <div class="items" id="file-items" role="menu" aria-labelledby="file-menu" hidden>
+        <button role="menuitem" id="new" title="src/... for code, anything else is an asset">New file…</button>
+        <button role="menuitem" id="new-folder">New folder…</button>
+        <hr role="separator">
+        <button role="menuitem" id="rename">Rename…</button>
+        <button role="menuitem" id="delete">Delete…</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menubutton" id="edit-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="edit-items">Edit</button>
+      <div class="items" id="edit-items" role="menu" aria-labelledby="edit-menu" hidden>
+        <button role="menuitem" id="undo">Undo<kbd class="mod">Ctrl+Z</kbd></button>
+        <button role="menuitem" id="redo">Redo<kbd class="mod">Ctrl+Shift+Z</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="cut">Cut<kbd class="mod">Ctrl+X</kbd></button>
+        <button role="menuitem" id="copy">Copy<kbd class="mod">Ctrl+C</kbd></button>
+        <button role="menuitem" id="paste">Paste<kbd class="mod">Ctrl+V</kbd></button>
+        <button role="menuitem" id="select-all">Select all<kbd class="mod">Ctrl+A</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
+        <button role="menuitem" id="replace">Replace…</button>
+        <button role="menuitem" id="goto-line">Go to line…<kbd class="mod">Ctrl+Alt+G</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
+        <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
+        <button role="menuitem" id="outdent">Outdent<kbd class="mod">Ctrl+[</kbd></button>
+        <hr role="separator">
+        <button role="menuitem" id="preferences">Preferences…</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menubutton" id="view-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="view-items">View</button>
+      <div class="items" id="view-items" role="menu" aria-labelledby="view-menu" hidden>
+        <button role="menuitem" id="view-window" title="the running program in a window of its own, which can go on another screen">Program in a window</button>
+        <button role="menuitem" id="view-pip" title="the running program in a small window that stays on top" hidden>Program picture-in-picture</button>
+        <button role="menuitem" id="view-tab" title="another copy of the running program, in a tab; it reloads with each build, but starts over only when you reload it">Program in a new tab</button>
+      </div>
+    </div>
+    <div class="menu">
+      <button class="menubutton" id="project-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="project-items">Project</button>
+      <div class="items" id="project-items" role="menu" aria-labelledby="project-menu" hidden>
+        <button role="menuitem" id="build-item">Build<kbd class="mod">Ctrl+S</kbd></button>
+        <button role="menuitem" id="build-file" title="which of the project's hxml files the page builds from">Build file…</button>
+        <hr role="separator">
+        <button role="menuitem" id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder…</button>
+        <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
+        <button role="menuitem" id="export">Export zip</button>
+        <button role="menuitem" id="add-library" title="a haxelib release's zip, from lib.haxe.org, for when the page can't download it">Add library zip…</button>
+        <hr role="separator">
+        <button role="menuitem" id="reset" title="back to the example, losing your changes">Reset to the example…</button>
+      </div>
+    </div>
+  </nav>
+  <button class="primary" id="build" title="Ctrl-S">Build</button>
+  <span class="spinner" aria-hidden="true"></span>
+  <span class="status" id="status" role="status">starting</span>
+  <span class="where" id="where"></span>
+  <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
+  <input type="file" id="libfile" accept=".zip,application/zip" hidden>
+  <div id="progress"><div></div></div>
+</header>
+<dialog id="prefs" aria-labelledby="prefs-title">
+  <form method="dialog">
+    <h2 id="prefs-title">Preferences</h2>
+    <div class="grid">
+      <label for="pref-theme">Theme</label>
+      <select id="pref-theme"><option value="system">As the system</option><option value="light">Light</option><option value="dark">Dark</option></select>
+      <label for="pref-fontSize">Font size</label>
+      <input type="number" id="pref-fontSize" min="9" max="28" step="1">
+      <label for="pref-tabSize">Tab width</label>
+      <select id="pref-tabSize"><option value="2">2</option><option value="4">4</option><option value="8">8</option></select>
+      <label for="pref-indent">Indent with</label>
+      <select id="pref-indent"><option value="tabs">Tabs</option><option value="spaces">Spaces</option></select>
+    </div>
+    <div class="checks">
+      <label class="check"><input type="checkbox" id="pref-wrap"> Wrap long lines</label>
+      <label class="check"><input type="checkbox" id="pref-lineNumbers"> Line numbers</label>
+      <label class="check"><input type="checkbox" id="pref-folding"> Folding</label>
+      <label class="check"><input type="checkbox" id="pref-activeLine"> Highlight the current line</label>
+      <label class="check"><input type="checkbox" id="pref-brackets"> Match brackets</label>
+      <label class="check"><input type="checkbox" id="pref-closeBrackets"> Close brackets and quotes</label>
+    </div>
+    <div class="actions">
+      <button value="ok" class="primary" id="prefs-done">Done</button>
+      <button value="defaults" id="prefs-defaults" formnovalidate>Defaults</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="dialog">
+  <form method="dialog">
+    <h2 id="dialog-title"></h2>
+    <p id="dialog-text"></p>
+    <ul id="dialog-list"></ul>
+    <input id="dialog-input" autocomplete="off" spellcheck="false" aria-labelledby="dialog-title">
+    <select id="dialog-select" aria-labelledby="dialog-title"></select>
+    <p class="error" id="dialog-error" role="alert"></p>
+    <div class="actions">
+      <button value="ok" id="dialog-ok" class="primary">OK</button>
+      <button value="cancel" id="dialog-cancel" formnovalidate>Cancel</button>
+    </div>
+  </form>
+</dialog>
+<main>
+  <section>
+    <div class="code">
+      <div class="files">
+        <ul id="tree"></ul>
+      </div>
+      <div class="edit">
+        <div id="editor"></div>
+        <pre id="out"></pre>
+      </div>
+    </div>
+  </section>
+  <section id="program-pane">
+    <iframe id="run" title="the running program"></iframe>
+  </section>
+</main>
 <script>
-var log = document.getElementById("log");
-function say(s) { log.textContent += "\n" + s; }
-function compile(files, args, output) {
-  return new Promise(function (resolve) {
-    var w = new Worker("worker.js");
-    w.onmessage = function (ev) { w.terminate(); resolve(ev.data); };
-    w.onerror = function (e) { w.terminate(); resolve({ stdout: "", stderr: "worker error: " + e.message, code: -2, ms: 0, output: null }); };
-    w.postMessage({ files: files, args: args, output: output });
+// A project of files: .hx files under src/ are the program (compiled in a worker by the
+// in-page compiler), anything else is an asset, served to the program by the service
+// worker (sw.js), which plays the DevServer's part for the frame on the right. Saving a
+// .hx file, or adding, renaming or removing one, builds again (-D hotreload_reload after the
+// first) and the program reloads; saving an asset tells the program it changed. The
+// project's files are kept as they're edited: in the browser, or in a folder on this
+// computer the person opened. The browser's project is, the first time and after Reset,
+// hotreload-hx's examples/hello (copied to hello/ by build.py --hotreload).
+const TESTING = location.search.includes("test");
+const EXAMPLE = "hello/";
+const HOTRELOAD = ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml"];
+
+const files = {}, saved = {};
+let current = null, version = 0, reg = null;
+// the editor (CodeMirror, web/vendor/codemirror.js): one view, a state per file, so each
+// keeps its own undo history; the compiler's errors and warnings as each file's diagnostics
+let CM = null, view = null;
+const states = new Map(), diagnostics = new Map();
+const $ = (id) => document.getElementById(id);
+const status = (s) => { $("status").textContent = s; };
+const out = (s) => { $("out").textContent = s; };
+const names = () => Object.keys(files).sort();
+// a .hx file on one of the build's class paths is code; anything else is an asset
+const isCode = (name) => name.endsWith(".hx") && classPathOf(name) !== null;
+
+// ---- the project's files, through ZenFS (vendor/fs.js, a node-like fs): kept in this
+// browser (IndexedDB, mounted at /browser), or in a folder on this computer that the
+// person opened (File System Access, mounted at /folder). A file is text, or its bytes (a
+// Uint8Array) when it isn't UTF-8 text. Hidden files, node_modules and build outputs at the
+// top (out/, bin/, build/, dump/) aren't part of the project, nor files over MAX_BYTES
+let FS = null;
+const SKIP = /(^|\/)(\.[^/]*|node_modules)(\/|$)|^(out|bin|build|dump)(\/|$)/;
+const MAX_BYTES = 8 << 20;
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+const isText = (data) => typeof data === "string";
+function asData(bytes) {
+  bytes = new Uint8Array(bytes);
+  try { const text = utf8.decode(bytes); return text.includes("\0") ? bytes : text; } catch (e) { return bytes; }
+}
+const project = {
+  root: "/browser",
+  folder: null, // the open folder's handle; null when the project is the browser's
+  path(name) { return this.root + "/" + name; },
+  open() {
+    return FS.configure({ mounts: {
+      "/browser": { backend: FS.IndexedDB, storeName: TESTING ? "webide-hx-test-project" : "webide-hx-project" },
+      [LIBCACHE]: { backend: FS.IndexedDB, storeName: TESTING ? "webide-hx-test-libraries" : "webide-hx-libraries" },
+    } });
+  },
+  async useFolder(handle) {
+    const mounted = await FS.resolveMountConfig({ backend: FS.WebAccess, handle });
+    if (this.folder) FS.umount("/folder");
+    FS.mount("/folder", mounted);
+    this.root = "/folder"; this.folder = handle;
+  },
+  // a folder on disk, read again: ZenFS reads its whole tree when it's mounted and doesn't
+  // see what changes outside the page after (another editor, git), so whatever works on a
+  // folder's contents first does this
+  async refresh() {
+    if (this.folder) await this.useFolder(this.folder);
+  },
+  useBrowser() {
+    if (this.folder) FS.umount("/folder");
+    this.root = "/browser"; this.folder = null;
+  },
+  // every file, {name: data}, and every folder; files too big to take, by name, in `skipped`
+  async load() {
+    const fsp = FS.fs.promises, files = {}, skipped = [], dirs = [];
+    const walk = async (rel) => {
+      for (const e of await fsp.readdir(rel ? this.path(rel) : this.root, { withFileTypes: true })) {
+        const name = rel ? rel + "/" + e.name : e.name;
+        if (SKIP.test(name)) continue;
+        if (e.isDirectory()) { dirs.push(name); await walk(name); }
+        else if (!e.isFile()) continue;
+        else if ((await fsp.stat(this.path(name))).size > MAX_BYTES) skipped.push(name);
+        else files[name] = asData(await fsp.readFile(this.path(name)));
+      }
+    };
+    await walk("");
+    return { files, skipped, dirs };
+  },
+  async put(name, data) {
+    const p = this.path(name);
+    await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
+    await FS.fs.promises.writeFile(p, data);
+  },
+  async remove(name) {
+    await FS.fs.promises.rm(this.path(name), { force: true });
+  },
+  mkdir(name) {
+    return FS.fs.promises.mkdir(this.path(name), { recursive: true });
+  },
+  // a folder, everything in it (what isn't part of the project too)
+  async removeDir(name) {
+    await this.refresh();
+    await FS.fs.promises.rm(this.path(name), { recursive: true, force: true });
+  },
+  // everything under a folder, what isn't part of the project too: {files, dirs}, paths
+  // relative to the project
+  async everything(name) {
+    await this.refresh();
+    const fsp = FS.fs.promises, found = { files: [], dirs: [] };
+    const walk = async (rel) => {
+      for (const e of await fsp.readdir(this.path(rel), { withFileTypes: true })) {
+        const p = rel + "/" + e.name;
+        if (e.isDirectory()) { found.dirs.push(p); await walk(p); } else found.files.push(p);
+      }
+    };
+    await walk(name);
+    return found;
+  },
+  // a file or a folder to a new path: copied (everything in a folder), then the old one
+  // removed, so a failure part way leaves both rather than neither
+  async move(from, to) {
+    await this.refresh();
+    const fsp = FS.fs.promises;
+    if (!(await fsp.stat(this.path(from))).isDirectory()) {
+      await this.put(to, await fsp.readFile(this.path(from)));
+      await this.remove(from);
+      return;
+    }
+    const all = await this.everything(from);
+    await this.mkdir(to);
+    for (const d of all.dirs) await this.mkdir(to + d.slice(from.length));
+    for (const f of all.files) await fsp.writeFile(this.path(to + f.slice(from.length)), await fsp.readFile(this.path(f)));
+    await this.removeDir(from);
+  },
+  // the browser's project only: a folder on disk is never emptied
+  async clear() {
+    if (this.folder) throw new Error("a folder isn't cleared");
+    for (const e of await FS.fs.promises.readdir(this.root)) await FS.fs.promises.rm(this.path(e), { recursive: true, force: true });
+  },
+};
+// the open folder's handle, kept (in IndexedDB) so the next visit can open it again: at
+// once if the browser kept the permission, else when the person says so
+const remembered = {
+  db() {
+    return new Promise((resolve, reject) => {
+      const r = indexedDB.open(TESTING ? "webide-hx-test-folder" : "webide-hx-folder", 1);
+      r.onupgradeneeded = () => r.result.createObjectStore("handles");
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+  },
+  async run(mode, f) {
+    const db = await this.db();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("handles", mode), req = f(tx.objectStore("handles"));
+      tx.oncomplete = () => { db.close(); resolve(req.result); };
+      tx.onerror = () => { db.close(); reject(tx.error); };
+    });
+  },
+  get() { return this.run("readonly", (s) => s.get("folder")); },
+  set(handle) { return this.run("readwrite", (s) => handle ? s.put(handle, "folder") : s.delete("folder")); },
+};
+// edits go to the project as they're typed (a moment after the last key), so a reload keeps them
+const pendingWrites = new Map();
+function keep(name) {
+  clearTimeout(pendingWrites.get(name));
+  pendingWrites.set(name, setTimeout(() => { pendingWrites.delete(name); if (name in files) project.put(name, files[name]); }, 400));
+}
+async function flushWrites(name) {
+  for (const [n, t] of [...pendingWrites]) {
+    if (name !== undefined && n !== name) continue;
+    clearTimeout(t); pendingWrites.delete(n);
+    if (n in files) await project.put(n, files[n]);
+  }
+}
+
+// ---- the compiler stays resident in one worker (resident-worker.js): a build sends only
+// the files that changed since the last one (and, as null, those removed), and what didn't
+// change stays typed
+const compiler = new Worker("resident-worker.js");
+const pending = new Map();
+let nextId = 1, sent = {};
+compiler.onmessage = (ev) => {
+  const r = ev.data;
+  if (r.type === "progress") { if (activity) activity.files = r.files; return; }
+  pending.get(r.id)(r); pending.delete(r.id);
+};
+compiler.onerror = (e) => { for (const [, resolve] of pending) resolve({ code: -2, stderr: "worker error: " + e.message, stdout: "", ms: 0 }); pending.clear(); };
+function ask(msg) {
+  return new Promise((resolve) => { msg.id = nextId++; pending.set(msg.id, resolve); compiler.postMessage(msg); });
+}
+function compile(args, sources, output) {
+  const changed = {};
+  for (const [k, v] of Object.entries(sources)) if (sent[k] !== v) changed[k] = sent[k] = v;
+  for (const k of Object.keys(sent)) if (!(k in sources)) { changed[k] = null; delete sent[k]; }
+  return ask({ type: "build", files: changed, args, output });
+}
+
+// a message to the service worker, answered on a port. Sent to the active one; if a newer
+// one takes over before that answers (sw.js changed), sent again to it
+function tell(msg) {
+  return new Promise((resolve) => {
+    let to = null;
+    const send = () => {
+      const ch = new MessageChannel();
+      to = reg.active;
+      ch.port1.onmessage = (ev) => { clearInterval(watch); resolve(ev.data); };
+      to.postMessage(msg, [ch.port2]);
+    };
+    const watch = setInterval(() => { if (reg.active && reg.active !== to) send(); }, 250);
+    send();
   });
 }
-// the same compile on the main thread: Firefox's workers run out of stack parsing haxe.js
-var bundle = null;
-async function compileOnMain(files, args, output) {
-  var out = [], err = [], code = null, t0 = performance.now();
-  globalThis.jsoo_fs_tmp = Object.keys(files).map(function (k) { return { name: k, content: files[k] }; });
-  globalThis.process = { argv: ["node", "haxe"].concat(args), env: { HAXE_STD_PATH: "/haxe/std" }, cwd: function () { return "/static"; }, exit: function (c) { code = c; throw { hx_exit: c }; } };
-  var cl = console.log, ce = console.error;
-  console.log = function () { out.push(Array.prototype.join.call(arguments, " ")); };
-  console.error = function () { err.push(Array.prototype.join.call(arguments, " ")); };
-  if (bundle === null) bundle = await (await fetch("haxe.js")).text();
-  try { (0, eval)(bundle); if (code === null) code = 0; } catch (e) { if (!(e && e.hx_exit !== undefined)) { err.push("exception: " + e.message); code = -1; } }
-  console.log = cl; console.error = ce;
-  var result = null;
-  if (output) { try { result = globalThis.hx_read_file(output); } catch (e) { err.push("no output: " + e.message); } }
-  return { stdout: out.join("\n"), stderr: err.join("\n"), code: code, ms: performance.now() - t0, output: result, where: "main thread" };
+
+async function serviceWorker() {
+  reg = await navigator.serviceWorker.register("sw.js", { scope: "./run/" });
+  const sw = reg.installing || reg.waiting || reg.active;
+  if (sw.state !== "activated")
+    await new Promise((r) => sw.addEventListener("statechange", () => sw.state === "activated" && r()));
+  await tell({ type: "reset" });
 }
-async function compileAnywhere(files, args, output) {
-  var r = await compile(files, args, output);
-  r.where = "worker";
-  if (r.code < 0 && /recursion|stack/i.test(r.stderr)) { say("  (the worker ran out of stack loading the compiler; using the main thread)"); r = await compileOnMain(files, args, output); }
-  return r;
+
+// ---- the build: from one of the project's hxml files (Project > Build file…), or else
+// src/ and Main. The page reads the hxml itself, and the ones it includes: its class
+// paths say which .hx files are code, its --main and --js what to build, and the rest
+// goes to the compiler as it is (relative paths work: the compiler's directory is the
+// project's). What the page can't do is refused, on the hxml's line: another target,
+// --run, --next, --each, --cwd, and a library other than hotreload-hx, which the page
+// has built in; --cmd and the compilation server's options are left out
+const DEFAULT_BUILD = { file: null, cps: ["src"], main: "Main", out: "out/hello.js", args: ["-cp", "/static/src", "--main", "Main"], libs: [], libArgs: [], error: null };
+const LIBRARIES = { "hotreload-hx": HOTRELOAD, "hotreload": HOTRELOAD };
+const OTHER_TARGETS = ["--cpp", "--cppia", "--hl", "--neko", "--php", "--python", "--lua", "--java", "--jvm", "--cs", "--swf", "--as3", "--interp", "--xml"];
+const LEFT_OUT = ["--cmd", "--connect", "--wait", "--server-listen", "--server-connect", "--display"];
+const unquote = (t) => /^".*"$|^'.*'$/.test(t) ? t.slice(1, -1) : t;
+function parseHxml(file) {
+  const cfg = { file, cps: [], main: null, out: null, args: [], libs: [], libArgs: [], error: null };
+  const seenLibs = new Set();
+  const fail = (at, message) => { if (!cfg.error) cfg.error = { file: at.file, line: at.line, message }; };
+  // a library's own hxml (lix's haxe_libraries/<name>.hxml) is read the same way, but its
+  // class paths are the library's (in the cache), not the project's
+  const read = (f, at, stack, lib) => {
+    if (stack.includes(f)) return fail(at, `${f} includes itself`);
+    if (!(f in files) || !isText(files[f])) return fail(at, `there's no ${f} in the project`);
+    files[f].split(/\r?\n/).forEach((raw, i) => {
+      const l = raw.trim(), here = { file: f, line: i + 1 };
+      if (cfg.error || !l || l.startsWith("#")) return;
+      // as Haxe reads hxml: an option and the rest of its line, or one argument
+      let opt = l, arg = null;
+      if (l.startsWith("-")) { const sp = l.search(/\s/); if (sp >= 0) { opt = l.slice(0, sp); arg = unquote(l.slice(sp).trim()); } }
+      else opt = unquote(l);
+      if (lib && arg !== null) arg = arg.replace(/\$\{HAXE_LIBCACHE\}|\$HAXE_LIBCACHE\b/g, LIBCACHE);
+      const long = opt.startsWith("--") ? opt : "-" + opt;
+      if (!opt.startsWith("-")) {
+        if (opt.endsWith(".hxml")) read(opt, here, stack.concat([f]), lib);
+        else cfg.args.push(opt); // a class to compile
+      } else if (long === "--js" && !lib) cfg.out = arg;
+      else if ((long === "--class-path" || long === "--cp" || opt === "-p") && lib) cfg.args.push(opt, arg);
+      else if (long === "--class-path" || long === "--cp" || opt === "-p") {
+        // absolute for the compiler: the compilation server doesn't see edits to files it
+        // found on a relative class path
+        const cp = arg.replace(/^\.\/?/, "").replace(/\/+$/, "");
+        cfg.cps.push(cp);
+        cfg.args.push(opt, arg.startsWith("/") ? arg : "/static/" + cp);
+      }
+      else if ((long === "--main" || opt === "-m") && !lib) { cfg.main = arg; cfg.args.push(opt, arg); }
+      else if (long === "--library" || long === "--lib" || opt === "-L") {
+        const [name, version] = (arg || "").split(":");
+        if (LIBRARIES[name] || seenLibs.has(name)) return; // the page's own, or had already
+        seenLibs.add(name);
+        const lix = `haxe_libraries/${name}.hxml`;
+        if (lix in files) {
+          // lix: where it comes from, then its hxml
+          const m = /^#\s*@install:\s*lix\s+(?:--silent\s+)?download\s+"([^"]+)"\s+into\s+(\S+)/m.exec(files[lix]);
+          if (!m) return fail({ file: lix, line: 1 }, `${lix} has no "# @install: lix download ... into ..." line, so the page can't tell where ${name} comes from`);
+          cfg.libs.push({ name, source: m[1], dir: m[2], at: { file: lix, line: files[lix].slice(0, m.index).split("\n").length } });
+          read(lix, here, stack.concat([f]), true);
+        } else if (version) {
+          cfg.libs.push({ name, version, source: `haxelib:/${name}#${version}`, dir: `${name}/${version}/haxelib`, at: here, haxelib: true });
+        } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml`);
+      }
+      else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
+      else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: the page builds JavaScript (--js)`);
+      else if (long === "--next" || long === "--each") fail(here, `${opt}: the page builds one program; give each build its own hxml file`);
+      else if (long === "--cwd" || opt === "-C") fail(here, `${opt}: the page builds in the project's own directory`);
+      else if (!LEFT_OUT.includes(long)) cfg.args.push(...(arg === null ? [opt] : [opt, arg]));
+    });
+  };
+  read(file, { file, line: 1 }, [], false);
+  if (!cfg.error && !cfg.out) fail({ file, line: 1 }, `${file} doesn't build JavaScript: it has no --js`);
+  if (!cfg.cps.length) { cfg.cps.push(""); cfg.args.push("-cp", "/static"); }
+  return cfg;
 }
-async function fetchAll(paths) {
-  var files = {};
-  for (var p of paths) files["/static/" + p] = await (await fetch("src/" + p)).text();
-  return files;
+// the hxml files the page could build from: those at the project's top that build JavaScript
+function buildFiles() {
+  return names().filter((n) => !n.includes("/") && n.endsWith(".hxml") && isText(files[n]) && !parseHxml(n).error);
 }
-(async function () {
-  var report = {};
-  var hello = await fetchAll(["Hello.hx"]);
-  report.hello = await compileAnywhere(hello, ["-cp", "/static", "--main", "Hello", "--js", "/static/out/hello.js"], "/static/out/hello.js");
-  say("hello (" + report.hello.where + "): exit " + report.hello.code + " in " + Math.round(report.hello.ms) + "ms, " + (report.hello.output ? report.hello.output.length + " bytes" : "no output") + (report.hello.stdFiles != null ? ", " + report.hello.stdFiles + " std files fetched" : ""));
-  // the same compiler, warm: a second worker loads haxe.js from cache
-  report.hello2 = await compileAnywhere(hello, ["-cp", "/static", "--main", "Hello", "--js", "/static/out/hello.js"], "/static/out/hello.js");
-  say("hello again: exit " + report.hello2.code + " in " + Math.round(report.hello2.ms) + "ms");
-  // run what it made
-  try { var f = new Function("console", report.hello.output); var lines = []; f({ log: function (s) { lines.push(String(s)); } }); report.helloRun = lines; say("ran it: " + lines.join(" | ")); } catch (e) { report.helloRun = "failed: " + e.message; say(report.helloRun); }
-  var parity = await fetchAll(["Main.hx", "Outside.hx", "game/State.hx"]);
-  report.parity = await compileAnywhere(parity, ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml", "-cp", "/static", "--main", "Main", "-D", "hotreload", "--js", "/static/out/parity.js"], "/static/out/parity.js");
-  say("parity with the build macro: exit " + report.parity.code + " in " + Math.round(report.parity.ms) + "ms, " + (report.parity.output ? report.parity.output.length + " bytes" : "no output"));
-  if (report.parity.stderr) say("  stderr: " + report.parity.stderr.slice(0, 600));
+const buildChoiceKey = () => "webide-hx-build-file:" + (TESTING ? "test:" : "") + (project.folder ? "folder:" + project.folder.name : "browser");
+function chosenBuildFile() {
+  let chosen = null;
+  try { chosen = localStorage.getItem(buildChoiceKey()); } catch (e) {}
+  if (chosen === "") return null; // chosen: none
+  if (chosen && chosen in files) return chosen;
+  // picked once, then kept: a build file that breaks later is the one whose error shows,
+  // not passed over for another
+  const all = buildFiles(), pick = all.includes("build.hxml") ? "build.hxml" : all[0] || null;
+  if (pick) try { localStorage.setItem(buildChoiceKey(), pick); } catch (e) {}
+  return pick;
+}
+let configMemo = { key: null, cfg: null };
+function buildConfig() {
+  const file = chosenBuildFile();
+  const key = file + "\0" + names().filter((n) => n.endsWith(".hxml")).map((n) => n + "\0" + files[n]).join("\0");
+  if (configMemo.key !== key) configMemo = { key, cfg: file === null ? DEFAULT_BUILD : parseHxml(file) };
+  return configMemo.cfg;
+}
+// the class path a file is on (the longest; "" for the project's top), or null
+function classPathOf(name) {
+  let best = null;
+  for (const cp of buildConfig().cps) if ((cp === "" || name.startsWith(cp + "/")) && (best === null || cp.length > best.length)) best = cp;
+  return best;
+}
+const outPath = (cfg) => cfg.out.startsWith("/") ? cfg.out : "/static/" + cfg.out;
+
+// ---- libraries (-lib). hotreload-hx comes with the page. Any other is read as lix does,
+// when the project has haxe_libraries/<name>.hxml (an "@install" line saying where it comes
+// from, then hxml, ${HAXE_LIBCACHE} standing for the library cache), or else as haxelib
+// would, from -lib name:version (that haxelib release, its haxelib.json for the class path
+// and dependencies, its extraParams.hxml). A library is downloaded once per browser, into a
+// cache every project shares (IndexedDB, mounted at /libcache), and the compiler gets its
+// files there. Where from:
+//   haxelib:/name#version         haxelib-files.haxe.org if it lets pages read it, else
+//                                 this site's haxelib/ (tools/serve.py's relay, or a server set
+//                                 up like it), else a zip the person adds (Project menu)
+//   gh://github.com/o/r#ref       jsDelivr, file by file (a page can't read GitHub's zips)
+//   gitlab://gitlab.com/o/r#ref   GitLab's archive
+//   https://...                   a zip, as it is
+// What's downloaded is hashed the first time; a different download later is refused
+const LIBCACHE = "/libcache";
+const HAXELIB_FILES = "https://haxelib-files.haxe.org/files/3.0/";
+const libHashesKey = "webide-hx-library-hashes" + (TESTING ? "-test" : "");
+const libFiles = new Map(); // a library's dir -> its files the compiler gets {"/libcache/...": text}
+class LibraryError extends Error { constructor(message, at) { super(message); this.at = at; } }
+const libPath = (dir, rel = "") => LIBCACHE + "/" + dir + (rel ? "/" + rel : "");
+async function libHas(dir) {
+  try { await FS.fs.promises.stat(libPath(dir, ".webide-hx.json")); return true; } catch (e) { return false; }
+}
+async function sha256(chunks) {
+  const all = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let at = 0;
+  for (const c of chunks) { all.set(c, at); at += c.length; }
+  return [...new Uint8Array(await crypto.subtle.digest("SHA-256", all))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+// a zip's files, from its root: where haxelib.json is (a haxelib release), or else inside
+// the one folder everything is in (an archive of a repo)
+function zipFiles(bytes, haxelib) {
+  const entries = FS.unzipSync(bytes), names = Object.keys(entries).filter((n) => !n.endsWith("/"));
+  let root = "";
+  const meta = names.filter((n) => n === "haxelib.json" || n.endsWith("/haxelib.json")).sort((a, b) => a.split("/").length - b.split("/").length)[0];
+  if (haxelib && meta) root = meta.slice(0, -"haxelib.json".length);
+  else if (names.length && names.every((n) => n.includes("/") && n.split("/")[0] === names[0].split("/")[0])) root = names[0].split("/")[0] + "/";
+  const out = {};
+  for (const n of names) if (n.startsWith(root)) out[n.slice(root.length)] = entries[n];
+  return out;
+}
+async function fetchBytes(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
+  return new Uint8Array(await r.arrayBuffer());
+}
+// a library's files, from where its source says, and a hash of what came
+async function downloadLibrary(lib) {
+  const src = lib.source;
+  let m;
+  if ((m = /^haxelib:\/([^#]+)#(.+)$/.exec(src))) {
+    const file = `${m[1]}-${m[2].replace(/\./g, ",")}.zip`;
+    const tried = [];
+    for (const url of [HAXELIB_FILES + file, new URL("haxelib/files/3.0/" + file, location.href).href]) {
+      try { const bytes = await fetchBytes(url); return { files: zipFiles(bytes, true), hash: await sha256([bytes]), from: url }; }
+      catch (e) { tried.push(url); }
+    }
+    throw new LibraryError(`${m[1]} ${m[2]}: the page couldn't download it (haxelib doesn't let pages read its files, and this site has no haxelib relay). Download it from https://lib.haxe.org/p/${m[1]}/${m[2]}/download/ and add it with Project > Add library zip…`, lib.at);
+  }
+  if ((m = /^gh:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?#(.+)$/.exec(src))) {
+    const [, owner, repo, ref] = m;
+    const listing = await (await fetch(`https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${ref}?structure=flat`)).json().catch(() => null);
+    if (!listing || !listing.files) throw new LibraryError(`${lib.name}: jsDelivr has no ${owner}/${repo} at ${ref}`, lib.at);
+    const wanted = listing.files.filter((f) => f.size <= 4 << 20), files = {};
+    for (let i = 0; i < wanted.length; i += 8)
+      await Promise.all(wanted.slice(i, i + 8).map(async (f) => {
+        // jsDelivr won't serve some kinds of file (a .bat, say): fine, unless the compiler needs it
+        try { files[f.name.slice(1)] = await fetchBytes(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}${f.name}`); }
+        catch (e) { if (/\.(hx|hxml|json)$/.test(f.name)) throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); }
+      }));
+    const names = Object.keys(files).sort();
+    return { files, hash: await sha256(names.flatMap((n) => [new TextEncoder().encode(n + "\0"), files[n]])), from: `jsDelivr (${owner}/${repo}@${ref})` };
+  }
+  if ((m = /^gitlab:\/\/gitlab\.com\/([^#]+)#(.+)$/.exec(src))) {
+    const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(m[1])}/repository/archive.zip?sha=${encodeURIComponent(m[2])}`;
+    const bytes = await fetchBytes(url).catch((e) => { throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); });
+    return { files: zipFiles(bytes, false), hash: await sha256([bytes]), from: url };
+  }
+  if (/^https:\/\//.test(src)) {
+    const bytes = await fetchBytes(src).catch((e) => { throw new LibraryError(`${lib.name}: ${e.message} (or the server doesn't let pages read it)`, lib.at); });
+    return { files: zipFiles(bytes, false), hash: await sha256([bytes]), from: src };
+  }
+  throw new LibraryError(`${lib.name}: the page can't download from ${src}`, lib.at);
+}
+// files into the cache, the hash checked against the first download's
+async function storeLibrary(lib, got) {
+  let hashes = {};
+  try { hashes = JSON.parse(localStorage.getItem(libHashesKey)) || {}; } catch (e) {}
+  if (hashes[lib.source] && hashes[lib.source] !== got.hash)
+    throw new LibraryError(`${lib.name}: what was downloaded (${got.from}) isn't what was downloaded before for ${lib.source}; refused`, lib.at);
+  for (const [rel, data] of Object.entries(got.files)) {
+    const p = libPath(lib.dir, rel);
+    await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
+    await FS.fs.promises.writeFile(p, data);
+  }
+  await FS.fs.promises.writeFile(libPath(lib.dir, ".webide-hx.json"), JSON.stringify({ source: lib.source, from: got.from, sha256: got.hash, files: Object.keys(got.files).length }));
+  hashes[lib.source] = got.hash;
+  try { localStorage.setItem(libHashesKey, JSON.stringify(hashes)); } catch (e) {}
+}
+async function libText(dir, rel) {
+  try { return new TextDecoder().decode(await FS.fs.promises.readFile(libPath(dir, rel))); } catch (e) { return null; }
+}
+// every library the build needs in the cache (downloaded if not), the options the haxelib
+// ones add (a lix one's are in its hxml), and their dependencies; sets cfg.libArgs and
+// cfg.libDirs
+async function prepareLibraries(cfg) {
+  const queue = cfg.libs.slice(), done = new Set(), args = [], dirs = [];
+  while (queue.length) {
+    const lib = queue.shift();
+    if (done.has(lib.dir)) continue;
+    done.add(lib.dir); dirs.push(lib.dir);
+    if (!(await libHas(lib.dir))) {
+      status(`${lib.name}: downloading (${lib.source})`);
+      await storeLibrary(lib, await downloadLibrary(lib));
+    }
+    if (!lib.haxelib) continue;
+    let meta = {};
+    try { meta = JSON.parse(await libText(lib.dir, "haxelib.json") || "{}"); } catch (e) {}
+    const cp = (meta.classPath || "").replace(/^\.?\/?/, "").replace(/\/+$/, "");
+    args.push("-cp", libPath(lib.dir, cp), "-D", `${lib.name}=${lib.version}`);
+    // its extraParams.hxml: options only, a line each
+    for (const line of (await libText(lib.dir, "extraParams.hxml") || "").split(/\r?\n/)) {
+      const l = line.trim();
+      if (!l || l.startsWith("#") || !l.startsWith("-")) continue;
+      const sp = l.search(/\s/);
+      args.push(...(sp < 0 ? [l] : [l.slice(0, sp), unquote(l.slice(sp).trim())]));
+    }
+    for (const [dep, v] of Object.entries(meta.dependencies || {})) {
+      if (LIBRARIES[dep] || cfg.libs.some((x) => x.name === dep)) continue;
+      if (!v) throw new LibraryError(`${lib.name} ${lib.version} needs ${dep}, with no version: pin one in the hxml (-lib ${dep}:1.2.3)`, lib.at);
+      queue.push({ name: dep, version: v, source: `haxelib:/${dep}#${v}`, dir: `${dep}/${v}/haxelib`, at: lib.at, haxelib: true });
+    }
+  }
+  cfg.libArgs = args;
+  cfg.libDirs = dirs;
+}
+// a library's .hx files for the compiler (read from the cache once a session)
+async function librarySources(dir) {
+  if (libFiles.has(dir)) return libFiles.get(dir);
+  const out = {}, fsp = FS.fs.promises;
+  const walk = async (rel) => {
+    for (const e of await fsp.readdir(libPath(dir, rel), { withFileTypes: true })) {
+      const r = rel ? rel + "/" + e.name : e.name;
+      if (e.isDirectory()) await walk(r);
+      else if (/\.(hx|hxml|json)$/.test(e.name)) out[libPath(dir, r)] = new TextDecoder().decode(await fsp.readFile(libPath(dir, r)));
+    }
+  };
+  await walk("");
+  libFiles.set(dir, out);
+  return out;
+}
+
+function buildArgs(reload) {
+  // -debug, with the map inside the bundle and the sources inside the map: DevTools loads
+  // a map over the network itself, past the service worker, and the .hx files live only
+  // in the compiler's in-memory filesystem (-D source-map-inline: the fork's Haxe, and
+  // proposed upstream)
+  const cfg = buildConfig();
+  const args = HOTRELOAD.concat(cfg.args, cfg.libArgs || [], ["-D", "hotreload", "-debug", "-D", "source-map-inline", "-D", "source-map-content", "--js", outPath(cfg)]);
+  if (reload) args.push("-D", "hotreload_reload");
+  return args;
+}
+
+// "src/Hello.hx:39: characters 11-15 : Missing ;" (or "lines 12-14", and; or /static/ first)
+// 
+// "Warning : " before a warning's text): by file, as CodeMirror diagnostics
+function parseMessages(text) {
+  const byFile = new Map(), rest = [];
+  const re = /^(?:\/static\/)?(.+?):(\d+): (?:characters (\d+)-(\d+)|lines (\d+)-(\d+)) : (?:(Warning|Error) : )?(.*)$/;
+  for (const line of (text || "").split("\n")) {
+    const m = re.exec(line);
+    if (!m || !(m[1] in files)) { if (line.trim()) rest.push(line); continue; }
+    const list = byFile.get(m[1]) || [];
+    list.push({ line: +m[2], from: m[3] ? +m[3] : null, to: m[4] ? +m[4] : null, lastLine: m[6] ? +m[6] : null,
+                severity: m[7] === "Warning" ? "warning" : "error", message: m[8] });
+    byFile.set(m[1], list);
+  }
+  return { byFile, rest };
+}
+function toDiagnostics(doc, list) {
+  return list.map((d) => {
+    const line = doc.line(Math.min(Math.max(d.line, 1), doc.lines));
+    let from = line.from, to = line.to;
+    if (d.from !== null) { from = Math.min(line.from + d.from - 1, line.to); to = Math.max(from, Math.min(line.from + d.to - 1, line.to)); }
+    else if (d.lastLine !== null) to = doc.line(Math.min(d.lastLine, doc.lines)).to;
+    return { from, to, severity: d.severity, message: d.message };
+  });
+}
+function showDiagnostics(byFile) {
+  diagnostics.clear();
+  for (const f of names()) {
+    const list = byFile.get(f) || [];
+    diagnostics.set(f, list);
+    if (f === current) view.dispatch(CM.setDiagnostics(view.state, toDiagnostics(view.state.doc, list)));
+    else if (states.has(f)) { const st = states.get(f); states.set(f, st.update(CM.setDiagnostics(st, toDiagnostics(st.doc, list))).state); }
+  }
+  renderTree();
+}
+
+// ---- a build in progress. The compiler doesn't report progress (a build is one call, in
+// the worker), but the worker reports each library file it reads, and the last build of
+// the same kind (kept in localStorage) says about how long and how many files: a bar from
+// those, or one that only moves while there's nothing to go by. Shown only once a build
+// takes longer than BUSY_AFTER, so quick ones don't flicker
+const BUSY_AFTER = 150;
+let activity = null, compilerUp = false;
+const lastBuilds = (() => { try { return JSON.parse(localStorage.getItem("webide-hx-builds")) || {}; } catch (e) { return {}; } })();
+function busy(label, kind) {
+  const a = { files: 0, t0: performance.now() };
+  activity = a;
+  const tick = () => {
+    const ms = performance.now() - a.t0;
+    if (ms < BUSY_AFTER) return;
+    document.body.classList.add("busy");
+    status(`${label}… ${(ms / 1000).toFixed(1)} s` + (a.files ? ` · ${a.files} library files read` : ""));
+    const last = lastBuilds[kind];
+    $("progress").classList.toggle("guess", !last);
+    if (last) $("progress").firstChild.style.width = 100 * Math.min(0.95, Math.max(ms / last.ms, last.files ? a.files / last.files : 0)) + "%";
+  };
+  const timer = setInterval(tick, 100);
+  return () => {
+    clearInterval(timer);
+    if (activity === a) activity = null;
+    document.body.classList.remove("busy");
+    $("progress").firstChild.style.width = "0";
+    lastBuilds[kind] = { ms: performance.now() - a.t0, files: a.files };
+    try { localStorage.setItem("webide-hx-builds", JSON.stringify(lastBuilds)); } catch (e) {}
+  };
+}
+
+let builtWith = null, restarting = false;
+async function build() {
+  syncEditor();
+  const sources = {};
+  for (const f of names()) if (isCode(f)) sources["/static/" + f] = files[f];
+  const cfg = buildConfig();
+  showWhere();
+  // another build file, or a change to one: what's code, the output and the main class may
+  // all have changed, so the program starts over, from a build of everything
+  if (builtWith !== null && builtWith !== configMemo.key && !restarting) {
+    restarting = true;
+    try { return await startProgram(); } finally { restarting = false; }
+  }
+  builtWith = configMemo.key;
+  // the libraries it uses, downloaded if they aren't yet; their files for the compiler
+  let libError = null;
+  if (!cfg.error && cfg.libs.length) {
+    try {
+      await prepareLibraries(cfg);
+      for (const dir of cfg.libDirs) Object.assign(sources, await librarySources(dir));
+    } catch (e) {
+      libError = { file: e.at ? e.at.file : cfg.file, line: e.at ? e.at.line : 1, message: e.message };
+    }
+  }
+  // a build file the page can't use, or a library it can't get: said on its line, as the
+  // compiler's errors are
+  if (cfg.error || libError) {
+    const e = cfg.error || libError;
+    showDiagnostics(new Map([[e.file, [{ line: e.line, from: null, to: null, lastLine: null, severity: "error", message: e.message }]]]));
+    status(`build failed: ${e.file} can't be built here`);
+    out(`${e.file}:${e.line}: ${e.message}`);
+    return { ok: false, r: { code: 1, stderr: `${e.file}:${e.line}: ${e.message}`, stdout: "", ms: 0 } };
+  }
+  const args = buildArgs(version > 0);
+  // a first build starts the compiler and reads the library; after it, a whole build or a reload's
+  const done = busy(compilerUp ? "building" : "starting the compiler and building", !compilerUp ? "first" : version > 0 ? "reload" : "whole");
+  status("building");
+  const r = await compile(args, sources, outPath(cfg));
+  done();
+  if (r.code >= 0) compilerUp = true;
+  const messages = parseMessages(r.stderr);
+  showDiagnostics(messages.byFile);
+  if (r.code !== 0 || !r.output) {
+    status("build failed; the program keeps what it has");
+    out((r.stderr || r.stdout || "no output").trim());
+    return { ok: false, r };
+  }
+  version++;
+  await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
+  status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
+  out([r.stdout.trim()].concat(messages.rest).filter((x) => x).join("\n"));
+  return { ok: true, r };
+}
+
+// assets the program has, changed or removed (null): told to the service worker, and, when
+// `changed`, to the program as an edit is
+function tellAssets(list, changed) {
+  return tell({ type: "assets", files: list, changed });
+}
+
+async function save() {
+  syncEditor();
+  if (current === null) return build();
+  clearTimeout(pendingWrites.get(current)); pendingWrites.delete(current);
+  if (isText(files[current])) await project.put(current, files[current]);
+  if (files[current] === saved[current]) return builds(current) ? build() : { ok: true };
+  saved[current] = files[current];
+  if (isCode(current)) return build();
+  await tellAssets({ [current]: files[current] }, true);
+  if (builds(current)) return build();
+  status(`${current} saved; the program reads it again`);
+  return { ok: true };
+}
+
+// a change to a file that the build depends on (code, or an hxml) builds
+const builds = (name) => isCode(name) || name.endsWith(".hxml");
+
+// ---- files and folders: new, move (rename), delete. A path is relative to the project:
+// src/game/Game.hx. Folders are real (`dirs`, every folder in the project, empty ones
+// too), and the tree has them; a folder can be selected (`selectedDir`) for the menus
+const dirs = new Set();
+let selectedDir = null;
+const collapsed = new Set();
+const parentOf = (path) => path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "";
+const baseOf = (path) => path.slice(path.lastIndexOf("/") + 1);
+const inside = (path, dir) => path.startsWith(dir + "/");
+// every folder above a path
+function addDirs(path) {
+  for (let d = parentOf(path); d; d = parentOf(d)) dirs.add(d);
+}
+function validName(name) {
+  return /^[A-Za-z0-9_.\-]+(\/[A-Za-z0-9_.\-]+)*$/.test(name) && !name.split("/").some((p) => p === "." || p === "..");
+}
+function checkName(name) {
+  if (!validName(name)) throw new Error(`not a file name: ${name}`);
+  if (SKIP.test(name)) throw new Error(`${name} wouldn't be part of the project (hidden, node_modules, or a build output)`);
+  if (name in files || dirs.has(name)) throw new Error(`${name} is there already`);
+  for (let d = parentOf(name); d; d = parentOf(d)) if (d in files) throw new Error(`${d} is a file, not a folder`);
+}
+// a .hx file's package, from its folder under src/
+// (its folder below its class path)
+function packageOf(name) {
+  if (!isCode(name)) return null;
+  const cp = classPathOf(name), dir = parentOf(name);
+  return (cp === "" ? dir : dir.slice(cp.length + 1)).split("/").filter((x) => x).join(".");
+}
+// a new .hx file's first text: its package, a class named for it
+function template(name) {
+  if (!isCode(name)) return "";
+  const pack = packageOf(name), cls = baseOf(name).slice(0, -3);
+  return (pack ? `package ${pack};\n\n` : "") + `class ${cls} {\n}\n`;
+}
+// a .hx file moved from one package to another: its package line follows, if it named the
+// old package (or there was none, for the top). Returns the new text, or null for no change
+function movedPackage(text, from, to) {
+  const was = packageOf(from), now = packageOf(to);
+  if (!isText(text) || was === null || now === null || was === now) return null;
+  const re = /^([ \t]*)package(?:[ \t]+([A-Za-z0-9_.]*))?[ \t]*;[ \t]*\r?\n?/m, m = re.exec(text);
+  if (m && (m[2] || "") !== was) return null; // a package of its own: left alone
+  if (!m && was !== "") return null;
+  if (!m) return `package ${now};\n\n` + text;
+  return now ? text.replace(re, `${m[1]}package ${now};\n`) : text.replace(re, "").replace(/^\r?\n/, "");
+}
+
+async function newFile(name, text) {
+  checkName(name);
+  files[name] = saved[name] = text !== undefined ? text : template(name);
+  addDirs(name);
+  await project.put(name, files[name]);
+  renderTree();
+  show(name);
+  if (isCode(name)) return build();
+  await tellAssets({ [name]: files[name] }, true);
+  if (builds(name)) return build();
+  status(`${name} added`);
+  return { ok: true };
+}
+async function newFolder(name) {
+  checkName(name);
+  await project.mkdir(name);
+  addDirs(name + "/x");
+  collapsed.delete(name);
+  selectedDir = name;
+  renderTree();
+  status(`${name}/ added`);
+  return { ok: true };
+}
+// a file or a folder (with everything in it) to a new path: a rename, or a move. A .hx
+// file whose package changes gets its package line changed
+async function movePath(from, to) {
+  const isDir = dirs.has(from);
+  if (!isDir && !(from in files)) throw new Error(`no file or folder ${from}`);
+  if (isDir && (to === from || inside(to, from))) throw new Error(`${from} can't go inside itself`);
+  checkName(to);
+  syncEditor();
+  await flushWrites();
+  await project.move(from, to);
+  const renamed = (p) => p === from ? to : to + p.slice(from.length);
+  const moved = isDir ? names().filter((n) => inside(n, from)) : [from];
+  const assets = {}, repackaged = [];
+  for (const old of moved) {
+    const now = renamed(old), text = movedPackage(files[old], old, now);
+    if (!isCode(old)) assets[old] = null;
+    files[now] = text === null ? files[old] : text;
+    saved[now] = files[now];
+    if (text !== null) { repackaged.push(now); await project.put(now, files[now]); }
+    if (!isCode(now)) assets[now] = files[now];
+    delete files[old]; delete saved[old];
+    if (states.has(old)) { if (text === null) states.set(now, states.get(old)); states.delete(old); }
+    diagnostics.delete(old);
+    if (current === old) current = now;
+  }
+  for (const d of [...dirs]) if (d === from || inside(d, from)) { dirs.delete(d); dirs.add(renamed(d)); }
+  addDirs(to + (isDir ? "/x" : ""));
+  if (selectedDir !== null && (selectedDir === from || inside(selectedDir, from))) selectedDir = renamed(selectedDir);
+  renderTree();
+  if (current !== null) show(current);
+  if (Object.keys(assets).length) await tellAssets(assets, true);
+  const note = repackaged.length ? `; the package line changed in ${repackaged.join(", ")}` : "";
+  if (moved.some(builds) || moved.map(renamed).some(builds)) {
+    const r = await build();
+    if (r.ok) status(`${from} is now ${to}${note}; ` + $("status").textContent);
+    return r;
+  }
+  status(`${from} is now ${to}${note}`);
+  return { ok: true };
+}
+const renameFile = movePath;
+async function deleteFile(name) {
+  if (!(name in files)) throw new Error(`no file ${name}`);
+  delete files[name]; delete saved[name];
+  states.delete(name); diagnostics.delete(name);
+  await project.remove(name);
+  if (current === name) current = names().find(isCode) || names()[0] || null;
+  renderTree();
+  if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
+  if (!isCode(name)) await tellAssets({ [name]: null }, true);
+  if (builds(name)) return build();
+  status(`${name} removed`);
+  return { ok: true };
+}
+// a folder and everything in it, including what the page doesn't show
+async function deleteFolder(dir) {
+  if (!dirs.has(dir)) throw new Error(`no folder ${dir}`);
+  await flushWrites();
+  await project.removeDir(dir);
+  const gone = names().filter((n) => inside(n, dir));
+  const assets = {};
+  for (const n of gone) {
+    if (!isCode(n)) assets[n] = null;
+    delete files[n]; delete saved[n]; states.delete(n); diagnostics.delete(n);
+  }
+  for (const d of [...dirs]) if (d === dir || inside(d, dir)) dirs.delete(d);
+  if (selectedDir !== null && (selectedDir === dir || inside(selectedDir, dir))) selectedDir = null;
+  if (current !== null && !(current in files)) current = names().find(isCode) || names()[0] || null;
+  renderTree();
+  if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
+  if (Object.keys(assets).length) await tellAssets(assets, true);
+  if (gone.some(builds)) return build();
+  status(`${dir}/ removed`);
+  return { ok: true };
+}
+
+// the tree: folders (collapsible, selectable, drop targets) and files, nested; a file or a
+// folder can be dragged onto a folder, or onto the tree's empty space for the top
+function renderTree() {
+  const tree = $("tree");
+  tree.textContent = "";
+  const row = (path, depth, folder) => {
+    const li = document.createElement("li"), b = document.createElement("button");
+    // a file's name lines up with its folder's children's names, past the caret
+    b.style.paddingLeft = 8 + depth * 14 + (folder ? 0 : 16) + "px";
+    // a guide line for each folder it's in, under that folder's caret
+    if (depth) Object.assign(b.style, { backgroundImage: "repeating-linear-gradient(to right, var(--line) 0 1px, transparent 1px 14px)",
+                                        backgroundPosition: "13px 0", backgroundSize: depth * 14 + "px 100%", backgroundRepeat: "no-repeat" });
+    b.title = path;
+    b.draggable = true;
+    b.ondragstart = (e) => { e.dataTransfer.setData("application/x-haxe-path", path); e.dataTransfer.effectAllowed = "move"; };
+    const n = document.createElement("span"); n.className = "name"; n.textContent = baseOf(path);
+    if (folder) {
+      b.className = "folder";
+      b.dataset.dir = path;
+      b.setAttribute("aria-expanded", String(!collapsed.has(path)));
+      b.classList.toggle("on", path === selectedDir);
+      // an empty folder has no caret: nothing to open
+      const empty = ![...dirs].some((d) => inside(d, path)) && !names().some((f) => inside(f, path));
+      const caret = document.createElement("span"); caret.className = "caret"; caret.textContent = empty ? "" : collapsed.has(path) ? "▸" : "▾";
+      b.append(caret, n);
+      b.onclick = () => { selectedDir = path; if (collapsed.has(path)) collapsed.delete(path); else collapsed.add(path); renderTree(); };
+      dropTarget(b, path);
+    } else {
+      b.dataset.name = path;
+      b.classList.toggle("on", path === current && selectedDir === null);
+      const c = document.createElement("span"); c.className = "count";
+      const errors = (diagnostics.get(path) || []).filter((x) => x.severity === "error").length;
+      c.textContent = errors ? String(errors) : "";
+      b.append(n, c);
+      b.onclick = () => show(path);
+    }
+    li.appendChild(b);
+    tree.appendChild(li);
+  };
+  const walk = (dir, depth) => {
+    const prefix = dir ? dir + "/" : "";
+    const subdirs = [...dirs].filter((d) => parentOf(d) === dir).sort();
+    for (const d of subdirs) { row(d, depth, true); if (!collapsed.has(d)) walk(d, depth + 1); }
+    for (const f of names().filter((f) => f.startsWith(prefix) && parentOf(f) === dir)) row(f, depth, false);
+  };
+  walk("", 0);
+}
+// the tree's own empty space: the top of the project
+function dropTarget(el, dir) {
+  el.ondragover = (e) => { if (e.dataTransfer.types.includes("application/x-haxe-path")) { e.preventDefault(); e.stopPropagation(); el.classList.add("drop"); } };
+  el.ondragleave = () => el.classList.remove("drop");
+  el.ondrop = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    el.classList.remove("drop");
+    const from = e.dataTransfer.getData("application/x-haxe-path");
+    if (!from || parentOf(from) === dir) return;
+    attempt(() => movePath(from, (dir ? dir + "/" : "") + baseOf(from)));
+  };
+}
+dropTarget($("tree"), "");
+
+// ---- preferences: the editor's, and the page's theme. Kept per browser (localStorage);
+// each is a compartment in every file's editor state, so a change applies to all at once
+const PREF_DEFAULTS = { theme: "system", fontSize: 13, tabSize: 4, indent: "tabs", wrap: false, lineNumbers: true, folding: true,
+                        activeLine: true, brackets: true, closeBrackets: true };
+const prefs = Object.assign({}, PREF_DEFAULTS, (() => { try { return JSON.parse(localStorage.getItem("webide-hx-prefs")) || {}; } catch (e) { return {}; } })());
+const dark = matchMedia("(prefers-color-scheme: dark)");
+const isDark = () => prefs.theme === "dark" || (prefs.theme === "system" && dark.matches);
+let slots = null; // name -> Compartment, once CodeMirror is loaded
+// what each preference puts in the editor
+const prefParts = {
+  theme: () => isDark() ? CM.oneDark : [],
+  fontSize: () => CM.EditorView.theme({ "&": { fontSize: prefs.fontSize + "px" } }),
+  tabs: () => [CM.EditorState.tabSize.of(+prefs.tabSize), CM.indentUnit.of(prefs.indent === "tabs" ? "\t" : " ".repeat(+prefs.tabSize))],
+  wrap: () => prefs.wrap ? CM.EditorView.lineWrapping : [],
+  lineNumbers: () => prefs.lineNumbers ? [CM.lineNumbers(), CM.highlightActiveLineGutter()] : [],
+  folding: () => prefs.folding ? CM.foldGutter() : [],
+  activeLine: () => prefs.activeLine ? CM.highlightActiveLine() : [],
+  brackets: () => prefs.brackets ? CM.bracketMatching() : [],
+  closeBrackets: () => prefs.closeBrackets ? CM.closeBrackets() : [],
+};
+function prefExtensions(only) {
+  return Object.keys(prefParts).filter((k) => !only || only.includes(k)).map((k) => slots[k].of(prefParts[k]()));
+}
+// the page's theme, and the running program's frame (its page, from sw.js, reads data-theme too)
+function applyTheme(doc) {
+  if (prefs.theme === "system") delete doc.documentElement.dataset.theme;
+  else doc.documentElement.dataset.theme = prefs.theme;
+}
+function applyPrefs() {
+  applyTheme(document);
+  const d = program.doc();
+  if (d) try { applyTheme(d); } catch (e) {}
+  if (!slots) return;
+  const effects = (st) => Object.keys(prefParts).filter((k) => slots[k].get(st) !== undefined).map((k) => slots[k].reconfigure(prefParts[k]()));
+  for (const [f, st] of states) if (f !== current) states.set(f, st.update({ effects: effects(st) }).state);
+  if (view) view.dispatch({ effects: effects(view.state) });
+}
+function savePrefs() {
+  try { localStorage.setItem("webide-hx-prefs", JSON.stringify(prefs)); } catch (e) {}
+}
+dark.addEventListener("change", applyPrefs);
+$("run").addEventListener("load", () => { try { applyTheme($("run").contentDocument); } catch (e) {} });
+
+function makeState(name) {
+  if (!isText(files[name]))
+    return CM.EditorState.create({ doc: `${name}: ${files[name].length} bytes, not text; it can't be edited here`,
+                                   extensions: [CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), prefExtensions(["theme", "fontSize"])] });
+  const ext = [
+    // CodeMirror's basicSetup, in parts; those a preference turns on and off are in prefExtensions
+    CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.dropCursor(), CM.EditorState.allowMultipleSelections.of(true),
+    CM.indentOnInput(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }), CM.autocompletion(),
+    CM.rectangularSelection(), CM.crosshairCursor(), CM.highlightSelectionMatches(),
+    CM.keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { save(); return true; } }, CM.indentWithTab,
+                  ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.foldKeymap,
+                  ...CM.completionKeymap, ...CM.lintKeymap]),
+    prefExtensions(),
+    CM.lintGutter(),
+    CM.EditorView.updateListener.of((u) => {
+      if (u.docChanged && name === current && name in files) { files[name] = u.state.doc.toString(); keep(name); }
+    }),
+  ];
+  if (name.endsWith(".hx")) ext.push(CM.StreamLanguage.define(CM.haxe));
+  let st = CM.EditorState.create({ doc: files[name], extensions: ext });
+  const list = diagnostics.get(name);
+  if (list && list.length) st = st.update(CM.setDiagnostics(st, toDiagnostics(st.doc, list))).state;
+  return st;
+}
+// the editor shows files[current]: after a change made outside it (the test's edits), put it in
+function syncEditor() {
+  if (view && current !== null && isText(files[current]) && view.state.doc.toString() !== files[current])
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: files[current] } });
+}
+
+function show(name) {
+  if (view && current !== null && states.has(current) && current in files) states.set(current, view.state);
+  current = name;
+  if (selectedDir !== null) { selectedDir = null; for (const b of $("tree").querySelectorAll("button.folder")) b.classList.remove("on"); }
+  let st = states.get(name);
+  if (!st || (isText(files[name]) && st.doc.toString() !== files[name])) st = makeState(name);
+  states.set(name, st);
+  view.setState(st);
+  for (const b of $("tree").querySelectorAll("button")) b.classList.toggle("on", b.dataset.name === name);
+}
+// ---- the whole project: a build from scratch and the program started on it, at first and
+// when the project changes (a folder opened or closed, a zip imported)
+let starts = 0;
+// ---- where the program runs: the frame in the page, or out of it, in a window of its own
+// ("window", which can go on another screen) or a picture-in-picture one ("pip", on top of
+// everything; Chromium). The program needs nothing from the page but the service worker,
+// so it hot-reloads wherever it is; the page only starts it over (a new project) and
+// keeps the theme. A window is remembered where it was, and closing it brings the program
+// back into the page
+const PROGRAM_WINDOW = "webide-hx-program-window";
+const program = {
+  kind: null, win: null, frame: null, watch: null,
+  url: "about:blank",
+  start(url) {
+    this.url = url;
+    if (this.kind === "window") this.win.location.replace(url);
+    else if (this.kind === "pip") this.frame.src = url;
+    else $("run").src = url;
+  },
+  // the program's document, for the theme
+  doc() {
+    try { return this.kind === "window" ? this.win.document : this.kind === "pip" ? this.frame.contentDocument : $("run").contentDocument; } catch (e) { return null; }
+  },
+  // must be called from a click (the browser opens windows only for one)
+  async out(kind) {
+    if (this.kind) this.back(true);
+    const url = this.url === "about:blank" ? this.url : "run/?start=" + ++starts;
+    if (kind === "window") {
+      let at = {};
+      try { at = JSON.parse(localStorage.getItem(PROGRAM_WINDOW)) || {}; } catch (e) {}
+      const features = ["popup", `width=${at.w || 640}`, `height=${at.h || 480}`].concat(at.x !== undefined ? [`left=${at.x}`, `top=${at.y}`] : []);
+      const win = window.open(url, "haxe-program", features.join(","));
+      if (!win) throw new Error("the browser blocked the window: allow pop-ups for this page");
+      this.win = win;
+      win.addEventListener("load", () => { const d = this.doc(); if (d) applyTheme(d); });
+      // closed by the person: back into the page; where it is, for next time
+      this.watch = setInterval(() => {
+        if (win.closed) { this.back(); return; }
+        try { localStorage.setItem(PROGRAM_WINDOW, JSON.stringify({ x: win.screenX, y: win.screenY, w: win.innerWidth, h: win.innerHeight })); } catch (e) {}
+      }, 500);
+    } else {
+      const pip = await documentPictureInPicture.requestWindow({ width: 480, height: 360 });
+      const f = pip.document.createElement("iframe");
+      pip.document.title = "Haxe program";
+      pip.document.body.style.cssText = "margin: 0; overflow: hidden;";
+      f.style.cssText = "border: 0; width: 100vw; height: 100vh; display: block;";
+      f.addEventListener("load", () => { const d = this.doc(); if (d) applyTheme(d); });
+      pip.document.body.append(f);
+      this.win = pip; this.frame = f;
+      f.src = url;
+      pip.addEventListener("pagehide", () => { if (this.win === pip) this.back(); });
+    }
+    this.kind = kind;
+    $("run").src = "about:blank";
+    document.body.classList.add("program-out");
+    showView();
+  },
+  // back into the page (`quiet`: another kind is about to open)
+  back(quiet) {
+    const win = this.win;
+    clearInterval(this.watch);
+    this.kind = null; this.win = null; this.frame = null;
+    if (win && !win.closed) win.close();
+    document.body.classList.remove("program-out");
+    if (!quiet) { $("run").src = this.url === "about:blank" ? this.url : "run/?start=" + ++starts; showView(); }
+  },
+};
+function showView() {
+  $("view-window").textContent = program.kind === "window" ? "Program back in the page" : "Program in a window";
+  $("view-pip").textContent = program.kind === "pip" ? "Program back in the page" : "Program picture-in-picture";
+  $("view-pip").hidden = !("documentPictureInPicture" in window);
+}
+async function startProgram() {
+  builtWith = null; // a build from scratch: whatever the build file was before doesn't matter
+  await tell({ type: "reset" });
+  version = 0;
+  const assets = {};
+  for (const f of names()) if (!isCode(f)) assets[f] = files[f];
+  await tellAssets(assets, false);
+  const first = await build();
+  program.start(first.ok ? "run/?start=" + ++starts : "about:blank");
+  if (!first.ok) return first;
+  // a reload's build has its own defines, so its own cache: make it now, not at the first save
+  const done = busy("build 1 running; warming the compiler for reloads", "warm");
+  const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
+  done();
+  status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
+  return first;
+}
+// the page's files become `loaded` (project.load()'s): the tree and the editor
+function showProject(loaded) {
+  for (const f of Object.keys(files)) { delete files[f]; delete saved[f]; }
+  states.clear(); diagnostics.clear();
+  for (const [f, data] of Object.entries(loaded.files)) files[f] = saved[f] = data;
+  dirs.clear(); selectedDir = null;
+  for (const d of loaded.dirs) dirs.add(d);
+  for (const f of names()) addDirs(f);
+  current = names().find((n) => n.endsWith("Hello.hx")) || names().find(isCode) || names()[0] || null;
+  renderTree();
+  if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
+  showWhere();
+}
+// ... and the program starts over on them
+async function switchTo(loaded) {
+  showProject(loaded);
+  const first = await startProgram();
+  if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
+  return first;
+}
+function showWhere() {
+  const cfg = buildConfig();
+  $("where").textContent = (project.folder ? "folder: " + project.folder.name : "kept in this browser") + " · " + (cfg.file || "src/, Main");
+  $("folder").textContent = project.folder ? "Close folder" : reopen ? `Reopen ${reopen.name}…` : "Open folder…";
+  $("folder").hidden = !project.folder && !reopen && !("showDirectoryPicker" in window);
+  $("reset").hidden = !!project.folder;
+}
+let reopen = null; // a folder from the last visit, waiting for the person's permission
+async function openFolder(handle) {
+  await flushWrites();
+  await project.useFolder(handle);
+  reopen = null;
+  await remembered.set(handle);
+  return switchTo(await project.load());
+}
+async function closeFolder() {
+  await flushWrites();
+  project.useBrowser();
+  await remembered.set(null);
+  return switchTo(await project.load());
+}
+// a zip's files as the browser's project, replacing what it had (and closing a folder);
+// a folder holding everything, as GitHub's zips have, is taken off
+async function importZip(bytes) {
+  const entries = FS.unzipSync(bytes);
+  let list = Object.keys(entries).filter((n) => !n.endsWith("/"));
+  const first = list.length ? list[0].split("/") : [];
+  const top = first.length > 1 ? first[0] + "/" : null;
+  const strip = top && list.every((n) => n.startsWith(top)) ? top.length : 0;
+  const safe = (n) => n && !n.startsWith("/") && !n.split("/").some((p) => p === "" || p === "." || p === "..");
+  await flushWrites();
+  if (project.folder) { project.useBrowser(); await remembered.set(null); }
+  await project.clear();
+  for (const n of list) {
+    const name = n.slice(strip);
+    if (safe(name) && !SKIP.test(name) && entries[n].length <= MAX_BYTES) await project.put(name, asData(entries[n]));
+  }
+  return switchTo(await project.load());
+}
+function exportZip() {
+  const enc = new TextEncoder(), entries = {};
+  for (const f of names()) entries[f] = isText(files[f]) ? enc.encode(files[f]) : files[f];
+  return FS.zipSync(entries);
+}
+
+// ---- the menus. A menu button opens its list (with the keyboard: on its first item, or
+// its last with the up arrow); the arrows, Home and End move, Escape closes, and so does
+// a click anywhere else. Picking an item closes the menu, then runs the item's handler
+function closeMenus() {
+  for (const m of document.querySelectorAll(".menu")) {
+    m.querySelector(".items").hidden = true;
+    m.querySelector(".menubutton").setAttribute("aria-expanded", "false");
+  }
+}
+// what the items can do just now
+function refreshMenus() {
+  $("rename").disabled = $("delete").disabled = current === null && selectedDir === null;
+  const st = view && current !== null ? view.state : null, editable = !!st && !st.readOnly;
+  const selected = !!st && st.selection.ranges.some((r) => !r.empty);
+  $("undo").disabled = !editable || CM.undoDepth(st) === 0;
+  $("redo").disabled = !editable || CM.redoDepth(st) === 0;
+  $("cut").disabled = !editable || !selected;
+  $("copy").disabled = !selected;
+  for (const id of ["paste", "replace", "comment", "indent", "outdent"]) $(id).disabled = !editable;
+  for (const id of ["select-all", "find", "goto-line"]) $(id).disabled = !st;
+}
+for (const m of document.querySelectorAll(".menu")) {
+  const button = m.querySelector(".menubutton"), list = m.querySelector(".items");
+  const items = () => [...list.querySelectorAll("[role=menuitem]")].filter((i) => !i.hidden && !i.disabled);
+  const focusItem = (i) => { const all = items(); if (all.length) all[(i + all.length) % all.length].focus(); };
+  const open = (focus) => {
+    closeMenus(); refreshMenus();
+    list.hidden = false;
+    button.setAttribute("aria-expanded", "true");
+    if (focus !== undefined) focusItem(focus);
+  };
+  // a click from the keyboard (Enter, Space) has no pointer: focus the first item then
+  button.onclick = (e) => { if (list.hidden) open(e.detail === 0 ? 0 : undefined); else closeMenus(); };
+  button.onkeydown = (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); open(0); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); open(-1); }
+  };
+  // moving across to another menu while one is open opens that one
+  button.onpointerenter = () => { if (list.hidden && document.querySelector(".items:not([hidden])")) open(); };
+  list.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) closeMenus(); }, true);
+  list.onkeydown = (e) => {
+    const all = items(), at = all.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") focusItem(at + 1);
+    else if (e.key === "ArrowUp") focusItem(at - 1);
+    else if (e.key === "Home") focusItem(0);
+    else if (e.key === "End") focusItem(-1);
+    else if (e.key === "Escape") { closeMenus(); button.focus(); }
+    else if (e.key === "Tab") { closeMenus(); return; }
+    else return;
+    e.preventDefault();
+  };
+}
+document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".menu")) closeMenus(); });
+
+// ---- the page's dialog: a question (resolves to true, or null if cancelled) or, given a
+// `value`, a name to type (resolves to the text). `check(text)` returns why the text won't
+// do, shown under it, or nothing; `select` is the part of the value to select at first
+let dialogDone = null;
+// `choices` ([{value, label, disabled}]) asks for one of them instead, starting at `value`
+function askPerson({ title, text = "", list = [], value = null, select = null, ok = "OK", danger = false, check = null, choices = null }) {
+  if (dialogDone) dialogDone(null);
+  const d = $("dialog"), input = $("dialog-input");
+  $("dialog-title").textContent = title;
+  $("dialog-text").textContent = text;
+  $("dialog-list").replaceChildren(...list.map((x) => { const li = document.createElement("li"); li.textContent = x; return li; }));
+  $("dialog-error").textContent = "";
+  $("dialog-ok").textContent = ok;
+  $("dialog-ok").className = danger ? "danger" : "primary";
+  const pick = $("dialog-select");
+  pick.hidden = !choices;
+  pick.replaceChildren(...(choices || []).map((c) => { const o = document.createElement("option"); o.value = c.value; o.textContent = c.label; o.disabled = !!c.disabled; return o; }));
+  if (choices) pick.value = value;
+  input.hidden = value === null || !!choices;
+  input.value = value === null || choices ? "" : value;
+  input.oninput = () => { $("dialog-error").textContent = ""; };
+  return new Promise((resolve) => {
+    dialogDone = (answer) => { dialogDone = null; if (d.open) d.close(); resolve(answer); };
+    d.querySelector("form").onsubmit = (e) => {
+      if (e.submitter && e.submitter.value === "cancel") { e.preventDefault(); dialogDone(null); return; }
+      e.preventDefault();
+      const answer = choices ? pick.value : value === null ? true : input.value.trim();
+      const why = value === null || !check ? null : check(answer);
+      if (why) { $("dialog-error").textContent = why; input.focus(); return; }
+      dialogDone(answer);
+    };
+    d.oncancel = (e) => { e.preventDefault(); dialogDone(null); }; // Escape
+    d.showModal();
+    if (choices) pick.focus();
+    else if (value !== null) { input.focus(); const [a, b] = select || [0, input.value.length]; input.setSelectionRange(a, b); }
+    else (danger ? $("dialog-cancel") : $("dialog-ok")).focus();
+  });
+}
+// why a name won't do for a new file (or a rename to it), or null
+function nameProblem(name) {
+  try { checkName(name); return null; } catch (e) { return e.message; }
+}
+// the base name of a path, without its extension: what a rename selects first
+function baseRange(path) {
+  const start = path.lastIndexOf("/") + 1, dot = path.lastIndexOf(".");
+  return [start, dot > start ? dot : path.length];
+}
+
+// ---- the Edit menu: CodeMirror's commands, on the editor, which gets the focus back
+function editCommand(id, run) {
+  $(id).onclick = () => attempt(async () => { view.focus(); await run(view); });
+}
+const selectedText = (st) => st.selection.ranges.filter((r) => !r.empty).map((r) => st.sliceDoc(r.from, r.to)).join(st.lineBreak);
+editCommand("undo", (v) => CM.undo(v));
+editCommand("redo", (v) => CM.redo(v));
+editCommand("cut", async (v) => { await navigator.clipboard.writeText(selectedText(v.state)); v.dispatch(v.state.replaceSelection("")); });
+editCommand("copy", (v) => navigator.clipboard.writeText(selectedText(v.state)));
+editCommand("paste", async (v) => {
+  let text;
+  try { text = await navigator.clipboard.readText(); } catch (e) { throw new Error(`the browser didn't let the menu paste; ${$("paste").querySelector("kbd").textContent} does`); }
+  v.dispatch(v.state.replaceSelection(text));
+});
+editCommand("select-all", (v) => CM.selectAll(v));
+editCommand("find", (v) => CM.openSearchPanel(v));
+editCommand("replace", (v) => { CM.openSearchPanel(v); const r = v.dom.querySelector(".cm-search [name=replace]"); if (r) r.focus(); });
+editCommand("goto-line", (v) => CM.gotoLine(v));
+editCommand("comment", (v) => CM.toggleComment(v));
+editCommand("indent", (v) => CM.indentMore(v));
+editCommand("outdent", (v) => CM.indentLess(v));
+// Preferences: each change applies at once; Done closes, Defaults puts them all back
+function showPrefs() {
+  for (const k of Object.keys(PREF_DEFAULTS)) {
+    const el = $("pref-" + k);
+    if (el.type === "checkbox") el.checked = prefs[k]; else el.value = prefs[k];
+  }
+}
+for (const k of Object.keys(PREF_DEFAULTS)) {
+  $("pref-" + k).onchange = $("pref-" + k).oninput = () => {
+    const el = $("pref-" + k);
+    let v = el.type === "checkbox" ? el.checked : el.value;
+    if (k === "fontSize") { v = Math.round(+v); if (!(v >= 9 && v <= 28)) return; }
+    if (k === "tabSize") v = +v;
+    prefs[k] = v;
+    savePrefs(); applyPrefs();
+  };
+}
+$("preferences").onclick = () => { showPrefs(); $("prefs").showModal(); };
+$("prefs").querySelector("form").onsubmit = (e) => {
+  e.preventDefault();
+  if (e.submitter && e.submitter.value === "defaults") { Object.assign(prefs, PREF_DEFAULTS); savePrefs(); applyPrefs(); showPrefs(); return; }
+  $("prefs").close();
+  if (view) view.focus();
+};
+
+// a file operation's failure, for a person: in the status line
+const attempt = (f) => f().catch((e) => status(e.message));
+// Ctrl-S, or Cmd-S on a Mac: the menu shows which
+if (/Mac|iPhone|iPad/.test(navigator.platform)) for (const k of document.querySelectorAll("kbd.mod")) k.textContent = k.textContent.replace("Ctrl+", "⌘");
+$("build").onclick = () => save();
+$("view-window").onclick = () => attempt(async () => { if (program.kind === "window") program.back(); else await program.out("window"); });
+$("view-pip").onclick = () => attempt(async () => { if (program.kind === "pip") program.back(); else await program.out("pip"); });
+$("view-tab").onclick = () => { window.open("run/", "_blank"); };
+addEventListener("pagehide", () => { if (program.win && program.kind === "window") program.win.close(); });
+showView();
+$("build-item").onclick = () => save();
+// the build file: those at the top that build JavaScript; the others shown, with why not
+$("build-file").onclick = () => attempt(async () => {
+  const all = names().filter((n) => !n.includes("/") && n.endsWith(".hxml"));
+  const choices = all.map((n) => { const e = parseHxml(n).error; return { value: n, label: e ? `${n}: ${e.message}` : n, disabled: !!e }; })
+    .concat([{ value: "", label: "None: src/ for code, Main for the main class" }]);
+  const now = buildConfig().file || "";
+  const answer = await askPerson({ title: "Build file", text: "The hxml the page builds from (its class paths, --main, --js and options; hotreload-hx comes with the page).",
+                                   choices, value: now, ok: "Use it" });
+  if (answer === null || answer === now) return;
+  try { localStorage.setItem(buildChoiceKey(), answer); } catch (e) {}
+  return build();
+});
+// where a new file or folder goes first: the selected folder, or the shown file's
+function hereDir() {
+  const d = selectedDir !== null ? selectedDir : current !== null ? parentOf(current) : "src";
+  return d ? d + "/" : "";
+}
+$("new").onclick = () => attempt(async () => {
+  const dir = hereDir();
+  const name = await askPerson({ title: "New file", text: "A path in the project: src/... for code, anything else is an asset.",
+                                 value: dir, select: [dir.length, dir.length], ok: "Create", check: nameProblem });
+  if (name) await newFile(name);
+});
+$("new-folder").onclick = () => attempt(async () => {
+  const dir = hereDir();
+  const name = await askPerson({ title: "New folder", text: "A path in the project; under src/, a folder is a package.",
+                                 value: dir, select: [dir.length, dir.length], ok: "Create", check: (n) => nameProblem(n.replace(/\/$/, "")) });
+  if (name) await newFolder(name.replace(/\/$/, ""));
+});
+// Rename and Delete: the selected folder, or else the shown file
+$("rename").onclick = () => attempt(async () => {
+  const from = selectedDir !== null ? selectedDir : current;
+  if (from === null) return;
+  const what = selectedDir !== null ? "folder" : "file";
+  const name = await askPerson({ title: `Rename ${from}`, value: from, select: what === "file" ? baseRange(from) : [parentOf(from) ? parentOf(from).length + 1 : 0, from.length],
+                                 text: `A new name, or a new path to move it${what === "folder" ? " and everything in it" : ""}.` +
+                                       (from.startsWith("src/") ? " A .hx file whose package changes gets its package line changed." : ""),
+                                 ok: "Rename", check: (n) => n === from ? "That's its name already." : dirs.has(from) && inside(n, from) ? "A folder can't go inside itself." : nameProblem(n) });
+  if (name) await movePath(from, name);
+});
+$("delete").onclick = () => attempt(async () => {
+  const onDisk = project.folder ? " They're deleted from the folder on disk, not moved to the trash." : "";
+  if (selectedDir !== null) {
+    const dir = selectedDir;
+    // an empty folder goes without asking; one with anything in it (shown or not) asks
+    const all = await project.everything(dir);
+    if (all.files.length) {
+      const shown = names().filter((n) => inside(n, dir)), hidden = all.files.length - shown.length;
+      const count = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
+      const sure = await askPerson({ title: `Delete ${dir}/?`, ok: "Delete", danger: true, list: shown.slice(0, 200),
+        text: `It has ${count(shown.length, "file")}` + (hidden ? ` and ${count(hidden, "file")} the page doesn't show (hidden, or build output)` : "") +
+              "." + onDisk.replace("They're", "All of it is") });
+      if (!sure) return;
+    }
+    return deleteFolder(dir);
+  }
+  if (current === null) return;
+  const name = current;
+  const sure = await askPerson({ title: `Delete ${name}?`, ok: "Delete", danger: true, text: onDisk.replace("They're", "It's").trim() });
+  if (sure) await deleteFile(name);
+});
+$("reset").onclick = () => attempt(async () => {
+  if (!await askPerson({ title: "Reset to the example?", text: "The project kept in this browser goes back to the example; your changes to it are lost.",
+                         ok: "Reset", danger: true })) return;
+  await project.clear();
+  location.reload();
+});
+$("folder").onclick = () => attempt(async () => {
+  if (project.folder) return closeFolder();
+  if (reopen) {
+    if (await reopen.requestPermission({ mode: "readwrite" }) !== "granted") return;
+    return openFolder(reopen);
+  }
+  let handle;
+  try { handle = await showDirectoryPicker({ mode: "readwrite" }); } catch (e) { return; } // cancelled
+  return openFolder(handle);
+});
+$("import").onclick = () => $("zipfile").click();
+$("zipfile").onchange = () => attempt(async () => {
+  const file = $("zipfile").files[0];
+  $("zipfile").value = "";
+  if (!file) return;
+  if (!await askPerson({ title: `Import ${file.name}?`, text: "Its files replace the project kept in this browser." + (project.folder ? " The open folder is closed, and left as it is." : ""),
+                         ok: "Import", danger: !project.folder })) return;
+  return importZip(new Uint8Array(await file.arrayBuffer()));
+});
+// a haxelib release's zip, added by hand to the library cache (as -lib name:version and
+// lix's haxelib: entries expect it), for when the page can't download it
+async function addLibraryZip(bytes) {
+  const files = zipFiles(bytes, true);
+  let meta = null;
+  try { meta = JSON.parse(new TextDecoder().decode(files["haxelib.json"])); } catch (e) {}
+  if (!meta || !meta.name || !meta.version) throw new Error("that zip has no haxelib.json with a name and version: is it a haxelib release?");
+  const lib = { name: meta.name, version: meta.version, source: `haxelib:/${meta.name}#${meta.version}`, dir: `${meta.name}/${meta.version}/haxelib` };
+  await storeLibrary(lib, { files, hash: await sha256([bytes]), from: "a zip added by hand" });
+  libFiles.delete(lib.dir);
+  status(`${meta.name} ${meta.version} added to the libraries`);
+  return lib;
+}
+$("add-library").onclick = () => $("libfile").click();
+$("libfile").onchange = () => attempt(async () => {
+  const file = $("libfile").files[0];
+  $("libfile").value = "";
+  if (!file) return;
+  await addLibraryZip(new Uint8Array(await file.arrayBuffer()));
+  return build();
+});
+$("export").onclick = () => {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([exportZip()], { type: "application/zip" }));
+  a.download = (project.folder ? project.folder.name : "haxe-project") + ".zip";
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+};
+addEventListener("beforeunload", () => { flushWrites(); });
+
+// ---- the frame's log, for the test below
+function frameLog() {
+  try { return $("run").contentDocument.getElementById("log").textContent; } catch (e) { return ""; }
+}
+function until(test, ms) {
+  return new Promise((resolve) => {
+    const end = performance.now() + ms;
+    (function check() {
+      const v = test();
+      if (v || performance.now() > end) resolve(v || null); else setTimeout(check, 100);
+    })();
+  });
+}
+const lastTicks = (log, word) => {
+  const re = new RegExp(word + ", world! \\(ticks: (\\d+), since the last reload: (\\d+)\\)", "g");
+  let m, last = null;
+  while ((m = re.exec(log))) last = { ticks: +m[1], since: +m[2] };
+  return last;
+};
+
+// ?test: edit, build and check without a person, then POST what happened to /report. It
+// uses stores of its own, cleared first, and a directory of the browser's private file
+// system (OPFS) as the folder
+let testReport = null;
+async function test() {
+  const report = testReport = { steps: [] };
+  const step = (name, ok, detail) => { report.steps.push({ name, ok: !!ok, detail }); };
+  const t0 = performance.now();
+  let before = await until(() => lastTicks(frameLog(), "Hello"), 15000);
+  step("v1 runs", before, before);
+  // an edit to the code: the message changes, the @:hot tick count carries on
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace("'$greeting, $name! (ticks", "'$greeting again, $name! (ticks");
+  before = lastTicks(frameLog(), "Hello");
+  const b2 = await save();
+  step("v2 builds", b2.ok, b2.ok ? Math.round(b2.r.ms) + " ms" : b2.r.stderr);
+  report.reloadMs = [Math.round(b2.r.ms)];
+  const after = await until(() => lastTicks(frameLog(), "Hello again"), 15000);
+  step("v2 runs the new code", after, after);
+  step("ticks carried over (@:hot)", after && before && after.ticks > before.ticks, { before, after });
+  step("since-reload started over (plain static)", after && before && after.since < after.ticks, { before, after });
+  const log = frameLog();
+  step("reload hooks ran", log.includes("hello: reloading...") && log.includes("hello: reloaded"));
+  // text that isn't ASCII, through the compiler and back: UTF-8 both ways
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace("hello: reloaded", "hello: reloaded ¡olé! ✓");
+  const bu = await save();
+  const ole = await until(() => frameLog().includes("hello: reloaded ¡olé! ✓"), 15000);
+  step("non-ASCII source text reaches the program intact", bu.ok && ole, bu.ok ? null : bu.r.stderr);
+  // an asset edit: nothing is built, the program reads it again
+  show("assets/greeting.txt");
+  files["assets/greeting.txt"] = "Howdy\n";
+  await save();
+  const howdy = await until(() => lastTicks(frameLog(), "Howdy again"), 15000);
+  step("asset change reaches the program", howdy && frameLog().includes('the greeting is now "Howdy"'), howdy);
+  // a broken edit: the build fails, the program keeps running the last good code
+  show("src/Hello.hx");
+  const good = files["src/Hello.hx"];
+  files["src/Hello.hx"] = good.replace("ticks++;", "ticks++ oops;");
+  const b3 = await save();
+  const still = lastTicks(frameLog(), "Howdy again");
+  await new Promise((r) => setTimeout(r, 1500));
+  const later = lastTicks(frameLog(), "Howdy again");
+  step("a failed build is reported and the program keeps running", !b3.ok && later && still && later.ticks > still.ticks,
+       { error: (b3.r.stderr || "").split("\n")[0], still, later });
+  const marked = [];
+  CM.forEachDiagnostic(view.state, (d, from) => marked.push({ line: view.state.doc.lineAt(from).number, text: view.state.sliceDoc(d.from, d.to), message: d.message, severity: d.severity }));
+  step("the error is marked in the editor, on its line and its text", marked.length === 1 && marked[0].line === 39 && marked[0].text === "oops"
+       && view.state.doc.toString() === files["src/Hello.hx"], marked);
+  step("the tree counts the error", document.querySelector('#tree button[data-name="src/Hello.hx"] .count').textContent === "1");
+  files["src/Hello.hx"] = good;
+  const b4 = await save();
+  step("the fixed edit builds and reloads", b4.ok, b4.ok ? Math.round(b4.r.ms) + " ms" : b4.r.stderr);
+  step("the error marker is gone", CM.diagnosticCount(view.state) === 0, CM.diagnosticCount(view.state));
+  report.reloadMs.push(Math.round(b4.r.ms));
+  // a few more edits in a row: each is a build of one changed file
+  for (let i = 0; i < 3; i++) {
+    files["src/Hello.hx"] = good.replace("ticks % 4", "ticks % " + (2 + i));
+    const b = await save();
+    report.reloadMs.push(b.ok ? Math.round(b.r.ms) : -1);
+  }
+  files["src/Hello.hx"] = good;
+  const bl = await save();
+  step("a run of edits builds", report.reloadMs.every((ms) => ms >= 0) && bl.ok, report.reloadMs);
+
+  // ---- files: a new class, used by the program; renamed; removed
+  const nf = await newFile("src/util/Greeter.hx");
+  step("a new .hx file gets its package and class, and builds", nf.ok && files["src/util/Greeter.hx"] === "package util;\n\nclass Greeter {\n}\n",
+       nf.ok ? files["src/util/Greeter.hx"] : nf.r.stderr);
+  files["src/util/Greeter.hx"] = "package util;\n\nclass Greeter {\n\tpublic static function greet(who:String):String\n\t\treturn 'greetings, ' + who;\n}\n";
+  await save();
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = good.replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); say(util.Greeter.greet("new file"));');
+  const bg = await save();
+  step("the program uses the new file", bg.ok && await until(() => frameLog().includes("greetings, new file"), 15000), bg.ok ? null : bg.r.stderr);
+
+  const rn = await renameFile("src/util/Greeter.hx", "src/util/Welcome.hx");
+  step("renaming a class's file breaks the build that names it (the compiler saw the rename)", !rn.ok && /Greeter/.test(rn.r.stderr || ""),
+       (rn.r && rn.r.stderr || "").split("\n")[0]);
+  show("src/util/Welcome.hx");
+  files["src/util/Welcome.hx"] = files["src/util/Welcome.hx"].replace("class Greeter", "class Welcome").replace("greetings, ", "welcome, ");
+  await save();
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace('util.Greeter.greet("new file")', 'util.Welcome.greet("renamed")');
+  const br = await save();
+  step("after the fix-up, the renamed file builds and runs", br.ok && await until(() => frameLog().includes("welcome, renamed"), 15000), br.ok ? null : br.r.stderr);
+
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace(' say(util.Welcome.greet("renamed"));', "");
+  await save();
+  const del = await deleteFile("src/util/Welcome.hx");
+  step("deleting the file builds", del.ok, del.ok ? null : del.r.stderr);
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); say(util.Welcome.greet("gone"));');
+  const gone = await save();
+  step("the compiler no longer has the deleted file", !gone.ok && /Welcome/.test(gone.r.stderr || ""), (gone.r && gone.r.stderr || "").split("\n")[0]);
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace(' say(util.Welcome.greet("gone"));', "");
+  const back = await save();
+  step("and builds again without it", back.ok, back.ok ? null : back.r.stderr);
+
+  // ---- assets: a new one is served; a removed one isn't
+  await newFile("assets/notes.txt", "a note");
+  const served = await $("run").contentWindow.fetch("assets/notes.txt").then((r) => r.ok ? r.text() : null);
+  step("a new asset is served to the program", served === "a note", served);
+  await deleteFile("assets/notes.txt");
+  const removed = await $("run").contentWindow.fetch("assets/notes.txt").then((r) => r.status);
+  step("a removed asset isn't", removed === 404, removed);
+  const badName = await newFile("../x.hx").then(() => "made", (e) => e.message);
+  step("a bad file name is refused", /not a file name/.test(badName), badName);
+
+  // ---- folders: new (empty), a file in it, moved (its package line follows), deleted
+  await newFolder("src/game");
+  step("New folder: an empty folder, in the tree and the store", dirs.has("src/game") && !!document.querySelector('#tree [data-dir="src/game"]')
+       && (await project.load()).dirs.includes("src/game"));
+  const ng = await newFile("src/game/Board.hx");
+  step("a new file in it is in its package", ng.ok && files["src/game/Board.hx"].startsWith("package game;"), files["src/game/Board.hx"]);
+  const mv = await movePath("src/game", "src/core/game");
+  step("moving the folder moves its files, and their package lines follow, and it builds", mv.ok && !("src/game/Board.hx" in files)
+       && files["src/core/game/Board.hx"].startsWith("package core.game;") && !dirs.has("src/game") && dirs.has("src/core/game"),
+       mv.ok ? files["src/core/game/Board.hx"].split("\n")[0] : mv.r.stderr);
+  const keptDirs = (await project.load()).dirs;
+  step("the store moved them too", keptDirs.includes("src/core/game") && !keptDirs.includes("src/game") && (await project.load()).files["src/core/game/Board.hx"] === files["src/core/game/Board.hx"]);
+  const up = await movePath("src/core/game/Board.hx", "src/Board.hx");
+  step("a file moved to the top loses its package line", up.ok && files["src/Board.hx"] === "class Board {\n}\n", files["src/Board.hx"]);
+  const own = movedPackage("package somewhere.else;\nclass X {}\n", "src/a/X.hx", "src/b/X.hx");
+  step("a package line that didn't follow the folder is left alone", own === null);
+  const into = await movePath("src/core", "src/core/inner").then(() => "moved", (e) => e.message);
+  step("a folder can't move inside itself", /inside itself/.test(into), into);
+  await deleteFolder("src/core");
+  step("Delete folder: it and what's in it go", !dirs.has("src/core") && !dirs.has("src/core/game") && !(await project.load()).dirs.includes("src/core"));
+  await deleteFile("src/Board.hx");
+  const lastOne = await newFile("assets/more/one.txt", "1").then(() => deleteFile("assets/more/one.txt"));
+  step("deleting a folder's last file leaves the folder", lastOne.ok && dirs.has("assets/more"));
+  await deleteFolder("assets/more");
+
+  const skipName = await newFile("out/x.txt").then(() => "made", (e) => e.message);
+  step("a name outside the project (a build output) is refused", /wouldn't be part/.test(skipName), skipName);
+
+  // ---- the build file: the example's web-build.hxml (the one that builds JavaScript)
+  step("the build comes from web-build.hxml, the hxml that builds JavaScript", buildConfig().file === "web-build.hxml"
+       && $("where").textContent.includes("web-build.hxml"), $("where").textContent);
+  step("the others are refused, each with why", /--run/.test(parseHxml("web.hxml").error.message) && /-lib hxcpp-debug-server/.test(parseHxml("debug.hxml").error.message)
+       && /--cpp/.test(parseHxml("release.hxml").error.message), [parseHxml("web.hxml").error.message, parseHxml("release.hxml").error.message]);
+  // an hxml the page can't use: said on its line; fixed, it builds
+  const hxml = files["web-build.hxml"];
+  show("web-build.hxml");
+  files["web-build.hxml"] = hxml + "-lib format\n";
+  const hb = await save();
+  const hd = diagnostics.get("web-build.hxml") || [];
+  step("an hxml line the page can't do fails the build, marked on that line", !hb.ok && hd.length === 1 && /-lib format/.test(hd[0].message)
+       && hd[0].line === hxml.split("\n").length, hd);
+  files["web-build.hxml"] = hxml;
+  const hf = await save();
+  step("fixed, it builds", hf.ok && (diagnostics.get("web-build.hxml") || []).length === 0, hf.ok ? null : hf.r.stderr);
+  // another class path: its .hx files are code, packaged from it
+  files["web-build.hxml"] = hxml + "-cp lib\n";
+  const hc = await save();
+  const tool = await newFile("lib/tools/Tool.hx");
+  step("a class path added in the hxml: its files are code, their package from it", hc.ok && tool.ok && isCode("lib/tools/Tool.hx")
+       && files["lib/tools/Tool.hx"] === "package tools;\n\nclass Tool {\n}\n", files["lib/tools/Tool.hx"]);
+  await deleteFolder("lib");
+  show("web-build.hxml");
+  files["web-build.hxml"] = hxml;
+  await save();
+  // none: src/ and Main
+  localStorage.setItem(buildChoiceKey(), "");
+  const hn = await build();
+  step("Build file: none builds src/ with Main", hn.ok && buildConfig().file === null && $("where").textContent.includes("src/, Main"), hn.ok ? null : hn.r.stderr);
+  localStorage.removeItem(buildChoiceKey());
+  await build();
+
+  // ---- libraries: a haxelib release, pinned in the hxml (through serve.py's relay, since
+  // haxelib doesn't let pages read its files); the same library pinned to a GitHub commit
+  // by lix's haxe_libraries file (through jsDelivr); what can't be had, said on its line
+  const base = files["web-build.hxml"], hello0 = files["src/Hello.hx"];
+  // the Adler-32 of "abc" is 0x024d0127
+  await newFile("src/UsesFormat.hx", "class UsesFormat {\n\tpublic static function check():Bool {\n\t\tvar a = new format.tools.Adler32();\n\t\ta.update(haxe.io.Bytes.ofString(\"abc\"), 0, 3);\n\t\tvar expected = haxe.io.Bytes.alloc(4);\n\t\texpected.set(0, 0x02); expected.set(1, 0x4d); expected.set(2, 0x01); expected.set(3, 0x27);\n\t\treturn a.equals(format.tools.Adler32.read(new haxe.io.BytesInput(expected)));\n\t}\n}\n");
+  show("web-build.hxml");
+  files["web-build.hxml"] = base + "-lib format:3.7.0\n";
+  await save();
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = hello0.replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); say("adler " + UsesFormat.check());');
+  const lb = await save();
+  step("-lib format:3.7.0: downloaded (haxelib, through this site's relay) and built with", lb.ok && await until(() => frameLog().includes("adler true"), 15000),
+       lb.ok ? frameLog().split("\n").slice(-2) : lb.r.stderr);
+  const relayed = () => performance.getEntriesByType("resource").filter((e) => e.name.includes("/haxelib/files/3.0/format-3,7,0.zip")).length;
+  await build();
+  step("once: the next build has it from the library cache", relayed() === 1 && await libHas("format/3.7.0/haxelib"), relayed());
+  // lix: the same library, pinned to a commit, from GitHub through jsDelivr
+  const sha = "775a06f0a7aa64cbd060b5c3ba62f65d7fed684a";
+  await newFile("haxe_libraries/format.hxml", `# @install: lix --silent download "gh://github.com/HaxeFoundation/format#${sha}" into format/3.7.0/github/${sha}\n-cp \${HAXE_LIBCACHE}/format/3.7.0/github/${sha}/\n-D format=3.7.0\n`);
+  show("web-build.hxml");
+  files["web-build.hxml"] = base + "-lib format\n";
+  const lx = await save();
+  // a changed build file starts the program over; an edit then reloads it, which says the check again
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace('say("adler " + UsesFormat.check());', 'say("adler again " + UsesFormat.check());');
+  const lx2 = await save();
+  step("-lib format with lix's haxe_libraries/format.hxml: the GitHub commit, through jsDelivr", lx.ok && lx2.ok && await libHas(`format/3.7.0/github/${sha}`)
+       && await until(() => frameLog().includes("adler again true"), 15000), lx.ok ? (lx2.ok ? frameLog().split("\n").slice(-3) : lx2.r.stderr) : lx.r.stderr);
+  const marker = JSON.parse(await libText(`format/3.7.0/github/${sha}`, ".webide-hx.json"));
+  step("and says where it came from", /jsDelivr/.test(marker.from) && marker.files > 100, marker);
+  // what can't be had: on its line
+  files["web-build.hxml"] = base + "-lib nosuchlib\n";
+  const nv = await save();
+  const nvd = diagnostics.get("web-build.hxml") || [];
+  step("-lib without a version, nor a lix file: asked to pin one, on its line", !nv.ok && nvd.length === 1 && /which version/.test(nvd[0].message), nvd);
+  files["web-build.hxml"] = base + "-lib nosuchlib:9.9.9\n";
+  const nd = await save();
+  step("a release that can't be downloaded: said, with what to do", !nd.ok && /couldn't download it.*Add library zip/.test((diagnostics.get("web-build.hxml") || [{}])[0].message || ""),
+       (diagnostics.get("web-build.hxml") || [{}])[0].message);
+  // the hash: a different download for the same source is refused
+  const pinned = await storeLibrary({ name: "x", source: "haxelib:/format#3.7.0", dir: "x/0/test", at: null }, { files: {}, hash: "something else", from: "a test" }).then(() => "stored", (e) => e.message);
+  step("a download that isn't what was had before is refused", /refused/.test(pinned), pinned);
+  // a release added by hand, as when the page can't download it
+  const zip = new Uint8Array(await (await fetch("haxelib/files/3.0/format-3,7,0.zip")).arrayBuffer());
+  const added = await addLibraryZip(zip);
+  step("Add library zip: a haxelib release, into the library cache", added.dir === "format/3.7.0/haxelib" && await libHas(added.dir), added.dir);
+  // back as it was
+  await deleteFolder("haxe_libraries");
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = hello0;
+  await save();
+  await deleteFile("src/UsesFormat.hx");
+  show("web-build.hxml");
+  files["web-build.hxml"] = base;
+  const back2 = await save();
+  step("and back without libraries", back2.ok, back2.ok ? null : back2.r.stderr);
+
+  // ---- the project is kept: what the browser's store holds is what the page has
+  await flushWrites();
+  const kept = (await project.load()).files;
+  step("the store holds the project's files", JSON.stringify(Object.keys(kept).sort()) === JSON.stringify(names()), Object.keys(kept));
+  step("and their latest text", names().every((f) => kept[f] === files[f]));
+
+  // ---- zip: out, and in (as the browser's project)
+  const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
+  const enc = new TextEncoder(), dec = new TextDecoder();
+  const zipped = FS.unzipSync(exportZip());
+  step("Export zip holds every file, as it is", JSON.stringify(Object.keys(zipped).sort()) === JSON.stringify(names())
+       && names().every((f) => dec.decode(zipped[f]) === files[f]), Object.keys(zipped));
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0xff, 0xfe]);
+  const helloText = files["src/Hello.hx"];
+  await importZip(FS.zipSync({
+    "proj/src/Main.hx": enc.encode(files["src/Main.hx"]),
+    "proj/src/Hello.hx": enc.encode(helloText.replace("'$greeting again, $name! (ticks", "'$greeting from the zip, $name! (ticks")),
+    "proj/assets/greeting.txt": enc.encode("Ahoy\n"),
+    "proj/assets/dot.png": png,
+    "proj/.git/HEAD": enc.encode("ref: refs/heads/main\n"),
+    "proj/out/main.js": enc.encode("// built"),
+  }));
+  step("Import zip: its files, its top folder taken off, hidden files and build outputs left out",
+       JSON.stringify(names()) === JSON.stringify(["assets/dot.png", "assets/greeting.txt", "src/Hello.hx", "src/Main.hx"]), names());
+  step("the zip's program runs", await until(() => lastTicks(frameLog(), "Ahoy from the zip"), 15000), frameLog().split("\n").slice(-2));
+  step("a file that isn't text is kept as its bytes", files["assets/dot.png"] instanceof Uint8Array && same([...files["assets/dot.png"]], [...png]));
+  const pngRes = await $("run").contentWindow.fetch("assets/dot.png");
+  const pngServed = new Uint8Array(await pngRes.arrayBuffer());
+  step("and served as them, typed", same([...pngServed], [...png]) && pngRes.headers.get("Content-Type") === "image/png", pngRes.headers.get("Content-Type"));
+  show("assets/dot.png");
+  step("the editor shows it and doesn't edit it", view.state.readOnly && /14 bytes/.test(view.state.doc.toString()));
+  const keptBytes = (await project.load()).files["assets/dot.png"];
+  step("the browser's store keeps it as bytes", keptBytes instanceof Uint8Array && same([...keptBytes], [...png]));
+
+  // ---- a folder on this computer. A directory in the browser's private file system (OPFS)
+  // stands in for one the person picks: the same kind of handle
+  const opfs = await navigator.storage.getDirectory();
+  await opfs.removeEntry("haxe-test-folder", { recursive: true }).catch(() => {});
+  const dir = await opfs.getDirectoryHandle("haxe-test-folder", { create: true });
+  const walkTo = async (path, create) => {
+    const parts = path.split("/");
+    let d = dir;
+    for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p, { create });
+    return [d, parts[parts.length - 1]];
+  };
+  const write = async (path, text) => {
+    const [d, f] = await walkTo(path, true);
+    const w = await (await d.getFileHandle(f, { create: true })).createWritable();
+    await w.write(text); await w.close();
+  };
+  const read = async (path) => {
+    try { const [d, f] = await walkTo(path, false); return await (await (await d.getFileHandle(f)).getFile()).text(); } catch (e) { return null; }
+  };
+  const isDir = async (path) => { try { await walkTo(path + "/x", false); return true; } catch (e) { return false; } };
+  await write("src/Main.hx", files["src/Main.hx"]);
+  await write("src/Hello.hx", helloText.replace("'$greeting again, $name! (ticks", "'$greeting from the folder, $name! (ticks"));
+  await write("assets/greeting.txt", "Hey\n");
+  await write("notes/readme.md", "# notes\n");
+  await write(".git/HEAD", "ref: refs/heads/main\n");
+  await write("out/main.js", "// built");
+  // a build's many files: not part of the project, but opening the folder still walks them
+  for (let i = 0; i < 300; i++) await write(`out/obj/${i}.o`, "x");
+  const t1 = performance.now();
+  const of = await openFolder(dir);
+  report.folderOpenMs = Math.round(performance.now() - t1);
+  step("Open folder: its files, without hidden files and build outputs", of.ok &&
+       JSON.stringify(names()) === JSON.stringify(["assets/greeting.txt", "notes/readme.md", "src/Hello.hx", "src/Main.hx"]), names());
+  step("the folder's program runs", await until(() => lastTicks(frameLog(), "Hey from the folder"), 15000), frameLog().split("\n").slice(-2));
+  step("Reset is hidden for a folder", $("reset").hidden && $("folder").textContent === "Close folder");
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace("from the folder", "from the disk");
+  const fe = await save();
+  step("an edit is written to the folder", fe.ok && /from the disk/.test(await read("src/Hello.hx") || ""));
+  step("and runs", await until(() => lastTicks(frameLog(), "Hey from the disk"), 15000));
+  await newFile("src/extra/Extra.hx");
+  step("a new file is made in the folder", await read("src/extra/Extra.hx") === "package extra;\n\nclass Extra {\n}\n", await read("src/extra/Extra.hx"));
+  await renameFile("notes/readme.md", "notes/README.md");
+  step("a rename moves the file in the folder", await read("notes/README.md") === "# notes\n" && await read("notes/readme.md") === null);
+  await deleteFile("src/extra/Extra.hx");
+  step("a delete removes the file, and leaves its folder", await read("src/extra/Extra.hx") === null && await isDir("src/extra"));
+  // a folder on disk moves with everything in it, what the page doesn't show too
+  await write("src/extra/.notes", "hidden");
+  await newFile("src/extra/Extra.hx");
+  const fm = await movePath("src/extra", "src/more/extra");
+  step("moving a folder on disk takes everything in it", fm.ok && await read("src/more/extra/Extra.hx") === "package more.extra;\n\nclass Extra {\n}\n"
+       && await read("src/more/extra/.notes") === "hidden" && !(await isDir("src/extra")), await read("src/more/extra/Extra.hx"));
+  await deleteFolder("src/more");
+  step("deleting it removes all of it", !(await isDir("src/more")) && await read("src/more/extra/.notes") === null);
+  step("what isn't part of the project is left alone", await read(".git/HEAD") === "ref: refs/heads/main\n" && await read("out/main.js") === "// built" && await read("out/obj/0.o") === "x");
+  step("the folder is remembered for the next visit", await remembered.get().then((h) => h && h.isSameEntry(dir)));
+  const cf = await closeFolder();
+  step("Close folder: back to the browser's project (the zip's)", cf.ok && names().includes("assets/dot.png")
+       && await until(() => lastTicks(frameLog(), "Ahoy from the zip"), 15000));
+  step("and the folder is forgotten", await remembered.get() === undefined);
+  await opfs.removeEntry("haxe-test-folder", { recursive: true });
+
+  report.ms = Math.round(performance.now() - t0);
+  report.log = frameLog().split("\n").slice(-12);
+  report.ok = report.steps.every((s) => s.ok);
   await fetch("/report", { method: "POST", body: JSON.stringify(report) });
-  say("reported");
+}
+
+(async function () {
+  if (!("serviceWorker" in navigator)) { status("this page needs service workers (and http://localhost or https)"); return; }
+  if (!("indexedDB" in window)) { status("this page needs IndexedDB"); return; }
+  applyPrefs(); // the page's theme, before anything shows
+  [CM, FS] = await Promise.all([import("./vendor/codemirror.js"), import("./vendor/fs.js")]);
+  slots = Object.fromEntries(Object.keys(prefParts).map((k) => [k, new CM.Compartment()]));
+  await project.open();
+  if (TESTING) { await project.clear(); await remembered.set(null); }
+  // the folder from the last visit, if the browser still lets the page have it
+  const handle = await remembered.get().catch(() => null);
+  if (handle && await handle.queryPermission({ mode: "readwrite" }) === "granted") await project.useFolder(handle).catch(() => null);
+  else if (handle) reopen = handle;
+  let loaded = await project.load();
+  if (!project.folder && Object.keys(loaded.files).length === 0) {
+    // the first time (or after Reset): the example
+    const listing = await (await fetch(EXAMPLE + "files.json", { cache: "no-store" })).json();
+    for (const name of listing) await project.put(name, await (await fetch(EXAMPLE + name, { cache: "no-store" })).text());
+    loaded = await project.load();
+  }
+  // the project first, so it shows while the service worker starts (a changed sw.js can
+  // take a moment to take over)
+  view = new CM.EditorView({ parent: $("editor") });
+  showProject(loaded);
+  status("starting the service worker");
+  await serviceWorker();
+  const first = await startProgram();
+  if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
+  // a step that throws ends the test: the report says what ran, and the error
+  if (TESTING && first.ok) test().catch((e) => {
+    testReport.ok = false;
+    testReport.error = String(e && e.stack || e);
+    testReport.log = frameLog().split("\n").slice(-12);
+    fetch("/report", { method: "POST", body: JSON.stringify(testReport) });
+  });
 })();
 </script>
-</body></html>
+</body>
+</html>

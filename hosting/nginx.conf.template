@@ -1,4 +1,4 @@
-# The page at /webide-hx/ (play.html), and at /webide-hx/haxelib/files/3.0/ a caching mirror
+# The IDE at /webide-hx/ (web/index.html), and at /webide-hx/haxelib/files/3.0/ a caching mirror
 # of haxelib's release files: haxelib's file server doesn't let web pages read its zips, so
 # the page asks its own site, and this fetches each release from haxelib-files.haxe.org once
 # and keeps it. A release never changes, so a kept one is served for as long as it's kept
@@ -25,7 +25,6 @@ server {
 
     location /webide-hx/ {
         alias /usr/share/nginx/webide-hx/;
-        index play.html;
         # checked each time (cheaply, by ETag), so a deploy shows at once
         add_header Cache-Control "no-cache" always;
     }

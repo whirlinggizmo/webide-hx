@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """
 Puts webide-hx on a server, as a service of its own: the page (web/, as build.py made it,
-without serve.py and test reports) in the service directory's web/, with the service's
+without test reports) in the service directory's web/, with the service's
 docker-compose.yml and nginx.conf.template next to it, by rsync over ssh. With --up, it
-then starts (or updates) the container there. The directory is the service's own: what's
+then (re)creates the container there, which a changed docker-compose.yml or
+nginx.conf.template needs; web/ alone needs nothing more. The directory is the service's own: what's
 in its web/ and not in web/ here is removed, so it refuses a directory with other things
 in it.
 
@@ -28,11 +29,13 @@ def main():
         sys.exit(f"{host}:{path}: it has other things in it: not touching it")
     here = os.path.dirname(os.path.abspath(__file__))
     subprocess.run(["rsync", "-az", os.path.join(here, "docker-compose.yml"), os.path.join(here, "nginx.conf.template"), f"{host}:{path}/"], check=True)
-    subprocess.run(["rsync", "-az", "--delete", "--exclude", "serve.py", "--exclude", "report*.json", "--exclude", "__pycache__",
+    subprocess.run(["rsync", "-az", "--delete", "--exclude", "report*.json",
                     WEB + "/", f"{host}:{path}/web/"], check=True)
     print(f"copied the service and web/ to {host}:{path}")
     if "--up" in sys.argv:
-        subprocess.run(["ssh", host, f"cd '{path}' && docker compose up -d"], check=True)
+        # recreated, not just started: nginx renders its config from the template only when the
+        # container starts, so a changed nginx.conf.template needs a new container
+        subprocess.run(["ssh", host, f"cd '{path}' && docker compose up -d --force-recreate"], check=True)
 
 
 if __name__ == "__main__":

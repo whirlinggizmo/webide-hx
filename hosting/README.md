@@ -1,9 +1,9 @@
 # Hosting webide-hx
 
-play.html is a static page: any file server can serve `web/`, over https (its service
+The IDE (`web/index.html`) is a static page: any file server can serve `web/`, over https (its service
 worker runs only on a secure page). What a static server can't give it is haxelib's
 releases, which haxelib's file server doesn't let web pages read
-(HaxeFoundation/haxelib#693 asks for that). Locally, `web/serve.py` relays them. On a
+(HaxeFoundation/haxelib#693 asks for that). Locally, `tools/serve.py` relays them. On a
 server of your own, this directory is a service that does both: one nginx container
 serving the page and a caching mirror of haxelib's release files, on the same site. Without
 it, the page still builds with libraries pinned to a git commit (lix's `gh:` entries,
@@ -25,8 +25,9 @@ through jsDelivr) and with releases added by hand (Project > Add library zip…)
    ```
 
    That makes `~/services/webide-hx/` with the compose file, the nginx config and `web/`,
-   and starts the container. Deploying again updates it in place; `--up` is only needed
-   when the compose file or the nginx config changed.
+   and starts the container. Deploying again updates it in place; `--up` (which recreates
+   the container, a second's gap) is only needed when the compose file or the nginx config
+   changed.
 
 2. Once, on the server: the site's web server forwards `/webide-hx/` to the container. For
    Apache, in the site's `<VirtualHost *:443>` (on dev.whirlinggizmo.com, the one with
@@ -52,4 +53,4 @@ through jsDelivr) and with releases added by hand (Project > Add library zip…)
    `200`; then `200` with `X-Cache-Status: MISS` the first time and `HIT` after, and no
    `Access-Control-Allow-Origin`.
 
-The page is then https://dev.whirlinggizmo.com/webide-hx/ (play.html).
+The IDE is then https://dev.whirlinggizmo.com/webide-hx/.

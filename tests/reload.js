@@ -1,9 +1,9 @@
-// Checks that play.html comes back after the browser reloads it: the project (edits typed
+// Checks that the IDE comes back after the browser reloads it: the project (edits typed
 // and saved, a new file) is still there, and the page starts when sw.js has changed in
 // between (a new service worker takes over from one holding the program's long polls).
 // Serve a copy of web/, since this changes its sw.js:
-//     cp -r web /tmp/webcopy && python3 /tmp/webcopy/serve.py 8790
-//     brave --headless=new --remote-debugging-port=9333 --user-data-dir=TMP http://127.0.0.1:8790/play.html
+//     cp -r web /tmp/webcopy && python3 tools/serve.py 8790 --root /tmp/webcopy
+//     brave --headless=new --remote-debugging-port=9333 --user-data-dir=TMP http://127.0.0.1:8790/
 //     node tests/reload.js 9333 /tmp/webcopy
 // Prints each step; exits 1 if one fails.
 var fs = require("fs");
@@ -34,8 +34,8 @@ function step(name, ok, detail) {
 
 (async function () {
   var targets = await (await fetch("http://127.0.0.1:" + port + "/json")).json();
-  var page = targets.find(function (t) { return t.type === "page" && /play\.html/.test(t.url); });
-  if (!page) { console.log("no play.html page among the targets"); process.exit(1); }
+  var page = targets.find(function (t) { return t.type === "page" && /^https?:\/\/[^/]+\/(index\.html)?(\?.*)?$/.test(t.url); });
+  if (!page) { console.log("no IDE page (/ or /index.html) among the targets"); process.exit(1); }
   ws = new WebSocket(page.webSocketDebuggerUrl);
   ws.onmessage = function (ev) { var m = JSON.parse(ev.data); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m.result || m); waiting.delete(m.id); } };
   await new Promise(function (r) { ws.onopen = r; });

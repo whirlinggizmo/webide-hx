@@ -1,7 +1,7 @@
 {
   "name": "webide-hx-editor",
   "private": true,
-  "description": "play.html's libraries, bundled by build.py into web/vendor/: CodeMirror 6 (entry.js), ZenFS and fflate (fs.js)",
+  "description": "The IDE's libraries, bundled by build.py into web/vendor/: CodeMirror 6 (entry.js), ZenFS and fflate (fs.js)",
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",
     "@codemirror/commands": "6.11.1",

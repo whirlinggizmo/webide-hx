@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Runs play.html's own test (?test) headless and prints its report: serves web/ on PORT,
-opens play.html?test in a throwaway browser profile, waits for the report the page POSTs,
+Runs the IDE's own test (?test) headless and prints its report: serves web/ on PORT,
+opens /?test (web/index.html) in a throwaway browser profile, waits for the report the page POSTs,
 then stops the browser and the server (by PID).
 
     python3 tests/page.py brave [PORT]      Brave (/opt/brave.com/brave/brave, not the
@@ -13,7 +13,7 @@ Exits 1 if a step fails, the test stopped on an error, or no report came.
 import json, os, shutil, subprocess, sys, tempfile, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-WEB = os.path.join(os.path.dirname(HERE), "web")
+SERVE = os.path.join(os.path.dirname(HERE), "tools", "serve.py")
 BROWSERS = {
     "brave": lambda profile, url: ["/opt/brave.com/brave/brave", "--headless=new", "--disable-gpu", "--no-first-run", f"--user-data-dir={profile}", url],
     "firefox": lambda profile, url: ["firefox", "--headless", "--new-instance", "--profile", profile, url],
@@ -26,11 +26,11 @@ def main():
     browser, port = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "8790"
     work = tempfile.mkdtemp(prefix="haxe-page-test-")
     report = os.path.join(work, "report.json")
-    server = subprocess.Popen([sys.executable, os.path.join(WEB, "serve.py"), port, report], stdout=subprocess.DEVNULL)
+    server = subprocess.Popen([sys.executable, SERVE, port, report], stdout=subprocess.DEVNULL)
     time.sleep(1)
     profile = os.path.join(work, "profile")
     os.makedirs(profile)
-    b = subprocess.Popen(BROWSERS[browser](profile, f"http://127.0.0.1:{port}/play.html?test"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    b = subprocess.Popen(BROWSERS[browser](profile, f"http://127.0.0.1:{port}/?test"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(360):
             if os.path.exists(report) and os.path.getsize(report):

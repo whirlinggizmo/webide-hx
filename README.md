@@ -5,7 +5,7 @@ Haxe compiler and the running program side by side, with
 [hotreload-hx](https://github.com/whirlinggizmo/hotreload-hx) swapping the program's code
 on each save while it keeps its state. Projects live in the browser or in a folder on
 disk; libraries come the lix or haxelib way; debugging is the browser's DevTools, by
-source map. `web/play.html` is the page.
+source map. `web/index.html` is the IDE.
 
 Underneath is the Haxe compiler, running in a web page. `web/haxe.js` is Haxe 4.3.7 compiled from
 its OCaml bytecode with js_of_ocaml; `stubs.js` stands in for the C libraries it links.
@@ -18,21 +18,21 @@ compiler and the running program all in one page, nothing installed.
 
 ## Run it
 
-    python3 web/serve.py
-    # open http://127.0.0.1:8765/
+    python3 tools/serve.py
+    # open http://127.0.0.1:8765/ (the IDE)
 
-The page compiles a hello world (and runs it), compiles it again, then compiles the
-parity program from hotreload-hx's tests with the hotreload build macro, printing each
-exit code, time and output size. Without a browser:
+`/checks/` is the compiler's own check page: it compiles a hello world (and runs it),
+compiles it again, then compiles the parity program from hotreload-hx's tests with the
+hotreload build macro, printing each exit code, time and output size. Without a browser:
 
     node tests/browserlike.js
 
 runs the same bundle in node as a page would.
 
-For another device on the LAN, serve HTTPS: `play.html`'s service worker needs a secure
+For another device on the LAN, serve HTTPS: the IDE's service worker needs a secure
 page, and only `localhost` counts as one over plain HTTP.
 
-    python3 web/serve.py --tls cert.pem key.pem      # or TLS_CERT and TLS_KEY in the environment
+    python3 tools/serve.py --tls cert.pem key.pem      # or TLS_CERT and TLS_KEY in the environment
 
 That listens on every interface, on port 8443, and prints the LAN address. The
 certificate has to name that address and be trusted by the device (a local development
@@ -128,7 +128,7 @@ bundle expects the library embedded (`--embed-std`).
 
 ## A resident compiler
 
-`play.html` doesn't start the compiler for each build. Its worker
+The IDE doesn't start the compiler for each build. Its worker
 (`web/resident-worker.js`) starts the bundle once as Haxe's compilation server,
 `--wait stdio` with `HAXE_RESIDENT=1`, which the branch turns into a registered callback
 instead of a blocking loop. Each build is one request (`hx_request(hxml)`), after
@@ -138,7 +138,7 @@ didn't change stays parsed and typed, so a reload build takes about 0.1 s instea
 
 ## The editor
 
-`play.html` edits with CodeMirror 6, bundled from `editor/` into `web/vendor/codemirror.js`
+The IDE edits with CodeMirror 6, bundled from `editor/` into `web/vendor/codemirror.js`
 by `build.py` (node and npm needed for that step; versions are pinned in
 `editor/package-lock.json`). Ctrl-S builds. The compiler's errors and warnings appear on
 their lines, and the file tree counts each file's errors. Files under `src/` ending in
@@ -246,7 +246,7 @@ that need native code or tools at build time won't work in the page.
 
 ## Debugging
 
-`play.html` builds with `-debug -D source-map-inline -D source-map-content`: each bundle
+The IDE builds with `-debug -D source-map-inline -D source-map-content`: each bundle
 carries its source map inside, as a `data:` URL, with the `.hx` text in it. Inline
 matters: DevTools loads a separate map over the network itself, past the page's service
 worker, so a `.map` only the service worker knows would fail to load. `-D
@@ -255,7 +255,7 @@ source-map-inline` is a commit on the fork branch, proposed upstream for Haxe
 DevTools under `file://` as the compiler's paths (`/static/src/Hello.hx`). Open DevTools on the page, find
 `Hello.hx` among the sources, and set breakpoints; they keep working across reloads.
 `node tests/devtools.js PORT` checks this against a Chromium-based browser started with
-`--remote-debugging-port=PORT` on `play.html`.
+`--remote-debugging-port=PORT` on the IDE (`/`).
 
 Text crosses between the page and the compiler as UTF-8: the compiler's filesystem holds
 bytes, so `resident-worker.js` encodes sources and decodes output, and the standard

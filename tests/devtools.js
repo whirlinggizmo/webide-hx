@@ -1,10 +1,10 @@
-// Checks debugging in DevTools against a running play.html, over the DevTools protocol
+// Checks debugging in DevTools against the running IDE (web/index.html), over the DevTools protocol
 // (Chromium-based browsers: Brave, Chrome). For the first bundle and then a reloaded one:
 // gets the bundle's source map as DevTools does (inline, or over the network past the
 // page's service worker), sets a breakpoint where
 // the map puts a line of Hello.hx, waits for it to hit, and checks the pause maps back to
 // that line, with the program's state readable there.
-//     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
+//     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/
 //     node tests/devtools.js 9333
 // Prints each step; exits 1 if one fails.
 var port = process.argv[2] || "9333";
@@ -120,8 +120,8 @@ async function checkBundle(label) {
 
 (async function () {
   var targets = await (await fetch("http://127.0.0.1:" + port + "/json")).json();
-  var page = targets.find(function (t) { return t.type === "page" && /play\.html/.test(t.url); });
-  if (!page) { console.log("no play.html page among the targets"); process.exit(1); }
+  var page = targets.find(function (t) { return t.type === "page" && /^https?:\/\/[^/]+\/(index\.html)?(\?.*)?$/.test(t.url); });
+  if (!page) { console.log("no IDE page (/ or /index.html) among the targets"); process.exit(1); }
   ws = new WebSocket(page.webSocketDebuggerUrl);
   ws.onmessage = function (ev) {
     var m = JSON.parse(ev.data);

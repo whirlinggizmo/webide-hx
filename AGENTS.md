@@ -39,21 +39,21 @@ consumer of it, not part of it.
 - Over HTTPS (another device, or to test the page as a LAN visitor sees it): on Rob's
   machine `coinspinner` the certificate is `~/keys/coinspinner/cert.pem` with
   `privkey.pem` (names localhost, coinspinner(.local), 192.168.1.200/.201; CA in
-  `~/keys/ca`, which Brave trusts). `python3 web/serve.py --tls` with those, then
-  `https://192.168.1.200:8443/play.html?test`. `~/keys/localdev` is expired; don't use it.
+  `~/keys/ca`, which Brave trusts). `python3 tools/serve.py --tls` with those, then
+  `https://192.168.1.200:8443/?test`. `~/keys/localdev` is expired; don't use it.
 - The page's own test, headless: `python3 tests/page.py brave|firefox [PORT]` (serves web/,
-  runs play.html?test in a throwaway profile, prints the report, stops both by PID). Its
+  runs the IDE's /?test in a throwaway profile, prints the report, stops both by PID). Its
   library steps need the network: haxelib (through serve.py's relay) and jsDelivr.
-- Reloads: `node tests/reload.js PORT WEBCOPY`, against play.html served from a copy of
+- Reloads: `node tests/reload.js PORT WEBCOPY`, against the IDE served from a copy of
   `web/` (it changes the copy's `sw.js`): edits and new files survive a reload, and the
   page starts when a new service worker takes over from one holding long polls.
-- Menus: `node tests/menus.js PORT` against play.html in Brave with a debugging port
+- Menus: `node tests/menus.js PORT` against the IDE in Brave with a debugging port
   (keyboard, pointer, an item run, items turned off).
-- Debugging: start Brave with `--remote-debugging-port=P` on `play.html` (no `?test`),
+- Debugging: start Brave with `--remote-debugging-port=P` on the IDE (`/`, no `?test`),
   then `node tests/devtools.js P`: breakpoints by source map in the first and a
   reloaded bundle. Node 24's built-in WebSocket; no packages.
-- In a browser: `python3 web/serve.py`, open `http://127.0.0.1:8765/`.
-  The page compiles hello world (and runs it), compiles it again, then compiles the
+- The compiler's own check page: `python3 tools/serve.py`, open `http://127.0.0.1:8765/checks/`.
+  It compiles hello world (and runs it), compiles it again, then compiles the
   parity program with the hotreload build macro, and POSTs a JSON report the server
   writes to the given file. Headless works: `firefox --headless --new-instance --profile
   TMPDIR URL` or `brave-browser --headless=new --disable-gpu --no-first-run

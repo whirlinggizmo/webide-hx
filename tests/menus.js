@@ -1,4 +1,4 @@
-// Checks play.html's header menus (File, Project) in a Chromium-based browser, over the
+// Checks the IDE's header menus (File, Project) in a Chromium-based browser, over the
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
@@ -6,12 +6,12 @@
 // comes back when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
-//     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/play.html
+//     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/
 //     node tests/menus.js 9333 [SCREENSHOT_PREFIX]
 // Prints each step; exits 1 if one fails.
 var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[3];
 (async function () {
-  var t = (await (await fetch("http://127.0.0.1:" + port + "/json")).json()).find(function (t) { return t.type === "page" && /play/.test(t.url); });
+  var t = (await (await fetch("http://127.0.0.1:" + port + "/json")).json()).find(function (t) { return t.type === "page" && /^https?:\/\/[^/]+\/(index\.html)?(\?.*)?$/.test(t.url); });
   var ws = new WebSocket(t.webSocketDebuggerUrl), id = 0, wait = new Map();
   ws.onmessage = function (e) { var m = JSON.parse(e.data); if (m.id && wait.has(m.id)) { wait.get(m.id)(m.result || m); wait.delete(m.id); } };
   await new Promise(function (r) { ws.onopen = r; });

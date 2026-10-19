@@ -1,24 +1,24 @@
 #!/usr/bin/env python3
 """
-Serves this directory (web/) for the pages here, and takes the reports their test modes
-POST: the body of any POST is written to the report file.
+Serves web/ (the IDE) while it's worked on, and takes the reports its test modes POST: the
+body of any POST is written to the report file.
 
-    python3 serve.py                        http://127.0.0.1:8765/, reports to report.json here
-    python3 serve.py 9000                   another port
-    python3 serve.py 9000 r.json            another port and report file
-    python3 serve.py --tls CERT KEY         https on 8443, on every interface
-    TLS_CERT=... TLS_KEY=... python3 serve.py   the same, from the environment
+    python3 tools/serve.py                  http://127.0.0.1:8765/, reports to build/report.json
+    python3 tools/serve.py 9000             another port
+    python3 tools/serve.py 9000 r.json      another port and report file
+    python3 tools/serve.py --root DIR       another copy of web/ (tests/reload.js changes its sw.js)
+    python3 tools/serve.py --tls CERT KEY   https on 8443, on every interface
+    TLS_CERT=... TLS_KEY=... python3 tools/serve.py   the same, from the environment
 
-Then open play.html (edit and hot-reload a program) or index.html (the compiler's own
-checks).
+Then open / (the IDE, web/index.html) or /checks/ (the compiler's own checks).
 
-It also relays haxelib releases for play.html (haxelib's file server doesn't let web pages
+It also relays haxelib releases for the IDE (haxelib's file server doesn't let web pages
 read its zips): /haxelib/files/3.0/<name>-<1,2,3>.zip is fetched from haxelib-files.haxe.org
 once, kept in build/haxelib-cache, and served from there. Only those files: it isn't a
 general proxy. On when the server listens on this machine only; listening on the network
 (--tls, or --host), it's off unless --haxelib-relay on.
 
-play.html needs a secure page: its service worker runs only on https, or on http from
+The IDE needs a secure page: its service worker runs only on https, or on http from
 localhost/127.0.0.1. So another device on the LAN (a phone, another machine) needs
 --tls, with a certificate (PEM) that names this machine's LAN address and that the
 device trusts, e.g. one signed by a local development CA (mkcert). With --tls the server
@@ -26,9 +26,10 @@ listens on every interface unless --host says otherwise, and prints the LAN addr
 """
 import argparse, http.server, os, re, socket, ssl, sys, urllib.request
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WEB = os.path.join(ROOT, "web")
 HAXELIB_FILES = "https://haxelib-files.haxe.org/files/3.0/"
-HAXELIB_CACHE = os.path.join(os.path.dirname(HERE), "build", "haxelib-cache")
+HAXELIB_CACHE = os.path.join(ROOT, "build", "haxelib-cache")
 # a release's file name: name-1,2,3.zip (a version's dots are commas)
 HAXELIB_FILE = re.compile(r"^[A-Za-z0-9_.+-]+-[0-9A-Za-z,+-]+\.zip$")
 
@@ -48,7 +49,8 @@ def lan_address():
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("port", nargs="?", type=int, help="the port to serve on (default 8765, or 8443 with TLS)")
-    ap.add_argument("report", nargs="?", help="where a page's POSTed report is written (default report.json here)")
+    ap.add_argument("report", nargs="?", help="where a page's POSTed report is written (default build/report.json)")
+    ap.add_argument("--root", help="the directory to serve (default web/)")
     ap.add_argument("--tls", nargs=2, metavar=("CERT", "KEY"),
                     help="serve https with this certificate and key (PEM); or set TLS_CERT and TLS_KEY")
     ap.add_argument("--host", help="the address to listen on (default 127.0.0.1, or every interface with TLS)")
@@ -61,9 +63,11 @@ def main():
     tls = cert is not None
     port = args.port or (8443 if tls else 8765)
     host = args.host or ("0.0.0.0" if tls else "127.0.0.1")
-    report = os.path.abspath(args.report or os.path.join(HERE, "report.json"))
+    report = os.path.abspath(args.report or os.path.join(ROOT, "build", "report.json"))
+    os.makedirs(os.path.dirname(report), exist_ok=True)
+    root = os.path.abspath(args.root or WEB)
     relay = args.haxelib_relay == "on" or (args.haxelib_relay is None and host in ("127.0.0.1", "localhost", "::1"))
-    os.chdir(HERE)
+    os.chdir(root)
 
     class Handler(http.server.SimpleHTTPRequestHandler):
         def do_GET(self):
@@ -121,12 +125,12 @@ def main():
         server.socket = context.wrap_socket(server.socket, server_side=True)
         scheme = "https"
     shown = "localhost" if host in ("0.0.0.0", "127.0.0.1") else host
-    print(f"serving {HERE} at {scheme}://{shown}:{port}/play.html (reports to {report}); Ctrl-C to stop", flush=True)
+    print(f"serving {root} at {scheme}://{shown}:{port}/ (reports to {report}); Ctrl-C to stop", flush=True)
     print(f"  haxelib relay: {'on' if relay else 'off (--haxelib-relay on to relay haxelib releases)'}", flush=True)
     if tls and host == "0.0.0.0":
         address = lan_address()
         if address:
-            print(f"  on the LAN: {scheme}://{address}:{port}/play.html", flush=True)
+            print(f"  on the LAN: {scheme}://{address}:{port}/", flush=True)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
