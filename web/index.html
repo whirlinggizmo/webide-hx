@@ -166,9 +166,11 @@
         <button role="menuitem" id="build-file" title="The hxml file used for builds">Select hxml…</button>
         <hr role="separator">
         <button role="menuitem" id="folder">Open folder (local)…</button>
-        <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
+        <button role="menuitem" id="import" title="A zip as the project stored in this browser, replacing it">Import zip…</button>
         <button role="menuitem" id="export">Export zip</button>
-        <button role="menuitem" id="add-library" title="a haxelib release's zip, from lib.haxe.org, for when the page can't download it">Add library zip…</button>
+        <hr role="separator">
+        <button role="menuitem" id="add-library" title="A haxelib release or a GitHub repository: its haxe_libraries file, as lix writes it, and -lib in the build's hxml">Add library…</button>
+        <button role="menuitem" id="add-library-zip" title="A haxelib release's zip, from lib.haxe.org, for when the page cannot download it">Add library zip…</button>
         <hr role="separator">
         <button role="menuitem" id="reset" title="Back to the Example project, losing your changes">Reset to Example project…</button>
       </div>
@@ -512,7 +514,7 @@ function parseHxml(file) {
           read(lix, here, stack.concat([f]), true);
         } else if (version) {
           cfg.libs.push({ name, version, source: `haxelib:/${name}#${version}`, dir: `${name}/${version}/haxelib`, at: here, haxelib: true });
-        } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml`);
+        } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml (Project > Add library…)`);
       }
       else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
       else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: the page builds JavaScript (--js)`);
@@ -1898,6 +1900,110 @@ $("zipfile").onchange = () => attempt(async () => {
                          ok: "Import", danger: !project.folder })) return;
   return importZip(new Uint8Array(await file.arrayBuffer()));
 });
+// ---- Add library…: what `lix install` does, in the page. A haxelib release (name:version)
+// or a GitHub repository at a ref (made a commit): downloaded into the library cache, and
+// haxe_libraries/<name>.hxml written as lix writes it (its define, where it comes from, its
+// dependencies' -lib, its class path, its extraParams.hxml), for each dependency with a
+// version too; then -lib <name> in the build's hxml
+const LIB_SPEC = /^(?:haxelib:\/)?([A-Za-z0-9_.-]+)[:#]([0-9][^\s:#]*)$/;
+const GH_SPEC = /^(?:gh:\/\/|https:\/\/)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?#(\S+)$/;
+function librarySpecProblem(spec) {
+  if (LIB_SPEC.test(spec) || GH_SPEC.test(spec)) return null;
+  return "not a library: a haxelib release as name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref";
+}
+// a ref (a branch, a tag, a commit) as its commit, from GitHub's API
+async function githubCommit(owner, repo, ref) {
+  if (/^[0-9a-f]{40}$/.test(ref)) return ref;
+  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`, { headers: { Accept: "application/vnd.github.sha" } });
+  if (!r.ok) throw new Error(`${owner}/${repo}: GitHub has no ${ref} there (HTTP ${r.status})`);
+  return (await r.text()).trim();
+}
+// a library in the cache: its haxelib.json and extraParams.hxml
+async function cachedLibrary(lib) {
+  if (!(await libHas(lib.dir))) await storeLibrary(lib, await downloadLibrary(lib));
+  let meta = {};
+  try { meta = JSON.parse(await libText(lib.dir, "haxelib.json") || "{}"); } catch (e) {}
+  return { meta, extra: await libText(lib.dir, "extraParams.hxml") || "" };
+}
+// lix's file for a library
+function lixFile(lib, meta, extra) {
+  const cp = (meta.classPath || "").replace(/^\.?\/?/, "").replace(/\/+$/, "");
+  return [`-D ${lib.name}=${lib.version}`, `# @install: lix --silent download "${lib.source}" into ${lib.dir}`]
+    .concat(Object.keys(meta.dependencies || {}).map((d) => `-lib ${d}`))
+    .concat([`-cp \${HAXE_LIBCACHE}/${lib.dir}/${cp}`])
+    .concat(extra.trim() ? [extra.trim()] : []).join("\n") + "\n";
+}
+// a project file written as a whole, new or not (the editor follows if it shows it)
+async function putFile(name, text) {
+  const isNew = !(name in files);
+  if (isNew) checkName(name);
+  files[name] = saved[name] = text;
+  addDirs(name);
+  await project.put(name, text);
+  if (isNew) renderTree();
+  else if (current === name) show(name);
+}
+// -lib <name> in an hxml, after its other -lib lines (or its class paths), unless it's there
+function withLib(text, name) {
+  const lines = text.replace(/\n$/, "").split("\n");
+  const libLine = (l) => /^\s*(-lib|--library|--lib|-L)\s/.test(l);
+  if (lines.some((l) => libLine(l) && l.trim().split(/\s+/)[1].split(":")[0] === name)) return text;
+  let at = -1;
+  lines.forEach((l, i) => { if (libLine(l)) at = i; });
+  if (at < 0) lines.forEach((l, i) => { if (/^\s*(-cp|-p|--class-path|--cp)\s/.test(l)) at = i; });
+  lines.splice(at < 0 ? lines.length : at + 1, 0, `-lib ${name}`);
+  return lines.join("\n") + "\n";
+}
+// the library and its dependencies with versions, written; `replace(file)` says whether an
+// existing lix file may be replaced (the one asked for: asked; a dependency's: kept)
+async function addLibrary(spec, replace) {
+  let lib, m;
+  if ((m = LIB_SPEC.exec(spec))) {
+    lib = { name: m[1], version: m[2], source: `haxelib:/${m[1]}#${m[2]}`, dir: `${m[1]}/${m[2]}/haxelib`, at: null };
+  } else if ((m = GH_SPEC.exec(spec))) {
+    const [, owner, repo, ref] = m;
+    status(`${owner}/${repo}: finding ${ref}`);
+    const sha = await githubCommit(owner, repo, ref);
+    const source = `gh://github.com/${owner}/${repo}#${sha}`;
+    status(`${owner}/${repo}: downloading (${source})`);
+    // its name and version are in its haxelib.json, which the cache's folder is named by
+    const got = await downloadLibrary({ name: repo, source, at: null });
+    let meta = {};
+    try { meta = JSON.parse(new TextDecoder().decode(got.files["haxelib.json"])); } catch (e) {}
+    const name = meta.name || repo, version = meta.version || "0.0.0";
+    lib = { name, version, source, dir: `${name}/${version}/github/${sha}`, at: null };
+    if (!(await libHas(lib.dir))) await storeLibrary(lib, got);
+  } else throw new Error(librarySpecProblem(spec));
+  const file = `haxe_libraries/${lib.name}.hxml`;
+  if (file in files && !(await replace(file))) return null;
+  status(`${lib.name} ${lib.version}: downloading (${lib.source})`);
+  const { meta, extra } = await cachedLibrary(lib);
+  const wrote = [file], needs = [];
+  // dependencies: each with a version gets its file (one the project has is kept); one
+  // without (haxelib's "any") needs a version from the person
+  for (const [dep, v] of Object.entries(meta.dependencies || {})) {
+    if (LIBRARIES[dep] || `haxe_libraries/${dep}.hxml` in files) continue;
+    if (!v || !/^[0-9]/.test(v)) { needs.push(dep); continue; }
+    const sub = await addLibrary(`${dep}:${v}`, async () => false);
+    if (sub) { wrote.push(...sub.wrote); needs.push(...sub.needs); }
+  }
+  await putFile(file, lixFile(lib, meta, extra));
+  libFiles.delete(lib.dir);
+  return { lib, wrote, needs };
+}
+$("add-library").onclick = () => attempt(async () => {
+  const cfg = buildConfig();
+  const spec = await askPerson({ title: "Add library",
+    text: "A haxelib release as name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref (a branch, a tag or a commit). Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
+    value: "", ok: "Add", check: librarySpecProblem });
+  if (!spec) return;
+  const added = await addLibrary(spec, (file) => askPerson({ title: `Replace ${file}?`, text: "The project has this library already. Its file is written again for the version asked for.", ok: "Replace" }));
+  if (!added) return;
+  if (cfg.file) await putFile(cfg.file, withLib(files[cfg.file], added.lib.name));
+  const r = await build();
+  status(`${added.lib.name} ${added.lib.version} added (${added.wrote.join(", ")})` + (added.needs.length ? `; it needs ${added.needs.join(", ")} too, with a version: Add library… for each` : "") + (r.ok ? "" : "; the build failed"));
+  return r;
+});
 // a haxelib release's zip, added by hand to the library cache (as -lib name:version and
 // lix's haxelib: entries expect it), for when the page can't download it
 async function addLibraryZip(bytes) {
@@ -1911,7 +2017,7 @@ async function addLibraryZip(bytes) {
   status(`${meta.name} ${meta.version} added to the libraries`);
   return lib;
 }
-$("add-library").onclick = () => $("libfile").click();
+$("add-library-zip").onclick = () => $("libfile").click();
 $("libfile").onchange = () => attempt(async () => {
   const file = $("libfile").files[0];
   $("libfile").value = "";
@@ -2239,6 +2345,39 @@ async function test() {
   const zip = new Uint8Array(await (await fetch("haxelib/files/3.0/format-3,7,0.zip")).arrayBuffer());
   const added = await addLibraryZip(zip);
   step("Add library zip: a haxelib release, into the library cache", added.dir === "format/3.7.0/haxelib" && await libHas(added.dir), added.dir);
+  // Add library…: lix's files written, as lix writes them; -lib in the build's hxml
+  await deleteFolder("haxe_libraries");
+  const enc0 = new TextEncoder();
+  const fake = FS.zipSync({ "haxelib.json": enc0.encode(JSON.stringify({ name: "webidetestlib", version: "1.0.0", classPath: "src/", dependencies: { format: "3.7.0", tink_core: "" } })),
+                            "extraParams.hxml": enc0.encode("--macro define('webidetestlib_on')\n"), "src/WebideTestLib.hx": enc0.encode("class WebideTestLib {}\n") });
+  await addLibraryZip(fake);
+  const ad = await addLibrary("webidetestlib:1.0.0", async () => false);
+  const L = "${HAXE_LIBCACHE}";
+  step("Add library…: lix's file, with its dependencies' -lib, class path and extraParams", ad && files["haxe_libraries/webidetestlib.hxml"] ===
+       `-D webidetestlib=1.0.0\n# @install: lix --silent download "haxelib:/webidetestlib#1.0.0" into webidetestlib/1.0.0/haxelib\n-lib format\n-lib tink_core\n-cp ${L}/webidetestlib/1.0.0/haxelib/src\n--macro define('webidetestlib_on')\n`,
+       files["haxe_libraries/webidetestlib.hxml"]);
+  step("a dependency with a version gets its file; one without is said", ad && JSON.stringify(ad.wrote) === JSON.stringify(["haxe_libraries/webidetestlib.hxml", "haxe_libraries/format.hxml"])
+       && JSON.stringify(ad.needs) === JSON.stringify(["tink_core"]) && files["haxe_libraries/format.hxml"] ===
+       `-D format=3.7.0\n# @install: lix --silent download "haxelib:/format#3.7.0" into format/3.7.0/haxelib\n-cp ${L}/format/3.7.0/haxelib/\n`, [ad && ad.wrote, ad && ad.needs, files["haxe_libraries/format.hxml"]]);
+  const kept0 = await addLibrary("webidetestlib:1.0.0", async () => false);
+  step("one the project has is replaced only when the person says so", kept0 === null);
+  await deleteFile("haxe_libraries/webidetestlib.hxml");
+  const withFormat = withLib(base, "format");
+  step("-lib goes in the hxml once (after its other -lib or class paths, else at the end)", withFormat.split("\n").filter((l) => l === "-lib format").length === 1 && withLib(withFormat, "format") === withFormat
+       && withLib(base + "-lib format:3.7.0\n", "format") === base + "-lib format:3.7.0\n", withFormat);
+  await putFile("web-build.hxml", withFormat);
+  const ab = await build();
+  // the program started over; an edit reloads it, which says the check again
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = files["src/Hello.hx"].replace('say("adler again " + UsesFormat.check());', 'say("adler from lix " + UsesFormat.check());');
+  const ab2 = await save();
+  step("and builds with it, lix's way", ab.ok && ab2.ok && await until(() => frameLog().includes("adler from lix true"), 15000), ab.ok ? (ab2.ok ? frameLog().split("\n").slice(-2) : ab2.r.stderr) : ab.r.stderr);
+  // from GitHub: a branch, made a commit (GitHub's API), through jsDelivr
+  const gh = await addLibrary("gh://github.com/HaxeFoundation/format#master", async () => true).catch((e) => e.message);
+  const ghSha = gh && gh.lib ? gh.lib.source.split("#")[1] : "", ghDir = gh && gh.lib ? gh.lib.dir : "";
+  step("Add library… from GitHub: the branch made a commit, lix's file for it", gh && gh.lib && /^[0-9a-f]{40}$/.test(ghSha) && ghDir === `format/${gh.lib.version}/github/${ghSha}` && await libHas(ghDir)
+       && files["haxe_libraries/format.hxml"].includes(`download "gh://github.com/HaxeFoundation/format#${ghSha}" into ${ghDir}\n`), gh && gh.lib ? files["haxe_libraries/format.hxml"] : gh);
+  step("what isn't a library is refused, saying what is", librarySpecProblem("format") && !librarySpecProblem("format:3.7.0") && !librarySpecProblem("github.com/o/r#main"));
   // back as it was
   await deleteFolder("haxe_libraries");
   show("src/Hello.hx");

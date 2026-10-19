@@ -2,7 +2,7 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), Project > Select hxml…, App (Separate window: it hot-reloads there, Restart starts it over there, and it comes back,
+// with files and an empty one), Project > Select hxml…, Project > Add library…, App (Separate window: it hot-reloads there, Restart starts it over there, and it comes back,
 // Embedded, when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
@@ -155,6 +155,25 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#dialog-ok"));
   await sleep(2500);
   step("and web-build.hxml again", /web-build\.hxml/.test(await ev("$('where').textContent")));
+
+  // ---- Project > Add library…: not a library, refused in the dialog; a release, its lix
+  // file written and -lib in the hxml, built with; then back as it was
+  var hxml0 = await ev("files['web-build.hxml']");
+  await click(await box("#project-menu"));
+  await click(await box("#add-library"));
+  await typeInto("format");
+  await key("Enter");
+  step("Add library…: not a library, the dialog says what is and stays open", await ev("$('dialog').open") && /name:version/.test(await ev("$('dialog-error').textContent")),
+       await ev("$('dialog-error').textContent"));
+  await typeInto("format:3.7.0");
+  await click(await box("#dialog-ok"));
+  var added = false;
+  for (var w3 = 0; w3 < 60 && !added; w3++) { added = /format 3\.7\.0 added/.test(await ev("$('status').textContent")); if (!added) await sleep(250); }
+  step("a release: lix's file written, -lib format in web-build.hxml, built", added && await ev("'haxe_libraries/format.hxml' in files && files['web-build.hxml'].split('\\n').includes('-lib format')"),
+       await ev("$('status').textContent"));
+  await ev("(async () => { await deleteFolder('haxe_libraries'); await putFile('web-build.hxml', " + JSON.stringify(hxml0) + "); await build(); })()");
+  await sleep(1500);
+  step("and back as it was", !(await ev("'haxe_libraries/format.hxml' in files")) && await ev("files['web-build.hxml']") === hxml0);
 
   // ---- App: the program in a window of its own; it hot-reloads there; closing it brings
   // it back into the page

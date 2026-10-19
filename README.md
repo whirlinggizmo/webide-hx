@@ -189,7 +189,7 @@ over when the project changes, and closing it makes it Embedded again. The edito
 has to stay open: it's the compiler.
 **Project** has Build (also the button, and Ctrl-S), Select hxml… (which of the project's
 hxml files the page builds from; see below), Open folder (local)…, Import zip…, Export zip,
-Add library zip… and Reset to Example project… (menus that work by keyboard too:
+Add library…, Add library zip… and Reset to Example project… (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
 
@@ -259,6 +259,15 @@ by every project in it (each version downloaded once):
   dependencies, which need versions too) and `extraParams.hxml`. A `-lib` with neither a
   version nor a lix file is refused, asking for one: the page can't ask haxelib for the
   newest.
+
+**Project > Add library…** does what `lix install` does: give it a haxelib release as
+`name:version` (`format:3.7.0`), or a GitHub repository as `gh://github.com/owner/repo#ref`
+(a branch, a tag or a commit; it's pinned to the commit). It downloads the library, writes
+`haxe_libraries/<name>.hxml` as lix writes it (the define, where it comes from, its
+dependencies' `-lib`, its class path, its `extraParams.hxml`), the same for each dependency
+that names a version (a file the project has is kept), and adds `-lib <name>` to the
+build's hxml. A dependency without a version (haxelib's "any") is named in the status, to
+add the same way. A library already in the project is replaced only after asking.
 
 Where from:
 

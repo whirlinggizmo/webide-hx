@@ -179,8 +179,12 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [ ] Unpinned `-lib name`: the newest version needs haxelib's API (Haxe remoting on
       lib.haxe.org, no CORS); the mirror could pass it through. Until then it asks for a
       version or a lix file.
-- [ ] Add library… (by name and version) writing lix's file, so a project gets one without
-      lix on the desktop.
+- [x] Project > Add library…: `lix install` in the page. name:version (haxelib) or
+      gh://github.com/owner/repo#ref (made a commit by GitHub's API); lix's file for it
+      and for each dependency with a version, then -lib in the build's hxml. Dependencies
+      without a version are named for the person to add. Tests: the page test (lix's text
+      exactly, dependencies, replace only when asked, GitHub, the build) and the menus
+      test (the dialog). 2026-10-19.
 - [x] The mirror on dev.whirlinggizmo.com, with the page: `hosting/` (one nginx container
       behind Apache). 2026-10-19.
 
