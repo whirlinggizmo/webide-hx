@@ -151,7 +151,8 @@ that stays on top (Chromium); or in a new tab. The program needs nothing from th
 but the service worker, so it hot-reloads wherever it is; a window the page opened also
 starts over when the project changes, and closing it brings the program back into the
 page. The editor's page has to stay open: it's the compiler.
-**Project** has Build
+**Project** has Build, and Build file…: which of the project's hxml files the page builds
+from (see below)
 (also the button, and Ctrl-S), Open folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
@@ -182,6 +183,26 @@ bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs
 - Hidden files, `node_modules`, and `out/`, `bin/`, `build/`, `dump/` at the top aren't
   part of the project, nor files over 8 MB. Files that aren't UTF-8 text (images,
   sounds) are kept and served as bytes, and shown read-only.
+
+### The build file
+
+The page builds from one of the project's hxml files: the one picked in Project > Build
+file…, or else `build.hxml`, or else the first at the project's top that builds
+JavaScript (then kept, so if it breaks later, its error shows rather than another file
+being used). With none, it's `src/` and the class `Main`. The example builds from hello's
+`web-build.hxml`. The page reads the hxml, including the hxml files it includes:
+
+- its class paths decide which `.hx` files are code, and their packages;
+- its `--main` and `--js` say what to build and where (the program is served by the name
+  of the `--js` file);
+- every other option goes to the compiler as it is, with the page's own added
+  (hotreload-hx, `-D hotreload`, `-debug`, the inline source map);
+- what the page can't do is refused, with the reason, on that line of the hxml in the
+  editor: another target, `--run`, `--next`/`--each`, `--cwd`, and `-lib` for anything
+  but hotreload-hx (the page has no haxelib); `--cmd` and the compilation server's options
+  are left out.
+
+Saving an hxml builds, starting the program over when what's built changed.
 
 `?test` uses stores of its own, and a directory in the browser's private file system
 (OPFS) for the folder steps.

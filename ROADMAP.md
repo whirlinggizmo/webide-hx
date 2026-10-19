@@ -156,8 +156,16 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       tree's handles up front): fine for a project, slow for a huge tree. Measured: 300
       extra files under out/ cost little (folder opened and built in 0.33 s in Brave, 0.65
       s in Firefox).
-- [ ] The project's layout is fixed (`src/`, main class `Main`): read it from the
-      folder's hxml instead.
+- [x] The build from the project's hxml (Project > Build file…; build.hxml, else the first
+      that builds JS, kept once picked): class paths (code, packages), --main, --js,
+      includes, other options passed on; another target, --run, --next/--each, --cwd and
+      libraries other than hotreload-hx refused on their line. Class paths go to the
+      compiler absolute (/static/...): through a relative one, the resident compiler
+      didn't see edits (worth a look in the server's file checks). 2026-10-18.
+- [ ] Libraries (-lib): no haxelib in the page. lib.haxe.org's zips and GitHub's archives
+      send no CORS headers, so a static page can't fetch them; serve.py could proxy them,
+      or a library could come from jsDelivr (GitHub repos, with CORS), or from a lix-style
+      `haxe_libraries/<name>.hxml` with the library in the project.
 
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 

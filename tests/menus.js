@@ -2,7 +2,7 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), View (the program in a window: it hot-reloads there, and
+// with files and an empty one), Project > Build file…, View (the program in a window: it hot-reloads there, and
 // comes back when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
@@ -83,7 +83,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("and Delete deletes it", !(await ev("'src/Menu.hx' in files")));
   // Project > Build
   await click(await box("#project-menu"));
-  step("Project's first item is Build, then a separator", await ev("(() => { const l = $('project-items'); const first = l.querySelector('[role=menuitem]:not([hidden])'); return first.id === 'build-item' && first.nextElementSibling.tagName === 'HR'; })()"));
+  step("Project's first items are Build and Build file…, then a separator", await ev("(() => { const l = $('project-items'); const first = l.querySelector('[role=menuitem]:not([hidden])'); return first.id === 'build-item' && first.nextElementSibling.id === 'build-file' && first.nextElementSibling.nextElementSibling.tagName === 'HR'; })()"));
   await click(await box("#build-item"));
   await sleep(1500);
   step("and builds", /^build \d+/.test(await ev("$('status').textContent")), await ev("$('status').textContent"));
@@ -126,6 +126,24 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#delete"));
   await sleep(300);
   step("an empty folder is deleted without asking", await ev("!$('dialog').open && !dirs.has('src/empty')"));
+
+  // ---- Project > Build file…: the hxml files, those the page can't use shown and off
+  await click(await box("#project-menu"));
+  await click(await box("#build-file"));
+  var opts = JSON.parse(await ev("JSON.stringify([...$('dialog-select').options].map(o => [o.value, o.disabled]))"));
+  step("Build file… lists the hxml files, those it can't build from turned off, and None", await ev("$('dialog-select').value") === "web-build.hxml"
+       && opts.some(function (o) { return o[0] === "web.hxml" && o[1]; }) && opts.some(function (o) { return o[0] === "" && !o[1]; }), opts);
+  await ev("$('dialog-select').value = ''");
+  await click(await box("#dialog-ok"));
+  await sleep(2500);
+  step("choosing None builds src/ with Main", /src\/, Main/.test(await ev("$('where').textContent")) && /^build \d+/.test(await ev("$('status').textContent")),
+       [await ev("$('where').textContent"), await ev("$('status').textContent")]);
+  await click(await box("#project-menu"));
+  await click(await box("#build-file"));
+  await ev("$('dialog-select').value = 'web-build.hxml'");
+  await click(await box("#dialog-ok"));
+  await sleep(2500);
+  step("and web-build.hxml again", /web-build\.hxml/.test(await ev("$('where').textContent")));
 
   // ---- View: the program in a window of its own; it hot-reloads there; closing it brings
   // it back into the page
@@ -211,8 +229,10 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await ev("show('src/Main.hx')");
   var a2 = JSON.parse(await ev(applied));
   step("and every file has them", a2.font === "18px" && a2.wrap && !a2.numbers, a2);
+  // a reload: the old page marked, so its status (which can say "build 1" too) isn't taken for the new one's
+  await ev("window.oldPage = true");
   await send("Page.reload");
-  for (var w = 0; w < 60 && !/^build 1/.test(await ev("typeof $ === 'function' && $('status').textContent") || ""); w++) await sleep(250);
+  for (var w = 0; w < 80 && !/^build 1/.test(await ev("!window.oldPage && typeof $ === 'function' && $('status').textContent") || ""); w++) await sleep(250);
   var a3 = JSON.parse(await ev(applied));
   step("kept for the next visit", a3.font === "18px" && a3.wrap && !a3.numbers && a3.theme === "dark", a3);
   await ev("$('preferences').click()");

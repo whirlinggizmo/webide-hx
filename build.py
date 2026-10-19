@@ -237,6 +237,9 @@ def main():
         shutil.rmtree(hello, ignore_errors=True)
         for sub in ["src", "assets"]:
             shutil.copytree(os.path.join(d, "examples", "hello", sub), os.path.join(hello, sub))
+        # and its build files: the page builds from web-build.hxml, the one that targets JS
+        for f in glob.glob(os.path.join(d, "examples", "hello", "*.hxml")):
+            shutil.copy(f, hello)
         listing = sorted(os.path.relpath(os.path.join(r, f), hello).replace(os.sep, "/")
                          for r, _, fs in os.walk(hello) for f in fs)
         with open(os.path.join(hello, "files.json"), "w") as f:

@@ -51,6 +51,8 @@
   dialog ul { margin: 0; padding: 6px 10px 6px 26px; max-height: 160px; overflow: auto; background: var(--bg); border-radius: 4px; font: 12px/1.5 ui-monospace, monospace; }
   dialog input { font: 13px ui-monospace, monospace; padding: 6px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
   dialog input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  dialog select { font: inherit; padding: 5px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); }
+  dialog select[hidden] { display: none; }
   dialog .error { color: var(--error); font-size: 13px; }
   /* OK first in the form, so Enter picks it; shown on the right */
   dialog .actions { display: flex; flex-direction: row-reverse; gap: 8px; margin-top: 4px; }
@@ -143,6 +145,7 @@
       <button class="menubutton" id="project-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="project-items">Project</button>
       <div class="items" id="project-items" role="menu" aria-labelledby="project-menu" hidden>
         <button role="menuitem" id="build-item">Build<kbd class="mod">Ctrl+S</kbd></button>
+        <button role="menuitem" id="build-file" title="which of the project's hxml files the page builds from">Build file…</button>
         <hr role="separator">
         <button role="menuitem" id="folder" title="work on a folder on this computer (Chromium browsers)" hidden>Open folder…</button>
         <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
@@ -192,6 +195,7 @@
     <p id="dialog-text"></p>
     <ul id="dialog-list"></ul>
     <input id="dialog-input" autocomplete="off" spellcheck="false" aria-labelledby="dialog-title">
+    <select id="dialog-select" aria-labelledby="dialog-title"></select>
     <p class="error" id="dialog-error" role="alert"></p>
     <div class="actions">
       <button value="ok" id="dialog-ok" class="primary">OK</button>
@@ -226,7 +230,6 @@
 // hotreload-hx's examples/hello (copied to hello/ by build.py --hotreload).
 const TESTING = location.search.includes("test");
 const EXAMPLE = "hello/";
-const MAIN = "Main", BUNDLE = "hello.js";
 const HOTRELOAD = ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml"];
 
 const files = {}, saved = {};
@@ -239,7 +242,8 @@ const $ = (id) => document.getElementById(id);
 const status = (s) => { $("status").textContent = s; };
 const out = (s) => { $("out").textContent = s; };
 const names = () => Object.keys(files).sort();
-const isCode = (name) => name.startsWith("src/") && name.endsWith(".hx");
+// a .hx file on one of the build's class paths is code; anything else is an asset
+const isCode = (name) => name.endsWith(".hx") && classPathOf(name) !== null;
 
 // ---- the project's files, through ZenFS (vendor/fs.js, a node-like fs): kept in this
 // browser (IndexedDB, mounted at /browser), or in a folder on this computer that the
@@ -428,22 +432,109 @@ async function serviceWorker() {
   await tell({ type: "reset" });
 }
 
+// ---- the build: from one of the project's hxml files (Project > Build file…), or else
+// src/ and Main. The page reads the hxml itself, and the ones it includes: its class
+// paths say which .hx files are code, its --main and --js what to build, and the rest
+// goes to the compiler as it is (relative paths work: the compiler's directory is the
+// project's). What the page can't do is refused, on the hxml's line: another target,
+// --run, --next, --each, --cwd, and a library other than hotreload-hx, which the page
+// has built in; --cmd and the compilation server's options are left out
+const DEFAULT_BUILD = { file: null, cps: ["src"], main: "Main", out: "out/hello.js", args: ["-cp", "/static/src", "--main", "Main"], error: null };
+const LIBRARIES = { "hotreload-hx": HOTRELOAD, "hotreload": HOTRELOAD };
+const OTHER_TARGETS = ["--cpp", "--cppia", "--hl", "--neko", "--php", "--python", "--lua", "--java", "--jvm", "--cs", "--swf", "--as3", "--interp", "--xml"];
+const LEFT_OUT = ["--cmd", "--connect", "--wait", "--server-listen", "--server-connect", "--display"];
+const unquote = (t) => /^".*"$|^'.*'$/.test(t) ? t.slice(1, -1) : t;
+function parseHxml(file) {
+  const cfg = { file, cps: [], main: null, out: null, args: [], libs: [], error: null };
+  const fail = (at, message) => { if (!cfg.error) cfg.error = { file: at.file, line: at.line, message }; };
+  const read = (f, at, stack) => {
+    if (stack.includes(f)) return fail(at, `${f} includes itself`);
+    if (!(f in files) || !isText(files[f])) return fail(at, `there's no ${f} in the project`);
+    files[f].split(/\r?\n/).forEach((raw, i) => {
+      const l = raw.trim(), here = { file: f, line: i + 1 };
+      if (cfg.error || !l || l.startsWith("#")) return;
+      // as Haxe reads hxml: an option and the rest of its line, or one argument
+      let opt = l, arg = null;
+      if (l.startsWith("-")) { const sp = l.search(/\s/); if (sp >= 0) { opt = l.slice(0, sp); arg = unquote(l.slice(sp).trim()); } }
+      else opt = unquote(l);
+      const long = opt.startsWith("--") ? opt : "-" + opt;
+      if (!opt.startsWith("-")) {
+        if (opt.endsWith(".hxml")) read(opt, here, stack.concat([f]));
+        else cfg.args.push(opt); // a class to compile
+      } else if (long === "--js") cfg.out = arg;
+      else if (long === "--class-path" || long === "--cp" || opt === "-p") {
+        // absolute for the compiler: the compilation server doesn't see edits to files it
+        // found on a relative class path
+        const cp = arg.replace(/^\.\/?/, "").replace(/\/+$/, "");
+        cfg.cps.push(cp);
+        cfg.args.push(opt, arg.startsWith("/") ? arg : "/static/" + cp);
+      }
+      else if (long === "--main" || opt === "-m") { cfg.main = arg; cfg.args.push(opt, arg); }
+      else if (long === "--library" || long === "--lib" || opt === "-L") {
+        const name = (arg || "").split(":")[0];
+        if (!LIBRARIES[name]) fail(here, `-lib ${name}: the page has no haxelib; of libraries, it has hotreload-hx only`);
+        else if (!cfg.libs.includes(name)) cfg.libs.push(name);
+      }
+      else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
+      else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: the page builds JavaScript (--js)`);
+      else if (long === "--next" || long === "--each") fail(here, `${opt}: the page builds one program; give each build its own hxml file`);
+      else if (long === "--cwd" || opt === "-C") fail(here, `${opt}: the page builds in the project's own directory`);
+      else if (!LEFT_OUT.includes(long)) cfg.args.push(...(arg === null ? [opt] : [opt, arg]));
+    });
+  };
+  read(file, { file, line: 1 }, []);
+  if (!cfg.error && !cfg.out) fail({ file, line: 1 }, `${file} doesn't build JavaScript: it has no --js`);
+  if (!cfg.cps.length) { cfg.cps.push(""); cfg.args.push("-cp", "/static"); }
+  return cfg;
+}
+// the hxml files the page could build from: those at the project's top that build JavaScript
+function buildFiles() {
+  return names().filter((n) => !n.includes("/") && n.endsWith(".hxml") && isText(files[n]) && !parseHxml(n).error);
+}
+const buildChoiceKey = () => "haxe-in-browser-build-file:" + (TESTING ? "test:" : "") + (project.folder ? "folder:" + project.folder.name : "browser");
+function chosenBuildFile() {
+  let chosen = null;
+  try { chosen = localStorage.getItem(buildChoiceKey()); } catch (e) {}
+  if (chosen === "") return null; // chosen: none
+  if (chosen && chosen in files) return chosen;
+  // picked once, then kept: a build file that breaks later is the one whose error shows,
+  // not passed over for another
+  const all = buildFiles(), pick = all.includes("build.hxml") ? "build.hxml" : all[0] || null;
+  if (pick) try { localStorage.setItem(buildChoiceKey(), pick); } catch (e) {}
+  return pick;
+}
+let configMemo = { key: null, cfg: null };
+function buildConfig() {
+  const file = chosenBuildFile();
+  const key = file + "\0" + names().filter((n) => n.endsWith(".hxml")).map((n) => n + "\0" + files[n]).join("\0");
+  if (configMemo.key !== key) configMemo = { key, cfg: file === null ? DEFAULT_BUILD : parseHxml(file) };
+  return configMemo.cfg;
+}
+// the class path a file is on (the longest; "" for the project's top), or null
+function classPathOf(name) {
+  let best = null;
+  for (const cp of buildConfig().cps) if ((cp === "" || name.startsWith(cp + "/")) && (best === null || cp.length > best.length)) best = cp;
+  return best;
+}
+const outPath = (cfg) => cfg.out.startsWith("/") ? cfg.out : "/static/" + cfg.out;
+
 function buildArgs(reload) {
   // -debug, with the map inside the bundle and the sources inside the map: DevTools loads
   // a map over the network itself, past the service worker, and the .hx files live only
   // in the compiler's in-memory filesystem (-D source-map-inline: the fork's Haxe, and
   // proposed upstream)
-  const args = HOTRELOAD.concat(["-cp", "/static/src", "--main", MAIN, "-D", "hotreload", "-debug",
-                                 "-D", "source-map-inline", "-D", "source-map-content", "--js", "/static/out/" + BUNDLE]);
+  const cfg = buildConfig();
+  const args = HOTRELOAD.concat(cfg.args, ["-D", "hotreload", "-debug", "-D", "source-map-inline", "-D", "source-map-content", "--js", outPath(cfg)]);
   if (reload) args.push("-D", "hotreload_reload");
   return args;
 }
 
-// "/static/src/Hello.hx:39: characters 11-15 : Missing ;" (or "lines 12-14", and
+// "src/Hello.hx:39: characters 11-15 : Missing ;" (or "lines 12-14", and; or /static/ first)
+// 
 // "Warning : " before a warning's text): by file, as CodeMirror diagnostics
 function parseMessages(text) {
   const byFile = new Map(), rest = [];
-  const re = /^\/static\/(.+?):(\d+): (?:characters (\d+)-(\d+)|lines (\d+)-(\d+)) : (?:(Warning|Error) : )?(.*)$/;
+  const re = /^(?:\/static\/)?(.+?):(\d+): (?:characters (\d+)-(\d+)|lines (\d+)-(\d+)) : (?:(Warning|Error) : )?(.*)$/;
   for (const line of (text || "").split("\n")) {
     const m = re.exec(line);
     if (!m || !(m[1] in files)) { if (line.trim()) rest.push(line); continue; }
@@ -505,15 +596,33 @@ function busy(label, kind) {
   };
 }
 
+let builtWith = null, restarting = false;
 async function build() {
   syncEditor();
   const sources = {};
   for (const f of names()) if (isCode(f)) sources["/static/" + f] = files[f];
+  const cfg = buildConfig();
+  showWhere();
+  // another build file, or a change to one: what's code, the output and the main class may
+  // all have changed, so the program starts over, from a build of everything
+  if (builtWith !== null && builtWith !== configMemo.key && !restarting) {
+    restarting = true;
+    try { return await startProgram(); } finally { restarting = false; }
+  }
+  builtWith = configMemo.key;
+  // a build file the page can't use: said on its line, as the compiler's errors are
+  if (cfg.error) {
+    const e = cfg.error;
+    showDiagnostics(new Map([[e.file, [{ line: e.line, from: null, to: null, lastLine: null, severity: "error", message: e.message }]]]));
+    status(`build failed: ${e.file} can't be built here`);
+    out(`${e.file}:${e.line}: ${e.message}`);
+    return { ok: false, r: { code: 1, stderr: `${e.file}:${e.line}: ${e.message}`, stdout: "", ms: 0 } };
+  }
   const args = buildArgs(version > 0);
   // a first build starts the compiler and reads the library; after it, a whole build or a reload's
   const done = busy(compilerUp ? "building" : "starting the compiler and building", !compilerUp ? "first" : version > 0 ? "reload" : "whole");
   status("building");
-  const r = await compile(args, sources, "/static/out/" + BUNDLE);
+  const r = await compile(args, sources, outPath(cfg));
   done();
   if (r.code >= 0) compilerUp = true;
   const messages = parseMessages(r.stderr);
@@ -524,7 +633,7 @@ async function build() {
     return { ok: false, r };
   }
   version++;
-  await tell({ type: "build", name: BUNDLE, version, js: r.output });
+  await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
   status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
   out([r.stdout.trim()].concat(messages.rest).filter((x) => x).join("\n"));
   return { ok: true, r };
@@ -541,13 +650,17 @@ async function save() {
   if (current === null) return build();
   clearTimeout(pendingWrites.get(current)); pendingWrites.delete(current);
   if (isText(files[current])) await project.put(current, files[current]);
-  if (files[current] === saved[current]) return isCode(current) ? build() : { ok: true };
+  if (files[current] === saved[current]) return builds(current) ? build() : { ok: true };
   saved[current] = files[current];
   if (isCode(current)) return build();
   await tellAssets({ [current]: files[current] }, true);
+  if (builds(current)) return build();
   status(`${current} saved; the program reads it again`);
   return { ok: true };
 }
+
+// a change to a file that the build depends on (code, or an hxml) builds
+const builds = (name) => isCode(name) || name.endsWith(".hxml");
 
 // ---- files and folders: new, move (rename), delete. A path is relative to the project:
 // src/game/Game.hx. Folders are real (`dirs`, every folder in the project, empty ones
@@ -572,8 +685,11 @@ function checkName(name) {
   for (let d = parentOf(name); d; d = parentOf(d)) if (d in files) throw new Error(`${d} is a file, not a folder`);
 }
 // a .hx file's package, from its folder under src/
+// (its folder below its class path)
 function packageOf(name) {
-  return isCode(name) ? parentOf(name).split("/").slice(1).join(".") : null;
+  if (!isCode(name)) return null;
+  const cp = classPathOf(name), dir = parentOf(name);
+  return (cp === "" ? dir : dir.slice(cp.length + 1)).split("/").filter((x) => x).join(".");
 }
 // a new .hx file's first text: its package, a class named for it
 function template(name) {
@@ -602,6 +718,7 @@ async function newFile(name, text) {
   show(name);
   if (isCode(name)) return build();
   await tellAssets({ [name]: files[name] }, true);
+  if (builds(name)) return build();
   status(`${name} added`);
   return { ok: true };
 }
@@ -647,7 +764,7 @@ async function movePath(from, to) {
   if (current !== null) show(current);
   if (Object.keys(assets).length) await tellAssets(assets, true);
   const note = repackaged.length ? `; the package line changed in ${repackaged.join(", ")}` : "";
-  if (moved.some(isCode) || moved.map(renamed).some(isCode)) {
+  if (moved.some(builds) || moved.map(renamed).some(builds)) {
     const r = await build();
     if (r.ok) status(`${from} is now ${to}${note}; ` + $("status").textContent);
     return r;
@@ -664,8 +781,10 @@ async function deleteFile(name) {
   if (current === name) current = names().find(isCode) || names()[0] || null;
   renderTree();
   if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
-  if (!isCode(name)) { await tellAssets({ [name]: null }, true); status(`${name} removed`); return { ok: true }; }
-  return build();
+  if (!isCode(name)) await tellAssets({ [name]: null }, true);
+  if (builds(name)) return build();
+  status(`${name} removed`);
+  return { ok: true };
 }
 // a folder and everything in it, including what the page doesn't show
 async function deleteFolder(dir) {
@@ -684,7 +803,7 @@ async function deleteFolder(dir) {
   renderTree();
   if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
   if (Object.keys(assets).length) await tellAssets(assets, true);
-  if (gone.some(isCode)) return build();
+  if (gone.some(builds)) return build();
   status(`${dir}/ removed`);
   return { ok: true };
 }
@@ -906,6 +1025,7 @@ function showView() {
   $("view-pip").hidden = !("documentPictureInPicture" in window);
 }
 async function startProgram() {
+  builtWith = null; // a build from scratch: whatever the build file was before doesn't matter
   await tell({ type: "reset" });
   version = 0;
   const assets = {};
@@ -942,7 +1062,8 @@ async function switchTo(loaded) {
   return first;
 }
 function showWhere() {
-  $("where").textContent = project.folder ? "folder: " + project.folder.name : "kept in this browser";
+  const cfg = buildConfig();
+  $("where").textContent = (project.folder ? "folder: " + project.folder.name : "kept in this browser") + " · " + (cfg.file || "src/, Main");
   $("folder").textContent = project.folder ? "Close folder" : reopen ? `Reopen ${reopen.name}…` : "Open folder…";
   $("folder").hidden = !project.folder && !reopen && !("showDirectoryPicker" in window);
   $("reset").hidden = !!project.folder;
@@ -1043,7 +1164,8 @@ document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".menu")
 // `value`, a name to type (resolves to the text). `check(text)` returns why the text won't
 // do, shown under it, or nothing; `select` is the part of the value to select at first
 let dialogDone = null;
-function askPerson({ title, text = "", list = [], value = null, select = null, ok = "OK", danger = false, check = null }) {
+// `choices` ([{value, label, disabled}]) asks for one of them instead, starting at `value`
+function askPerson({ title, text = "", list = [], value = null, select = null, ok = "OK", danger = false, check = null, choices = null }) {
   if (dialogDone) dialogDone(null);
   const d = $("dialog"), input = $("dialog-input");
   $("dialog-title").textContent = title;
@@ -1052,22 +1174,27 @@ function askPerson({ title, text = "", list = [], value = null, select = null, o
   $("dialog-error").textContent = "";
   $("dialog-ok").textContent = ok;
   $("dialog-ok").className = danger ? "danger" : "primary";
-  input.hidden = value === null;
-  input.value = value === null ? "" : value;
+  const pick = $("dialog-select");
+  pick.hidden = !choices;
+  pick.replaceChildren(...(choices || []).map((c) => { const o = document.createElement("option"); o.value = c.value; o.textContent = c.label; o.disabled = !!c.disabled; return o; }));
+  if (choices) pick.value = value;
+  input.hidden = value === null || !!choices;
+  input.value = value === null || choices ? "" : value;
   input.oninput = () => { $("dialog-error").textContent = ""; };
   return new Promise((resolve) => {
     dialogDone = (answer) => { dialogDone = null; if (d.open) d.close(); resolve(answer); };
     d.querySelector("form").onsubmit = (e) => {
       if (e.submitter && e.submitter.value === "cancel") { e.preventDefault(); dialogDone(null); return; }
       e.preventDefault();
-      const answer = value === null ? true : input.value.trim();
+      const answer = choices ? pick.value : value === null ? true : input.value.trim();
       const why = value === null || !check ? null : check(answer);
       if (why) { $("dialog-error").textContent = why; input.focus(); return; }
       dialogDone(answer);
     };
     d.oncancel = (e) => { e.preventDefault(); dialogDone(null); }; // Escape
     d.showModal();
-    if (value !== null) { input.focus(); const [a, b] = select || [0, input.value.length]; input.setSelectionRange(a, b); }
+    if (choices) pick.focus();
+    else if (value !== null) { input.focus(); const [a, b] = select || [0, input.value.length]; input.setSelectionRange(a, b); }
     else (danger ? $("dialog-cancel") : $("dialog-ok")).focus();
   });
 }
@@ -1138,6 +1265,18 @@ $("view-tab").onclick = () => { window.open("run/", "_blank"); };
 addEventListener("pagehide", () => { if (program.win && program.kind === "window") program.win.close(); });
 showView();
 $("build-item").onclick = () => save();
+// the build file: those at the top that build JavaScript; the others shown, with why not
+$("build-file").onclick = () => attempt(async () => {
+  const all = names().filter((n) => !n.includes("/") && n.endsWith(".hxml"));
+  const choices = all.map((n) => { const e = parseHxml(n).error; return { value: n, label: e ? `${n}: ${e.message}` : n, disabled: !!e }; })
+    .concat([{ value: "", label: "None: src/ for code, Main for the main class" }]);
+  const now = buildConfig().file || "";
+  const answer = await askPerson({ title: "Build file", text: "The hxml the page builds from (its class paths, --main, --js and options; hotreload-hx comes with the page).",
+                                   choices, value: now, ok: "Use it" });
+  if (answer === null || answer === now) return;
+  try { localStorage.setItem(buildChoiceKey(), answer); } catch (e) {}
+  return build();
+});
 // where a new file or folder goes first: the selected folder, or the shown file's
 function hereDir() {
   const d = selectedDir !== null ? selectedDir : current !== null ? parentOf(current) : "src";
@@ -1375,6 +1514,39 @@ async function test() {
 
   const skipName = await newFile("out/x.txt").then(() => "made", (e) => e.message);
   step("a name outside the project (a build output) is refused", /wouldn't be part/.test(skipName), skipName);
+
+  // ---- the build file: the example's web-build.hxml (the one that builds JavaScript)
+  step("the build comes from web-build.hxml, the hxml that builds JavaScript", buildConfig().file === "web-build.hxml"
+       && $("where").textContent.includes("web-build.hxml"), $("where").textContent);
+  step("the others are refused, each with why", /--run/.test(parseHxml("web.hxml").error.message) && /-lib hxcpp-debug-server/.test(parseHxml("debug.hxml").error.message)
+       && /--cpp/.test(parseHxml("release.hxml").error.message), [parseHxml("web.hxml").error.message, parseHxml("release.hxml").error.message]);
+  // an hxml the page can't use: said on its line; fixed, it builds
+  const hxml = files["web-build.hxml"];
+  show("web-build.hxml");
+  files["web-build.hxml"] = hxml + "-lib format\n";
+  const hb = await save();
+  const hd = diagnostics.get("web-build.hxml") || [];
+  step("an hxml line the page can't do fails the build, marked on that line", !hb.ok && hd.length === 1 && /-lib format/.test(hd[0].message)
+       && hd[0].line === hxml.split("\n").length, hd);
+  files["web-build.hxml"] = hxml;
+  const hf = await save();
+  step("fixed, it builds", hf.ok && (diagnostics.get("web-build.hxml") || []).length === 0, hf.ok ? null : hf.r.stderr);
+  // another class path: its .hx files are code, packaged from it
+  files["web-build.hxml"] = hxml + "-cp lib\n";
+  const hc = await save();
+  const tool = await newFile("lib/tools/Tool.hx");
+  step("a class path added in the hxml: its files are code, their package from it", hc.ok && tool.ok && isCode("lib/tools/Tool.hx")
+       && files["lib/tools/Tool.hx"] === "package tools;\n\nclass Tool {\n}\n", files["lib/tools/Tool.hx"]);
+  await deleteFolder("lib");
+  show("web-build.hxml");
+  files["web-build.hxml"] = hxml;
+  await save();
+  // none: src/ and Main
+  localStorage.setItem(buildChoiceKey(), "");
+  const hn = await build();
+  step("Build file: none builds src/ with Main", hn.ok && buildConfig().file === null && $("where").textContent.includes("src/, Main"), hn.ok ? null : hn.r.stderr);
+  localStorage.removeItem(buildChoiceKey());
+  await build();
 
   // ---- the project is kept: what the browser's store holds is what the page has
   await flushWrites();
