@@ -37,7 +37,7 @@ page, and only `localhost` counts as one over plain HTTP.
 That listens on every interface, on port 8443, and prints the LAN address. The
 certificate has to name that address and be trusted by the device (a local development
 CA, as mkcert makes). `web/haxe.js` and `web/std/` are generated (ignored
-by git); `python3 build.py --hotreload ../../github/whirlinggizmo/hotreload-hx` makes
+by git); `python3 build.py --hotreload ../hotreload-hx` makes
 them, see below.
 
 ## What was measured
