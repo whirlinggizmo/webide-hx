@@ -1547,18 +1547,18 @@ function showWhere() {
   // always shown; where the browser can't open folders, greyed, saying why and how to have it
   const can = !!project.folder || !!reopen || folderPicker();
   $("folder").setAttribute("aria-disabled", String(!can));
-  $("folder").title = can ? FOLDER_ABOUT + " The browser asks first." : FOLDER_ABOUT + " " + folderUnavailable();
+  $("folder").title = project.folder ? "Close the local folder" : can ? FOLDER_ABOUT : `${FOLDER_ABOUT} (${folderUnavailable()})`;
   $("reset").hidden = !!project.folder;
 }
 let reopen = null; // a folder from the last visit, waiting for the person's permission
 // Open folder (local): the File System Access API, which only Chromium browsers have, and
 // which Brave turns off unless its flag is on
-const FOLDER_ABOUT = "Work on a folder on this computer: edits, new files and deletes happen in it, so other editors and git see them.";
+const FOLDER_ABOUT = "Open a folder local to this computer";
+const FOLDER_FLAG = "chrome://flags/#file-system-access-api";
 const folderPicker = () => "showDirectoryPicker" in window;
+// why it can't, in the tooltip's brackets
 function folderUnavailable() {
-  return navigator.brave
-    ? "Brave turns this off: enable chrome://flags/#file-system-access-api (brave://flags works too), then restart Brave."
-    : "This browser can't open folders for a page (the File System Access API): Chrome and Edge can, and Brave with chrome://flags/#file-system-access-api.";
+  return navigator.brave ? `enable the experimental flag in your browser to allow access: ${FOLDER_FLAG}` : "unavailable in this browser";
 }
 async function openFolder(handle) {
   await flushWrites();
@@ -1834,7 +1834,9 @@ $("reset").onclick = () => attempt(async () => {
 });
 $("folder").onclick = () => attempt(async () => {
   if ($("folder").getAttribute("aria-disabled") === "true")
-    return askPerson({ title: "Open folder (local)", text: FOLDER_ABOUT + " " + folderUnavailable(), ok: "OK" });
+    return askPerson({ title: "Open folder (local)", ok: "OK", text: navigator.brave
+      ? `To open a folder local to this computer, enable the experimental flag in your browser: paste ${FOLDER_FLAG} into the address bar, turn it on, and restart the browser.`
+      : "Opening a folder local to this computer is unavailable in this browser. Chrome and Edge have it, and Brave with an experimental flag." });
   if (project.folder) return closeFolder();
   if (reopen) {
     if (await reopen.requestPermission({ mode: "readwrite" }) !== "granted") return;
