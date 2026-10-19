@@ -25,8 +25,16 @@ The image is the built site in nginx, with the haxelib mirror (so `-lib name:ver
 works). `-e WEBIDE_PATH=/ide/` serves it under `/ide/` instead of `/`; `-v
 webide-hx-cache:/var/cache/nginx/haxelib` keeps downloaded libraries between containers.
 `localhost` needs no https; for other machines, put it behind a web server with https
-(`hosting/README.md`). To build the image yourself: `docker build -t webide-hx .` (about
-twenty minutes the first time: it builds OCaml, Haxe and js_of_ocaml).
+(`hosting/README.md`).
+
+Or from a checkout, without the published image:
+
+    docker compose up -d
+    # open http://localhost:8080/
+
+which builds the image from the Dockerfile the first time (OCaml, Haxe and js_of_ocaml
+from source: a few minutes on a fast machine, twenty or so on a small one), keeps fetched
+libraries in a volume, and restarts with the machine.
 
 ## Run it from source
 

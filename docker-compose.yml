@@ -1,0 +1,16 @@
+# webide-hx from this checkout, without the published image:
+#     docker compose up -d           builds the image the first time (see Dockerfile), then
+#                                    http://localhost:8080/
+# hosting/docker-compose.yml is the one dev.whirlinggizmo.com runs, behind its web server.
+services:
+  webide-hx:
+    build: .
+    image: webide-hx
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:80"   # this machine only: other machines need https in front (hosting/README.md)
+    volumes:
+      - haxelib-cache:/var/cache/nginx/haxelib   # libraries the mirror has fetched, kept
+
+volumes:
+  haxelib-cache:
