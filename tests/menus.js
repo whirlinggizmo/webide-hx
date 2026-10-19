@@ -199,6 +199,14 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("Ctrl+Alt+J goes to the definition", await ev("view.state.doc.lineAt(view.state.selection.main.head).number === view.state.doc.lineAt(view.state.doc.toString().indexOf('static var ticks')).number"),
        await ev("view.state.doc.lineAt(view.state.selection.main.head).number"));
 
+  // ---- go to line by Ctrl+Alt+G, the pair of Ctrl+Alt+J
+  await ev("view.focus()");
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "g", code: "KeyG", windowsVirtualKeyCode: 71, modifiers: 3 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "g", code: "KeyG", windowsVirtualKeyCode: 71, modifiers: 3 });
+  await sleep(300);
+  step("Ctrl+Alt+G asks for a line", await ev("!!view.dom.querySelector('.cm-panel input')"));
+  await key("Escape");
+
   // ---- Edit: each item on the editor
   await send("Browser.grantPermissions", { permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"] }).catch(function () {});
   var edit = async function (id) { await click(await box("#edit-menu")); await click(await box("#" + id)); await sleep(150); };

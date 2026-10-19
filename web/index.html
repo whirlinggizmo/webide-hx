@@ -138,7 +138,7 @@
         <hr role="separator">
         <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
         <button role="menuitem" id="replace">Replace…</button>
-        <button role="menuitem" id="goto-line">Go to line…<kbd class="mod">Ctrl+Alt+G</kbd></button>
+        <button role="menuitem" id="goto-line">Go to line…<kbd class="ctrlalt">Ctrl+Alt+G</kbd></button>
         <button role="menuitem" id="goto-definition">Go to definition<kbd class="ctrlalt">Ctrl+Alt+J</kbd></button>
         <hr role="separator">
         <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
@@ -856,7 +856,7 @@ function libraryLabel(path) {
 function libraryState(path, text) {
   return CM.EditorState.create({ doc: text, extensions: [
     CM.highlightSpecialChars(), CM.drawSelection(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
-    CM.highlightSelectionMatches(), CM.keymap.of([...CM.defaultKeymap, ...CM.searchKeymap, ...CM.foldKeymap]),
+    CM.highlightSelectionMatches(), CM.keymap.of([{ key: "Ctrl-Alt-g", preventDefault: true, run: CM.gotoLine }, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.foldKeymap]),
     prefExtensions(), CM.StreamLanguage.define(CM.haxe), CM.EditorState.readOnly.of(true), haxeNavigation(path),
   ] });
 }
@@ -1408,7 +1408,10 @@ function makeState(name) {
     CM.indentOnInput(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
     isCode(name) ? haxeIntelligence(name) : CM.autocompletion(),
     CM.rectangularSelection(), CM.crosshairCursor(), CM.highlightSelectionMatches(),
+    // Ctrl-Alt-G goes to a line on every platform (beside go to definition's Ctrl-Alt-J);
+    // CodeMirror's own Mod-Alt-G (Cmd-Option-G on a Mac) is in searchKeymap too
     CM.keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { save(); return true; } }, CM.indentWithTab,
+                  { key: "Ctrl-Alt-g", preventDefault: true, run: CM.gotoLine },
                   ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.foldKeymap,
                   ...CM.completionKeymap, ...CM.lintKeymap]),
     prefExtensions(),
