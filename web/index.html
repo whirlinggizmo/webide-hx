@@ -85,6 +85,9 @@
   .edit { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #editor { flex: 1; min-height: 0; overflow: hidden; }
   #editor .cm-editor { height: 100%; }
+  #editor .hover { max-width: 520px; padding: 4px 8px; font-size: 12px; }
+  #editor .hover code { font-family: ui-monospace, monospace; white-space: pre-wrap; }
+  #editor .hover .doc { margin-top: 4px; color: var(--muted); white-space: pre-wrap; font-family: system-ui, sans-serif; }
   #editor .cm-editor.cm-focused { outline: none; }
   #editor .cm-scroller { font-family: ui-monospace, monospace; line-height: 1.45; }
   iframe { flex: 1; border: 0; background: var(--panel); min-height: 0; }
@@ -125,6 +128,7 @@
         <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
         <button role="menuitem" id="replace">Replace…</button>
         <button role="menuitem" id="goto-line">Go to line…<kbd class="mod">Ctrl+Alt+G</kbd></button>
+        <button role="menuitem" id="goto-definition">Go to definition<kbd>F12</kbd></button>
         <hr role="separator">
         <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
         <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
@@ -701,6 +705,135 @@ function buildArgs(reload) {
   return args;
 }
 
+// ---- what the compiler knows about the code: completion, hover, go to definition. Haxe's
+// display protocol (JSON requests as --display), asked of the resident compiler like a
+// build, with the build's options and the editor's text, saved or not, so it shares the
+// build's cache and answers in tens of milliseconds. Positions are counted in characters
+// (code points, as the compiler counts them; not JavaScript's UTF-16 units, nor bytes). Asked only once the compiler is running (after the first build),
+// and not of a build file the page can't use or libraries not yet downloaded
+async function askCompiler(method, params) {
+  const cfg = buildConfig();
+  if (!compilerUp || cfg.error || (cfg.libs.length && !cfg.libDirs)) return null;
+  const request = JSON.stringify({ jsonrpc: "2.0", id: 1, method, params });
+  const r = await compile(buildArgs(true).concat(["--no-output", "--display", request]), await codeSources(cfg), null);
+  // the reply is the compiler's message, a line of JSON (not output)
+  const line = (r.stderr || "").split("\n").find((l) => l.startsWith("{"));
+  try { const reply = JSON.parse(line); return reply.result ? reply.result.result : null; } catch (e) { return null; }
+}
+const codeOffset = (doc, pos) => [...doc.sliceString(0, pos)].length;
+// a {line, character} of the compiler's (from 0) as a position
+function docPos(doc, at) {
+  const line = doc.line(Math.min(Math.max(at.line + 1, 1), doc.lines));
+  let n = 0, i = 0;
+  for (const ch of line.text) {
+    if (n >= at.character) break;
+    n++; i += ch.length;
+  }
+  return line.from + i;
+}
+// a type of the compiler's JSON, as Haxe writes it
+function typeText(t) {
+  if (!t) return "";
+  const a = t.args;
+  switch (t.kind) {
+    case "TMono": return "Unknown";
+    case "TDynamic": return a ? `Dynamic<${typeText(a)}>` : "Dynamic";
+    case "TFun": return "(" + a.args.map((p) => (p.opt ? "?" : "") + (p.name ? p.name + ":" : "") + typeText(p.t)).join(", ") + ") -> " + typeText(a.ret);
+    case "TAnonymous": return "{ " + a.fields.map((f) => f.name + ":" + typeText(f.type)).join(", ") + " }";
+    default:
+      if (a && a.path) return a.path.typeName + (a.params && a.params.length ? "<" + a.params.map(typeText).join(", ") + ">" : "");
+      return t.kind;
+  }
+}
+// an item of a completion or a hover: its name, kind (CodeMirror's), type and documentation
+function itemParts(item) {
+  const a = item.args || {}, field = a.field;
+  const name = typeof a === "string" ? a : field ? field.name : a.name !== undefined ? (typeof a.name === "string" ? a.name : a.name.name) : a.path ? a.path.typeName : item.kind;
+  const type = field ? field.type : a.type;
+  const kinds = { ClassField: "property", EnumField: "enum", EnumAbstractField: "enum", Type: "class", Package: "namespace", Module: "namespace",
+                  Local: "variable", Keyword: "keyword", Literal: "constant", Metadata: "keyword", TypeParameter: "type", StaticExtension: "method" };
+  const kind = type && type.kind === "TFun" ? (item.kind === "Local" ? "function" : "method") : kinds[item.kind] || "text";
+  const doc = (field && field.doc) || a.doc || null;
+  return { name, kind, type: type ? typeText(type) : "", doc: doc ? doc.trim() : null };
+}
+// completion: after a ".", on Ctrl-Space, or as a name is typed (asked once, at the name's
+// start; CodeMirror narrows the list as the name goes on)
+function haxeCompletion(fileName) {
+  return async (context) => {
+    const word = context.matchBefore(/[A-Za-z_][A-Za-z0-9_]*$/);
+    const from = word ? word.from : context.pos;
+    const afterDot = from > 0 && context.state.sliceDoc(from - 1, from) === ".";
+    if (!context.explicit && !afterDot && !word) return null;
+    const res = await askCompiler("display/completion", { file: "/static/" + fileName, offset: codeOffset(context.state.doc, from), wasAutoTriggered: !context.explicit });
+    if (context.aborted || !res || !res.items) return null;
+    const seen = new Set(), options = [];
+    for (const item of res.items) {
+      const p = itemParts(item);
+      if (!p.name || seen.has(p.name)) continue;
+      seen.add(p.name);
+      options.push({ label: p.name, type: p.kind, detail: p.type, info: p.doc || undefined });
+    }
+    return { from, options, validFor: /^[A-Za-z0-9_]*$/ };
+  };
+}
+// hover: what's under the pointer, its type and documentation
+function haxeHover(fileName) {
+  return CM.hoverTooltip(async (view, pos) => {
+    const res = await askCompiler("display/hover", { file: "/static/" + fileName, offset: codeOffset(view.state.doc, pos) });
+    if (!res || !res.item) return null;
+    const p = itemParts(res.item), doc = view.state.doc;
+    return {
+      pos: res.range ? docPos(doc, res.range.start) : pos, end: res.range ? docPos(doc, res.range.end) : pos, above: true,
+      create() {
+        const dom = document.createElement("div");
+        dom.className = "hover";
+        const sig = document.createElement("code");
+        sig.textContent = p.name + (p.type ? " : " + p.type : "");
+        dom.append(sig);
+        if (p.doc) { const d = document.createElement("div"); d.className = "doc"; d.textContent = p.doc; dom.append(d); }
+        return { dom };
+      },
+    };
+  }, { hoverTime: 350 });
+}
+// go to definition: the project's file, at the name; one in the standard library or a
+// library is said where it is (not opened here)
+async function goToDefinition(fileName, view, pos) {
+  const res = await askCompiler("display/definition", { file: "/static/" + fileName, offset: codeOffset(view.state.doc, pos) });
+  const at = res && res[0];
+  if (!at) { status("no definition found there"); return false; }
+  const line = at.range.start.line + 1;
+  if (at.file.startsWith("/static/") && at.file.slice(8) in files) {
+    const target = at.file.slice(8);
+    if (target !== current) show(target);
+    const p = docPos(view.state.doc, at.range.start);
+    view.dispatch({ selection: { anchor: p, head: docPos(view.state.doc, at.range.end) }, scrollIntoView: true });
+    view.focus();
+    status(`${target}:${line}`);
+  } else {
+    const where = at.file.replace(/^\/haxe\/std\//, "the standard library: ").replace(/^\/libcache\/([^/]+)\/[^/]+\/[^/]+\//, "library $1: ");
+    status(`defined in ${where}:${line}`);
+  }
+  return true;
+}
+function haxeIntelligence(fileName) {
+  return [
+    CM.autocompletion({ override: [haxeCompletion(fileName)] }),
+    haxeHover(fileName),
+    CM.keymap.of([{ key: "F12", run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
+    CM.EditorView.domEventHandlers({
+      mousedown(e, v) {
+        if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
+        const pos = v.posAtCoords({ x: e.clientX, y: e.clientY });
+        if (pos === null) return false;
+        e.preventDefault();
+        goToDefinition(fileName, v, pos);
+        return true;
+      },
+    }),
+  ];
+}
+
 // "src/Hello.hx:39: characters 11-15 : Missing ;" (or "lines 12-14", and; or /static/ first)
 // 
 // "Warning : " before a warning's text): by file, as CodeMirror diagnostics
@@ -769,6 +902,15 @@ function busy(label, kind) {
 }
 
 let builtWith = null, restarting = false;
+// what the compiler gets for a build, or for a question about code: the project's code, as
+// it is in the editor (saved or not), and the libraries' files
+async function codeSources(cfg) {
+  const sources = {};
+  for (const f of names()) if (isCode(f)) sources["/static/" + f] = files[f];
+  for (const dir of cfg.libDirs || []) Object.assign(sources, await librarySources(dir));
+  return sources;
+}
+
 async function build() {
   syncEditor();
   const sources = {};
@@ -1102,7 +1244,8 @@ function makeState(name) {
   const ext = [
     // CodeMirror's basicSetup, in parts; those a preference turns on and off are in prefExtensions
     CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.dropCursor(), CM.EditorState.allowMultipleSelections.of(true),
-    CM.indentOnInput(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }), CM.autocompletion(),
+    CM.indentOnInput(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
+    isCode(name) ? haxeIntelligence(name) : CM.autocompletion(),
     CM.rectangularSelection(), CM.crosshairCursor(), CM.highlightSelectionMatches(),
     CM.keymap.of([{ key: "Mod-s", preventDefault: true, run: () => { save(); return true; } }, CM.indentWithTab,
                   ...CM.closeBracketsKeymap, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.historyKeymap, ...CM.foldKeymap,
@@ -1309,6 +1452,7 @@ function refreshMenus() {
   $("copy").disabled = !selected;
   for (const id of ["paste", "replace", "comment", "indent", "outdent"]) $(id).disabled = !editable;
   for (const id of ["select-all", "find", "goto-line"]) $(id).disabled = !st;
+  $("goto-definition").disabled = !st || current === null || !isCode(current);
 }
 for (const m of document.querySelectorAll(".menu")) {
   const button = m.querySelector(".menubutton"), list = m.querySelector(".items");
@@ -1409,6 +1553,7 @@ editCommand("select-all", (v) => CM.selectAll(v));
 editCommand("find", (v) => CM.openSearchPanel(v));
 editCommand("replace", (v) => { CM.openSearchPanel(v); const r = v.dom.querySelector(".cm-search [name=replace]"); if (r) r.focus(); });
 editCommand("goto-line", (v) => CM.gotoLine(v));
+editCommand("goto-definition", (v) => goToDefinition(current, v, v.state.selection.main.head));
 editCommand("comment", (v) => CM.toggleComment(v));
 editCommand("indent", (v) => CM.indentMore(v));
 editCommand("outdent", (v) => CM.indentLess(v));
@@ -1647,6 +1792,25 @@ async function test() {
   files["src/Hello.hx"] = good;
   const bl = await save();
   step("a run of edits builds", report.reloadMs.every((ms) => ms >= 0) && bl.ok, report.reloadMs);
+
+  // ---- what the compiler knows about the code: completion, hover, go to definition
+  show("src/Hello.hx");
+  const code0 = files["src/Hello.hx"], at0 = code0.indexOf("ticks++;") + "ticks++;".length;
+  view.dispatch({ changes: { from: at0, insert: " Std." }, selection: { anchor: at0 + 5 } });
+  CM.startCompletion(view);
+  const offered = await until(() => { const c = CM.currentCompletions(view.state); return c.length ? c.map((o) => o.label) : null; }, 10000);
+  step("completion after Std. offers its fields, from the compiler", offered && offered.includes("parseInt") && offered.includes("string"), offered && offered.slice(0, 8));
+  view.dispatch({ changes: { from: at0, to: at0 + 5, insert: "" } });
+  const ticksAt = view.state.doc.toString().indexOf("ticks++;") + 2;
+  const hover = await askCompiler("display/hover", { file: "/static/src/Hello.hx", offset: codeOffset(view.state.doc, ticksAt) });
+  const hp = hover && hover.item ? itemParts(hover.item) : null;
+  step("hover on ticks: its type", hp && hp.name === "ticks" && hp.type === "Int", hp);
+  view.dispatch({ selection: { anchor: ticksAt } });
+  await goToDefinition("src/Hello.hx", view, ticksAt);
+  const declLine = view.state.doc.lineAt(view.state.doc.toString().indexOf("static var ticks")).number;
+  step("go to definition: the cursor on ticks's declaration", view.state.doc.lineAt(view.state.selection.main.head).number === declLine
+       && view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to) === "ticks", view.state.doc.lineAt(view.state.selection.main.head).number);
+  step("and the editor's text is as it was", files["src/Hello.hx"] === code0);
 
   // ---- files: a new class, used by the program; renamed; removed
   const nf = await newFile("src/util/Greeter.hx");

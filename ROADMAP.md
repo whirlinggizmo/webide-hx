@@ -187,6 +187,19 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 ## 6. Language server (after a resident compiler)
 
+- [x] The direct route instead of porting haxe-language-server: the IDE asks the compiler
+      itself, Haxe's display protocol (--display with JSON) through the resident
+      compiler, like a build (its options, the editor's unsaved text, its cache):
+      completion (CodeMirror's, from display/completion), hover (display/hover), go to
+      definition (display/definition; F12, Ctrl/Cmd-click). 10-40 ms each. The reply is
+      the compiler's message, not its output; offsets are code points (bytes were wrong
+      after non-ASCII text). 2026-10-19.
+- [ ] Signature help while typing a call's arguments (display/signatureHelp works).
+- [ ] Errors as you type (a --no-output build after a pause, or display/diagnostics).
+- [ ] Go to definition into the standard library or a library: open it read-only.
+- [ ] Outline, rename, find references (display/references): haxe-language-server's extras,
+      if wanted.
+
 - [ ] Port `haxe-language-server` (vshaxe; Haxe compiled to JS) to call the in-page
       compiler instead of spawning a `haxe` process. The compiler's `--display` protocol
       is the same binary, so the server's side is the only one that changes.

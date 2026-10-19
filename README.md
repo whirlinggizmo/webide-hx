@@ -264,6 +264,22 @@ that need native code or tools at build time won't work in the page.
 `?test` uses stores of its own, and a directory in the browser's private file system
 (OPFS) for the folder steps.
 
+## What the compiler knows: completion, hover, definition
+
+The IDE asks the compiler about the code as it's edited, with Haxe's display protocol (the
+same JSON requests editors make through haxe-language-server), sent to the resident
+compiler like a build, with the editor's unsaved text. It shares the build's cache, so
+answers take tens of milliseconds:
+
+- **Completion**: after a `.`, as a name is typed, or on Ctrl-Space: fields, types, locals
+  and keywords, each with its type, and its documentation beside the list.
+- **Hover**: a name's type and documentation.
+- **Go to definition**: F12, Ctrl/Cmd-click, or Edit > Go to definition: the project's file
+  at the declaration; one in the standard library or a library is named in the status line.
+
+Positions are counted in characters (code points), as the compiler counts them. Signature
+help and errors as you type are next.
+
 ## Debugging
 
 The IDE builds with `-debug -D source-map-inline -D source-map-content`: each bundle
