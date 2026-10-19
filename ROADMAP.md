@@ -125,8 +125,8 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       handles directly for the folder instead of ZenFS's WebAccess.
 - [ ] Fix imports of a moved class in other files (needs the language server's view).
 - [x] The program out of the page (View): a window of its own (remembered where it was;
-      closing it brings the program back), picture-in-picture (Chromium; not tried yet:
-      headless can't open one), or a new tab. It works because the program only talks to
+      closing it brings the program back), picture-in-picture (Chromium; Rob tried it in
+      Brave, 2026-10-19: works), or a new tab. It works because the program only talks to
       the service worker, which serves every client the same builds. 2026-10-18.
 - [ ] Place the program's window on a chosen screen (Window Management API, Chromium;
       a permission prompt).
