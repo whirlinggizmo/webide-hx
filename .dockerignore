@@ -6,7 +6,7 @@ editor/node_modules
 web/haxe.js
 web/std
 web/std.json.gz
-web/hello
+web/example
 web/vendor
 web/report*.json
 **/__pycache__

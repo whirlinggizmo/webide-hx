@@ -249,7 +249,7 @@ def main():
         d = os.path.expanduser(args.hotreload)
         args.embed += [f"{d}/src:/lib/hotreload/src", f"{d}/extraParams.hxml:/lib/hotreload/extraParams.hxml"]
         # its hello example, for the IDE (web/index.html) to edit and run
-        hello = os.path.join(HERE, "web", "hello")
+        hello = os.path.join(HERE, "web", "example")
         shutil.rmtree(hello, ignore_errors=True)
         for sub in ["src", "assets"]:
             shutil.copytree(os.path.join(d, "examples", "hello", sub), os.path.join(hello, sub))

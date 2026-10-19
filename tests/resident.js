@@ -1,5 +1,5 @@
 // The resident compiler in node, as a page's worker would drive it: start the bundle
-// once with --wait stdio and HAXE_RESIDENT=1, then send it builds of web/hello,
+// once with --wait stdio and HAXE_RESIDENT=1, then send it builds of web/example,
 // editing Hello.hx in between, and time each.
 //     node tests/resident.js
 var fs = require("fs"), path = require("path");
@@ -10,7 +10,7 @@ var files = [];
     if (e.isDirectory()) walk(path.join(d, e.name), rel + e.name + "/");
     else files.push({ name: "/static/" + rel + e.name, content: fs.readFileSync(path.join(d, e.name), "latin1") });
   }
-})(path.join(web, "hello"), "");
+})(path.join(web, "example"), "");
 globalThis.jsoo_fs_tmp = files;
 var stdDir = path.join(web, "std") + "/";
 globalThis.HX_STD = { manifest: JSON.parse(fs.readFileSync(stdDir + "manifest.json", "utf8")),
@@ -38,7 +38,7 @@ function report(name, r) {
   console.log(name + ": " + (r.failed ? "FAILED" : "ok") + " in " + r.ms + " ms, " + (r.js ? r.js.length : 0) + " bytes" +
     (r.messages.length ? "\n    " + r.messages.slice(0, 4).join("\n    ") : ""));
 }
-var hello = fs.readFileSync(path.join(web, "hello", "src", "Hello.hx"), "latin1");
+var hello = fs.readFileSync(path.join(web, "example", "src", "Hello.hx"), "latin1");
 var r1 = build(); report("first build", r1);
 var r2 = build(["-D hotreload_reload"]); report("again, nothing changed", r2);
 globalThis.hx_write_file("/static/src/Hello.hx", hello.replace("'$greeting, $name! (ticks", "'$greeting again, $name! (ticks"));

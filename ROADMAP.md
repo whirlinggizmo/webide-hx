@@ -98,7 +98,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       changes build. The test checks a new class used by the program, a rename the build
       notices, a delete the compiler forgets, assets added and removed. 2026-10-18.
 - [x] The project kept in the browser (IndexedDB, as it's typed), seeded from the
-      example (`web/hello/files.json`, from build.py); Reset goes back to it. 2026-10-18.
+      example (`web/example/files.json`, from build.py); Reset goes back to it. 2026-10-18.
 - [x] A build in progress: a spinner, the time so far, the library files read (the worker
       reports each `std/` read as it happens), and a bar against the last build of the
       same kind, kept in localStorage; a sliding bar when there's none. Hidden for builds

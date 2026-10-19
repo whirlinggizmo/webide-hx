@@ -169,7 +169,7 @@
         <button role="menuitem" id="export">Export zip</button>
         <button role="menuitem" id="add-library" title="a haxelib release's zip, from lib.haxe.org, for when the page can't download it">Add library zip…</button>
         <hr role="separator">
-        <button role="menuitem" id="reset" title="back to the example, losing your changes">Reset to the example…</button>
+        <button role="menuitem" id="reset" title="Back to the Example project, losing your changes">Reset to Example project…</button>
       </div>
     </div>
   </nav>
@@ -249,7 +249,7 @@
 // computer the person opened. The browser's project is, the first time and after Reset,
 // hotreload-hx's examples/hello (copied to hello/ by build.py --hotreload).
 const TESTING = location.search.includes("test");
-const EXAMPLE = "hello/";
+const EXAMPLE = "example/";
 const HOTRELOAD = ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml"];
 
 const files = {}, saved = {};
@@ -1851,7 +1851,7 @@ $("delete").onclick = () => attempt(async () => {
   if (sure) await deleteFile(name);
 });
 $("reset").onclick = () => attempt(async () => {
-  if (!await askPerson({ title: "Reset to the example?", text: "The project kept in this browser goes back to the example; your changes to it are lost.",
+  if (!await askPerson({ title: "Reset to the Example project?", text: "The project stored in this browser goes back to the Example project. Your changes to it are lost.",
                          ok: "Reset", danger: true })) return;
   await project.clear();
   location.reload();

@@ -188,7 +188,7 @@ over when the project changes, and closing it makes it Embedded again. The edito
 has to stay open: it's the compiler.
 **Project** has Build, and Select hxml…: which of the project's hxml files the page builds
 from (see below)
-(also the button, and Ctrl-S), Open folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
+(also the button, and Ctrl-S), Open folder (local), Import zip, Export zip and Reset to Example project (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
 
@@ -205,8 +205,8 @@ The project's files go through [ZenFS](https://github.com/zen-fs/core), a node-l
 bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs.js` into
 `web/vendor/fs.js`:
 
-- In the browser (IndexedDB) by default, seeded from the example; Project > Reset to the
-  example goes back to it.
+- In the browser (IndexedDB) by default, seeded from the Example project (hotreload-hx's
+  hello, in `web/example/`); Project > Reset to Example project goes back to it.
 - **Open folder (local)** works on a folder on this computer through the File System
   Access API ("local", as against the project's own folders). It's in the Project menu in
   every browser; where it can't work it's greyed, and its tooltip, or a click, says how

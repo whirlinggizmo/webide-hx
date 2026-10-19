@@ -5,7 +5,7 @@ build/
 __pycache__/
 build-log.txt
 web/std/
-web/hello/
+web/example/
 editor/node_modules/
 web/vendor/
 web/std.json.gz

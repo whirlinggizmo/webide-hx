@@ -21,7 +21,7 @@ def main():
         sys.exit(__doc__)
     host, path = args[0].split(":", 1)
     path = path.rstrip("/")
-    if not os.path.exists(os.path.join(WEB, "haxe.js")) or not os.path.exists(os.path.join(WEB, "hello", "files.json")):
+    if not os.path.exists(os.path.join(WEB, "haxe.js")) or not os.path.exists(os.path.join(WEB, "example", "files.json")):
         sys.exit("web/ isn't built: run build.py (with --hotreload) first")
     # the directory must be new, empty, or already this service's
     check = subprocess.run(["ssh", host, f"mkdir -p '{path}' && cd '{path}' && {{ test -z \"$(ls -A)\" || test -f nginx.conf.template; }}"])
