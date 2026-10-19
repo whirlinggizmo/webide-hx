@@ -119,10 +119,9 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       (hidden files too), then delete the old, so a failure leaves both rather than
       neither; ZenFS's own folder rename reads it all into memory, deletes, then writes.
       2026-10-18.
-- [ ] ZenFS reads a folder on disk once, when it's opened, and doesn't see changes made
-      outside the page after; a folder-wide move or delete reads it again first (~0.3 s).
-      The same gap as noticing outside changes above; if it keeps biting, use directory
-      handles directly for the folder instead of ZenFS's WebAccess.
+- [x] ZenFS reads a folder on disk once, when it's opened; the page reads it again when it
+      sees an outside change (below), and before a folder-wide move or delete (~0.3 s).
+      2026-10-19.
 - [ ] Fix imports of a moved class in other files (needs the language server's view).
 - [x] The program out of the page (the App menu, was View: Embedded, Separate window,
       Floating window, Open in new tab): a window of its own (remembered where it was;
@@ -159,9 +158,14 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       engagement, Firefox asks), and the header's tooltip says whether the browser keeps it
       or may delete it when space runs low. Project > Clear library cache… empties the
       library cache only. 2026-10-19.
-- [ ] A folder changed outside the page (another editor, git) isn't noticed until it's
-      opened again: poll the files' modification times, or FileSystemObserver where it
-      exists.
+- [x] A folder changed outside the page (another editor, git): the page looks every 2 s
+      (the files' modification times, from the directory handles) and takes what changed:
+      the tree, the editor, and the program, which reloads as for an edit in the page.
+      A write checks the file's time first: changed underneath while the page had an edit
+      waiting, it asks which version to keep (unanswered, neither is lost and the next
+      write asks again). Before this, the page could write its stale copy over the newer
+      one. The look is skipped, or thrown away, while the page changes the folder itself.
+      FileSystemObserver could replace the polling where it exists. 2026-10-19.
 - [ ] Opening a folder walks every entry, ignored ones included (ZenFS reads the whole
       tree's handles up front): fine for a project, slow for a huge tree. Measured: 300
       extra files under out/ cost little (folder opened and built in 0.33 s in Brave, 0.65
@@ -194,11 +198,16 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 
-- [ ] Page JavaScript can't drive the browser's debugger, so the IDE can't pause its own
-      frame. The routes: a native host speaking the browser's debugging protocol (an
-      install again), or instrumenting the compiled code to report lines and pause, where
-      pausing is the hard part (the program and the page share a thread). Decide after
-      the editor exists.
+- [ ] Breakpoints set in the IDE's gutter, paused in DevTools: a page can't open DevTools
+      or set its breakpoints, but `debugger;` pauses there when DevTools is open (and does
+      nothing when it isn't). So a breakpoint on a line puts `js.Lib.debug();` at its start
+      in the source the compiler gets (not the file), on the same line, so the source map
+      still points at it; a toggle is a reload build (~100 ms). Only where a statement can
+      start: a line where it doesn't compile is refused. (Rob's idea, 2026-10-19.)
+- [ ] Pausing in the IDE itself, without DevTools: page JavaScript can't drive the
+      browser's debugger. The routes: a native host speaking the browser's debugging
+      protocol (an install again), or instrumenting the compiled code to report lines and
+      pause, where pausing is the hard part (the program and the page share a thread).
 
 ## 6. Language server (after a resident compiler)
 

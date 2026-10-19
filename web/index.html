@@ -325,21 +325,30 @@ const project = {
     await walk("");
     return { files, skipped, dirs };
   },
+  // in a folder, a write first checks the file wasn't changed by something else since the
+  // page read it (asking which version to keep if it was), and notes its new time after
   async put(name, data) {
-    const p = this.path(name);
-    await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
-    await FS.fs.promises.writeFile(p, data);
+    return folderOp(async () => {
+      if (this.folder && !(await folderWriteOk(name, data))) return;
+      const p = this.path(name);
+      await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
+      await FS.fs.promises.writeFile(p, data);
+      if (this.folder) await stamp(name);
+    });
   },
   async remove(name) {
-    await FS.fs.promises.rm(this.path(name), { force: true });
+    return folderOp(async () => { await FS.fs.promises.rm(this.path(name), { force: true }); stamps.delete(name); });
   },
   mkdir(name) {
-    return FS.fs.promises.mkdir(this.path(name), { recursive: true });
+    return folderOp(() => FS.fs.promises.mkdir(this.path(name), { recursive: true }));
   },
   // a folder, everything in it (what isn't part of the project too)
   async removeDir(name) {
-    await this.refresh();
-    await FS.fs.promises.rm(this.path(name), { recursive: true, force: true });
+    return folderOp(async () => {
+      await this.refresh();
+      await FS.fs.promises.rm(this.path(name), { recursive: true, force: true });
+      for (const n of [...stamps.keys()]) if (n.startsWith(name + "/")) stamps.delete(n);
+    });
   },
   // everything under a folder, what isn't part of the project too: {files, dirs}, paths
   // relative to the project
@@ -358,6 +367,9 @@ const project = {
   // a file or a folder to a new path: copied (everything in a folder), then the old one
   // removed, so a failure part way leaves both rather than neither
   async move(from, to) {
+    return folderOp(() => this.moveNow(from, to));
+  },
+  async moveNow(from, to) {
     await this.refresh();
     const fsp = FS.fs.promises;
     if (!(await fsp.stat(this.path(from))).isDirectory()) {
@@ -399,6 +411,118 @@ const remembered = {
   get() { return this.run("readonly", (s) => s.get("folder")); },
   set(handle) { return this.run("readwrite", (s) => handle ? s.put(handle, "folder") : s.delete("folder")); },
 };
+// ---- a folder changed outside the page (another editor, git). The page knows each file's
+// modification time on disk as it last read or wrote it (`stamps`). A write checks it first,
+// and asks which version to keep if the file changed underneath; a look at the folder every
+// 2 s takes what changed outside (where the page has no edit waiting to be written), so an
+// edit in another editor reloads the program as one in the page does. The look is skipped
+// while the page is changing the folder itself, and thrown away if it started to
+const stamps = new Map();
+const heldWrites = new Set(); // asked which version to keep, not answered yet: left alone
+let folderOps = 0, folderGen = 0, folderLooking = false;
+async function folderOp(f) {
+  folderOps++; folderGen++;
+  try { return await f(); } finally { folderOps--; folderGen++; }
+}
+// a file in the open folder, from its handles (ZenFS's view of the folder is read once)
+async function diskFile(name) {
+  try {
+    const parts = name.split("/");
+    let d = project.folder;
+    for (const p of parts.slice(0, -1)) d = await d.getDirectoryHandle(p);
+    return await (await d.getFileHandle(parts[parts.length - 1])).getFile();
+  } catch (e) { return null; }
+}
+async function stamp(name) {
+  const f = await diskFile(name);
+  if (f) stamps.set(name, f.lastModified); else stamps.delete(name);
+}
+// the project's files and folders on disk, as load() takes them: {files: name -> File, dirs}
+async function diskProject() {
+  const out = { files: new Map(), dirs: [] };
+  const walk = async (d, rel) => {
+    for await (const [n, h] of d.entries()) {
+      const name = rel ? rel + "/" + n : n;
+      if (SKIP.test(name)) continue;
+      if (h.kind === "directory") { out.dirs.push(name); await walk(h, name); }
+      else { const f = await h.getFile(); if (f.size <= MAX_BYTES) out.files.set(name, f); }
+    }
+  };
+  await walk(project.folder, "");
+  return out;
+}
+async function stampAll() {
+  stamps.clear(); heldWrites.clear();
+  if (!project.folder) return;
+  for (const [n, f] of (await diskProject()).files) stamps.set(n, f.lastModified);
+}
+const sameData = (a, b) => isText(a) || isText(b) ? a === b : a.length === b.length && a.every((x, i) => x === b[i]);
+// before a write: the file as the page last knew it, or the person says which to keep
+async function folderWriteOk(name, data) {
+  const f = await diskFile(name);
+  if (!f || !stamps.has(name) || f.lastModified === stamps.get(name)) return true;
+  const disk = asData(await f.arrayBuffer());
+  if (sameData(disk, data)) { stamps.set(name, f.lastModified); return false; }
+  const which = await askPerson({ title: `${name} changed on disk`, ok: "Keep",
+    text: "Another program changed this file after the page read it, and the page has edits to it that are not written yet. Which version should the file keep?",
+    choices: [{ value: "disk", label: "The version on disk (the page's edits are dropped)" }, { value: "page", label: "The page's version (the change on disk is overwritten)" }],
+    value: "disk" });
+  if (which === null) { heldWrites.add(name); return false; } // not answered: nothing written; the next write asks again
+  heldWrites.delete(name);
+  if (which === "page") return true;
+  stamps.set(name, f.lastModified);
+  takeFromDisk({ [name]: disk }, [], []);
+  return false;
+}
+// what changed on disk, into the page: the tree, the editor, the program
+async function takeFromDisk(changed, added, removed) {
+  const assets = {};
+  for (const [n, data] of Object.entries(changed)) {
+    files[n] = saved[n] = data; addDirs(n);
+    if (!isCode(n)) assets[n] = data;
+  }
+  for (const n of removed) {
+    delete files[n]; delete saved[n]; states.delete(n); diagnostics.delete(n);
+    if (!isCode(n)) assets[n] = null;
+  }
+  if (current !== null && !(current in files)) current = names().find(isCode) || names()[0] || null;
+  renderTree();
+  if (current !== null && (current in changed || removed.length)) show(current);
+  else if (current === null) view.setState(CM.EditorState.create({ doc: "" }));
+  const all = Object.keys(changed).concat(removed);
+  status(`changed on disk: ${all.slice(0, 3).join(", ")}${all.length > 3 ? ` and ${all.length - 3} more` : ""}`);
+  if (Object.keys(assets).length) await tellAssets(assets, true);
+  if (all.some(builds)) return build();
+}
+async function lookAtFolder() {
+  if (!project.folder || folderLooking || folderOps > 0 || dialogDone) return;
+  folderLooking = true;
+  try {
+    const gen = folderGen, disk = await diskProject(), changed = {}, added = [], removed = [];
+    for (const [n, f] of disk.files) {
+      if (n in files && stamps.get(n) === f.lastModified) continue;
+      if (pendingWrites.has(n) || heldWrites.has(n)) continue; // the page's edit is about to be written: its check asks
+      const data = asData(await f.arrayBuffer());
+      if (n in files && sameData(data, files[n])) { stamps.set(n, f.lastModified); continue; }
+      if (!(n in files)) added.push(n);
+      changed[n] = data;
+    }
+    for (const n of names()) if (!disk.files.has(n) && !pendingWrites.has(n) && !heldWrites.has(n)) removed.push(n);
+    const newDirs = disk.dirs.filter((d) => !dirs.has(d)), goneDirs = [...dirs].filter((d) => !disk.dirs.includes(d));
+    if (gen !== folderGen || folderOps > 0) return; // the page changed the folder meanwhile: next time
+    for (const [n, f] of disk.files) if (n in changed) stamps.set(n, f.lastModified);
+    for (const n of removed) stamps.delete(n);
+    for (const d of newDirs) dirs.add(d);
+    for (const d of goneDirs) dirs.delete(d);
+    if (!Object.keys(changed).length && !removed.length) { if (newDirs.length || goneDirs.length) renderTree(); return; }
+    await project.refresh(); // ZenFS's view of the folder, for what the page does next
+    await takeFromDisk(changed, added, removed);
+  } catch (e) {
+    status(`couldn't look at the folder: ${e.message}`);
+  } finally { folderLooking = false; }
+}
+setInterval(lookAtFolder, 2000);
+
 // edits go to the project as they're typed (a moment after the last key), so a reload keeps them
 const pendingWrites = new Map();
 function keep(name) {
@@ -1564,6 +1688,7 @@ function showProject(loaded) {
 }
 // ... and the program starts over on them
 async function switchTo(loaded) {
+  await stampAll();
   showProject(loaded);
   const first = await startProgram();
   if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
@@ -2094,6 +2219,15 @@ function until(test, ms) {
     })();
   });
 }
+// the same, for a test that has to wait for something (a file read)
+async function untilAsync(test, ms) {
+  const end = performance.now() + ms;
+  for (;;) {
+    const v = await test();
+    if (v || performance.now() > end) return v || null;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
 const lastTicks = (log, word) => {
   const re = new RegExp(word + ", world! \\(ticks: (\\d+), since the last reload: (\\d+)\\)", "g");
   let m, last = null;
@@ -2540,6 +2674,53 @@ async function test() {
   step("a rename moves the file in the folder", await read("notes/README.md") === "# notes\n" && await read("notes/readme.md") === null);
   await deleteFile("src/extra/Extra.hx");
   step("a delete removes the file, and leaves its folder", await read("src/extra/Extra.hx") === null && await isDir("src/extra"));
+  // changes made outside the page (another editor, git): taken; code reloads the program
+  await write("src/Hello.hx", (await read("src/Hello.hx")).replace("from the disk", "from outside"));
+  step("an edit outside the page: taken, and the program reloads with it", await until(() => lastTicks(frameLog(), "Hey from outside"), 15000)
+       && files["src/Hello.hx"].includes("from outside") && view.state.doc.toString() === files["src/Hello.hx"]);
+  await write("notes/todo.md", "- more\n");
+  { const [d, f] = await walkTo("notes/README.md", false); await d.removeEntry(f); }
+  step("a file added outside shows; one removed outside goes", await until(() => files["notes/todo.md"] === "- more\n" && !("notes/README.md" in files)
+       && document.querySelector('#tree button[data-name="notes/todo.md"]') && !document.querySelector('#tree button[data-name="notes/README.md"]'), 8000), names());
+  await write("assets/greeting.txt", "Yo\n");
+  step("an asset changed outside reaches the program", await until(() => lastTicks(frameLog(), "Yo from outside"), 15000));
+  // both: the file changed outside, and an edit in the page not written yet (the look at the
+  // folder held meanwhile, as if it came between two looks). The page's write asks
+  const bothSides = async (page, outside) => {
+    show("src/Hello.hx");
+    await until(() => !folderLooking, 5000);
+    folderLooking = true;
+    const was = files["src/Hello.hx"];
+    await write("src/Hello.hx", was.replace(/\$greeting from \w+/, "$greeting from " + outside));
+    files["src/Hello.hx"] = was.replace(/\$greeting from \w+/, "$greeting from " + page); keep("src/Hello.hx");
+    folderLooking = false;
+  };
+  const conflict = async (page, outside, answer) => {
+    await bothSides(page, outside);
+    const asked = await until(() => $("dialog").open && /changed on disk/.test($("dialog-title").textContent), 5000);
+    if (asked) { $("dialog-select").value = answer; $("dialog-ok").click(); }
+    return asked;
+  };
+  const a1 = await conflict("thepage", "git", "page");
+  step("changed on both sides: asked; keeping the page's version writes it", a1 && await untilAsync(async () => /from thepage/.test(await read("src/Hello.hx") || ""), 5000)
+       && /from thepage/.test(files["src/Hello.hx"]), await read("src/Hello.hx"));
+  await save();
+  const a2 = await conflict("thepage2", "git2", "disk");
+  step("keeping the version on disk takes it into the page", a2 && await until(() => /from git2/.test(files["src/Hello.hx"]) && /from git2/.test(view.state.doc.toString()), 5000)
+       && /from git2/.test(await read("src/Hello.hx") || ""), files["src/Hello.hx"].match(/\$greeting from \w+/));
+  // not answered (Escape): nothing written, and the page's edit isn't dropped by the next look
+  await bothSides("thepage4", "git4");
+  const asked4 = await until(() => $("dialog").open && /changed on disk/.test($("dialog-title").textContent), 5000);
+  if (asked4) $("dialog-cancel").click();
+  await new Promise((r) => setTimeout(r, 4500)); // two looks at the folder
+  step("not answered: neither side is lost", asked4 && /from thepage4/.test(files["src/Hello.hx"]) && /from git4/.test(await read("src/Hello.hx") || ""),
+       [files["src/Hello.hx"].match(/\$greeting from \w+/), (await read("src/Hello.hx") || "").match(/\$greeting from \w+/)]);
+  // the next write asks again; keep the page's
+  keep("src/Hello.hx");
+  const asked5 = await until(() => $("dialog").open && /changed on disk/.test($("dialog-title").textContent), 5000);
+  if (asked5) { $("dialog-select").value = "page"; $("dialog-ok").click(); }
+  step("and the next write asks again", asked5 && await untilAsync(async () => /from thepage4/.test(await read("src/Hello.hx") || ""), 5000));
+  await save();
   // a folder on disk moves with everything in it, what the page doesn't show too
   await write("src/extra/.notes", "hidden");
   await newFile("src/extra/Extra.hx");

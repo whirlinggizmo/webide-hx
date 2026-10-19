@@ -218,7 +218,11 @@ bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs
   to have it: Chrome and Edge have it; Brave turns it off unless
   `chrome://flags/#file-system-access-api` is on (`brave://flags` works too); Firefox and
   Safari don't have it. Edits, new files, renames and
-  deletes happen in the folder, so another editor sees them. The page remembers the
+  deletes happen in the folder, so another editor sees them; and what another editor (or
+  git) changes there, the page sees within a couple of seconds: the tree and the editor
+  follow, and the app reloads as for an edit in the page. If a file changed on disk while
+  the page had an edit to it not yet written, the page asks which version to keep rather
+  than writing over either. The page remembers the
   folder and opens it again next time, asking first if the browser wants permission.
   **Close folder (local)** goes back to the browser's project.
 - **Import zip** replaces the browser's project with a zip's files; **Export zip** saves
