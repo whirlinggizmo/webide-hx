@@ -157,7 +157,7 @@
       <button class="menubutton" id="project-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="project-items">Project</button>
       <div class="items" id="project-items" role="menu" aria-labelledby="project-menu" hidden>
         <button role="menuitem" id="build-item">Build<kbd class="mod">Ctrl+S</kbd></button>
-        <button role="menuitem" id="build-file" title="which of the project's hxml files the page builds from">Build file…</button>
+        <button role="menuitem" id="build-file" title="The hxml file used for builds">Select hxml…</button>
         <hr role="separator">
         <button role="menuitem" id="folder">Open folder (local)…</button>
         <button role="menuitem" id="import" title="a zip as the project kept in this browser, replacing it">Import zip…</button>
@@ -450,7 +450,7 @@ async function serviceWorker() {
   await tell({ type: "reset" });
 }
 
-// ---- the build: from one of the project's hxml files (Project > Build file…), or else
+// ---- the build: from one of the project's hxml files (Project > Select hxml…), or else
 // src/ and Main. The page reads the hxml itself, and the ones it includes: its class
 // paths say which .hx files are code, its --main and --js what to build, and the rest
 // goes to the compiler as it is (relative paths work: the compiler's directory is the
@@ -1549,8 +1549,8 @@ function showWhere() {
   // what it builds from
   $("where-project").textContent = project.folder ? `[ Local Folder: ${project.folder.name} ]` : "[ Browser Hosted ]";
   $("where-project").title = project.folder ? `The project is stored on this computer, in the folder ${project.folder.name}` : "The project is stored in this browser";
-  $("where-build").textContent = "build: " + (cfg.file || "src/, Main");
-  $("where-build").title = cfg.file ? "The hxml the IDE builds from. Click to choose another." : "No build file: src/ is the code, Main the main class. Click to choose an hxml.";
+  $("where-build").textContent = "hxml: " + (cfg.file || "none");
+  $("where-build").title = cfg.file ? "The hxml file used for builds" : "No hxml file: builds use src/ and the class Main";
   $("folder").textContent = project.folder ? "Close folder (local)" : reopen ? `Reopen ${reopen.name} (local)…` : "Open folder (local)…";
   // always shown; where the browser can't open folders, greyed, saying why and how to have it
   const can = !!project.folder || !!reopen || folderPicker();
@@ -1780,7 +1780,7 @@ $("build-file").onclick = () => attempt(async () => {
   const choices = all.map((n) => { const e = parseHxml(n).error; return { value: n, label: e ? `${n}: ${e.message}` : n, disabled: !!e }; })
     .concat([{ value: "", label: "None: src/ for code, Main for the main class" }]);
   const now = buildConfig().file || "";
-  const answer = await askPerson({ title: "Build file", text: "The hxml the page builds from (its class paths, --main, --js and options; hotreload-hx comes with the page).",
+  const answer = await askPerson({ title: "Select hxml", text: "The hxml file used for builds (its class paths, --main, --js and options; hotreload-hx comes with the page).",
                                    choices, value: now, ok: "Use it" });
   if (answer === null || answer === now) return;
   try { localStorage.setItem(buildChoiceKey(), answer); } catch (e) {}
@@ -2126,7 +2126,7 @@ async function test() {
   // none: src/ and Main
   localStorage.setItem(buildChoiceKey(), "");
   const hn = await build();
-  step("Build file: none builds src/ with Main", hn.ok && buildConfig().file === null && $("where").textContent.includes("src/, Main"), hn.ok ? null : hn.r.stderr);
+  step("Select hxml: none builds src/ with Main", hn.ok && buildConfig().file === null && $("where").textContent.includes("hxml: none"), hn.ok ? null : hn.r.stderr);
   localStorage.removeItem(buildChoiceKey());
   await build();
 

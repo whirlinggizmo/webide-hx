@@ -185,7 +185,7 @@ that stays on top (Chromium); or in a new tab. The program needs nothing from th
 but the service worker, so it hot-reloads wherever it is; a window the page opened also
 starts over when the project changes, and closing it brings the program back into the
 page. The editor's page has to stay open: it's the compiler.
-**Project** has Build, and Build file…: which of the project's hxml files the page builds
+**Project** has Build, and Select hxml…: which of the project's hxml files the page builds
 from (see below)
 (also the button, and Ctrl-S), Open folder, Import zip, Export zip and Reset to the example (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's

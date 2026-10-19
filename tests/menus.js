@@ -2,7 +2,7 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), Project > Build file…, View (the program in a window: it hot-reloads there, and
+// with files and an empty one), Project > Select hxml…, View (the program in a window: it hot-reloads there, and
 // comes back when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
@@ -83,7 +83,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("and Delete deletes it", !(await ev("'src/Menu.hx' in files")));
   // Project > Build
   await click(await box("#project-menu"));
-  step("Project's first items are Build and Build file…, then a separator", await ev("(() => { const l = $('project-items'); const first = l.querySelector('[role=menuitem]:not([hidden])'); return first.id === 'build-item' && first.nextElementSibling.id === 'build-file' && first.nextElementSibling.nextElementSibling.tagName === 'HR'; })()"));
+  step("Project's first items are Build and Select hxml…, then a separator", await ev("(() => { const l = $('project-items'); const first = l.querySelector('[role=menuitem]:not([hidden])'); return first.id === 'build-item' && first.nextElementSibling.id === 'build-file' && first.nextElementSibling.nextElementSibling.tagName === 'HR'; })()"));
   await click(await box("#build-item"));
   await sleep(1500);
   step("and builds", /^build \d+/.test(await ev("$('status').textContent")), await ev("$('status').textContent"));
@@ -138,16 +138,16 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#dialog-ok"));
   await sleep(200);
 
-  // ---- Project > Build file…: the hxml files, those the page can't use shown and off
+  // ---- Project > Select hxml…: the hxml files, those the page can't use shown and off
   await click(await box("#project-menu"));
   await click(await box("#build-file"));
   var opts = JSON.parse(await ev("JSON.stringify([...$('dialog-select').options].map(o => [o.value, o.disabled]))"));
-  step("Build file… lists the hxml files, those it can't build from turned off, and None", await ev("$('dialog-select').value") === "web-build.hxml"
+  step("Select hxml… lists the hxml files, those it can't build from turned off, and None", await ev("$('dialog-select').value") === "web-build.hxml"
        && opts.some(function (o) { return o[0] === "web.hxml" && o[1]; }) && opts.some(function (o) { return o[0] === "" && !o[1]; }), opts);
   await ev("$('dialog-select').value = ''");
   await click(await box("#dialog-ok"));
   await sleep(2500);
-  step("choosing None builds src/ with Main", /src\/, Main/.test(await ev("$('where').textContent")) && /^build \d+/.test(await ev("$('status').textContent")),
+  step("choosing None builds src/ with Main", /hxml: none/.test(await ev("$('where').textContent")) && /^build \d+/.test(await ev("$('status').textContent")),
        [await ev("$('where').textContent"), await ev("$('status').textContent")]);
   await click(await box("#project-menu"));
   await click(await box("#build-file"));
