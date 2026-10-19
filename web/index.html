@@ -40,6 +40,9 @@
   .items button:hover, .items button:focus-visible, .items button:focus { background: var(--hover); outline: none; }
   .items button:disabled, .items button[aria-disabled="true"] { color: var(--muted); background: transparent; cursor: default; }
   .items hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+  /* a menu with a choice: a column for the check, on the one chosen */
+  .items.checks button { position: relative; padding-left: 28px; }
+  .items.checks [aria-checked="true"]::before { content: "✓"; position: absolute; left: 10px; }
   .items button { display: flex; gap: 24px; }
   .items kbd { margin-left: auto; font: inherit; font-size: 12px; color: var(--muted); }
   .items button[hidden] { display: none; }
@@ -146,11 +149,13 @@
       </div>
     </div>
     <div class="menu">
-      <button class="menubutton" id="view-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="view-items">View</button>
-      <div class="items" id="view-items" role="menu" aria-labelledby="view-menu" hidden>
-        <button role="menuitem" id="view-window" title="the running program in a window of its own, which can go on another screen">Program in a window</button>
-        <button role="menuitem" id="view-pip" title="the running program in a small window that stays on top" hidden>Program picture-in-picture</button>
-        <button role="menuitem" id="view-tab" title="another copy of the running program, in a tab; it reloads with each build, but starts over only when you reload it">Program in a new tab</button>
+      <button class="menubutton" id="app-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="app-items">App</button>
+      <div class="items checks" id="app-items" role="menu" aria-labelledby="app-menu" hidden>
+        <button role="menuitemradio" id="app-embedded" aria-checked="true" title="The app in the IDE's pane">Embedded</button>
+        <button role="menuitemradio" id="app-window" aria-checked="false" title="The app in a window of its own, which can go on another screen">Separate window</button>
+        <button role="menuitemradio" id="app-floating" aria-checked="false">Floating window</button>
+        <hr role="separator">
+        <button role="menuitem" id="app-tab" title="Another copy of the app, in a new tab: it reloads with each build, and starts over when the tab is reloaded">Open in new tab</button>
       </div>
     </div>
     <div class="menu">
@@ -1501,10 +1506,15 @@ const program = {
     if (!quiet) { $("run").src = this.url === "about:blank" ? this.url : "run/?start=" + ++starts; showView(); }
   },
 };
+// the App menu: where the app shows, checked; Floating window greyed where the browser
+// can't (picture-in-picture is Chromium's)
 function showView() {
-  $("view-window").textContent = program.kind === "window" ? "Program back in the page" : "Program in a window";
-  $("view-pip").textContent = program.kind === "pip" ? "Program back in the page" : "Program picture-in-picture";
-  $("view-pip").hidden = !("documentPictureInPicture" in window);
+  $("app-embedded").setAttribute("aria-checked", String(!program.kind));
+  $("app-window").setAttribute("aria-checked", String(program.kind === "window"));
+  $("app-floating").setAttribute("aria-checked", String(program.kind === "pip"));
+  const floats = "documentPictureInPicture" in window;
+  $("app-floating").setAttribute("aria-disabled", String(!floats));
+  $("app-floating").title = "The app in a small window that stays on top" + (floats ? "" : " (not supported in this browser)");
 }
 async function startProgram() {
   builtWith = null; // a build from scratch: whatever the build file was before doesn't matter
@@ -1629,7 +1639,7 @@ function refreshMenus() {
 }
 for (const m of document.querySelectorAll(".menu")) {
   const button = m.querySelector(".menubutton"), list = m.querySelector(".items");
-  const items = () => [...list.querySelectorAll("[role=menuitem]")].filter((i) => !i.hidden && !i.disabled);
+  const items = () => [...list.querySelectorAll("[role=menuitem], [role=menuitemradio]")].filter((i) => !i.hidden && !i.disabled);
   const focusItem = (i) => { const all = items(); if (all.length) all[(i + all.length) % all.length].focus(); };
   const open = (focus) => {
     closeMenus(); refreshMenus();
@@ -1645,7 +1655,7 @@ for (const m of document.querySelectorAll(".menu")) {
   };
   // moving across to another menu while one is open opens that one
   button.onpointerenter = () => { if (list.hidden && document.querySelector(".items:not([hidden])")) open(); };
-  list.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem]")) closeMenus(); }, true);
+  list.addEventListener("click", (e) => { if (e.target.closest("[role=menuitem], [role=menuitemradio]")) closeMenus(); }, true);
   list.onkeydown = (e) => {
     const all = items(), at = all.indexOf(document.activeElement);
     if (e.key === "ArrowDown") focusItem(at + 1);
@@ -1768,9 +1778,14 @@ $("viewing-close").onclick = () => {
   const back = libraryView && libraryView.back in files ? libraryView.back : names().find(isCode) || names()[0] || null;
   if (back !== null) show(back); else leaveLibraryFile();
 };
-$("view-window").onclick = () => attempt(async () => { if (program.kind === "window") program.back(); else await program.out("window"); });
-$("view-pip").onclick = () => attempt(async () => { if (program.kind === "pip") program.back(); else await program.out("pip"); });
-$("view-tab").onclick = () => { window.open("run/", "_blank"); };
+$("app-embedded").onclick = () => { if (program.kind) program.back(); };
+$("app-window").onclick = () => attempt(async () => { if (program.kind !== "window") await program.out("window"); });
+$("app-floating").onclick = () => attempt(async () => {
+  if ($("app-floating").getAttribute("aria-disabled") === "true")
+    return askPerson({ title: "Floating window", ok: "OK", text: "A floating window is not supported in this browser. Consider switching to a Chromium-based browser such as Chrome, Edge or Brave." });
+  if (program.kind !== "pip") await program.out("pip");
+});
+$("app-tab").onclick = () => { window.open("run/", "_blank"); };
 addEventListener("pagehide", () => { if (program.win && program.kind === "window") program.win.close(); });
 showView();
 $("build-item").onclick = () => save();

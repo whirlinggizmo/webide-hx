@@ -124,7 +124,8 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       The same gap as noticing outside changes above; if it keeps biting, use directory
       handles directly for the folder instead of ZenFS's WebAccess.
 - [ ] Fix imports of a moved class in other files (needs the language server's view).
-- [x] The program out of the page (View): a window of its own (remembered where it was;
+- [x] The program out of the page (the App menu, was View: Embedded, Separate window,
+      Floating window, Open in new tab): a window of its own (remembered where it was;
       closing it brings the program back), picture-in-picture (Chromium; Rob tried it in
       Brave, 2026-10-19: works), or a new tab. It works because the program only talks to
       the service worker, which serves every client the same builds. 2026-10-18.

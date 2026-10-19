@@ -2,8 +2,8 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), Project > Select hxml…, View (the program in a window: it hot-reloads there, and
-// comes back when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
+// with files and an empty one), Project > Select hxml…, App (Separate window: it hot-reloads there, and comes back,
+// Embedded, when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/
@@ -158,15 +158,15 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
 
   // ---- View: the program in a window of its own; it hot-reloads there; closing it brings
   // it back into the page
-  await click(await box("#view-menu"));
-  await click(await box("#view-window"));
+  await click(await box("#app-menu"));
+  await click(await box("#app-window"));
   await sleep(2500);
   var popup = null;
   for (var w = 0; w < 20 && !popup; w++) {
     popup = (await (await fetch("http://127.0.0.1:" + port + "/json")).json()).find(function (t) { return t.type === "page" && /\/run\/\?start=/.test(t.url); });
     if (!popup) await sleep(250);
   }
-  step("View > Program in a window opens it, and the page gives the editor its room", popup && await ev("document.body.classList.contains('program-out') && $('run').src === 'about:blank' && $('view-window').textContent === 'Program back in the page'"),
+  step("App > Separate window opens it, checked, and the page gives the editor its room", popup && await ev("document.body.classList.contains('program-out') && $('run').src === 'about:blank' && $('app-window').getAttribute('aria-checked') === 'true' && $('app-embedded').getAttribute('aria-checked') === 'false'"),
        popup && popup.url);
   if (popup) {
     var pws = new WebSocket(popup.webSocketDebuggerUrl), pid = 0, pwait = new Map();
@@ -188,7 +188,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   }
   await ev("program.win && program.win.close()");
   await sleep(1500);
-  step("closing the window brings the program back into the page", await ev("!document.body.classList.contains('program-out') && /run\\/\\?start=/.test($('run').src) && program.kind === null"),
+  step("closing the window brings the app back, Embedded checked", await ev("!document.body.classList.contains('program-out') && /run\\/\\?start=/.test($('run').src) && program.kind === null && $('app-embedded').getAttribute('aria-checked') === 'true'"),
        await ev("$('run').src"));
 
   // ---- go to definition by Alt+J: the page gets the key (F12 and Ctrl+B are the browser's)

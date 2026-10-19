@@ -139,7 +139,7 @@ self.addEventListener("fetch", (e) => {
   const rest = path.slice(scope.length);
   if (rest === "" || rest === "index.html") {
     e.respondWith(respond(
-      '<!doctype html><html><head><meta charset="utf-8"><title>Haxe program</title>' +
+      '<!doctype html><html><head><meta charset="utf-8"><title>webide-hx app</title>' +
       '<style>body{margin:0;font:13px/1.4 ui-monospace,monospace;background:#fff;color:#111}' +
       '@media (prefers-color-scheme: dark){:root:not([data-theme=light]) body{background:#111;color:#ddd}}:root[data-theme=dark] body{background:#111;color:#ddd}' +
       'pre{margin:8px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>' +
