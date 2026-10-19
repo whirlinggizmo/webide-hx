@@ -18,7 +18,7 @@ installed under build/ the first time (about ten minutes). From the system it ne
 git, cmake, make, a C compiler, libpcre2-dev and zlib1g-dev (and bubblewrap, or opam's
 sandboxing is turned off), and node with npm for the IDE's editor.
 """
-import argparse, filecmp, glob, json, os, re, shutil, subprocess, sys, tarfile, urllib.request
+import argparse, filecmp, glob, gzip, json, os, re, shutil, subprocess, sys, tarfile, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 BUILD = os.path.join(HERE, "build")
@@ -173,7 +173,10 @@ def std_files(std):
 
 def std_on_demand(src):
     """web/std/: the standard library's files next to the page, and manifest.json listing
-    them, for the bundle to fetch one by one as the compiler opens them"""
+    them, for the bundle to fetch one by one as the compiler opens them; and web/std.json.gz,
+    all of them in one download, which the IDE's worker takes instead (one request rather
+    than hundreds, each a round trip over the internet). In it, each file's bytes as a
+    latin1 string, which is what the bundle reads files as"""
     std = os.path.join(src, "std")
     dst = os.path.join(HERE, "web", "std")
     shutil.rmtree(dst, ignore_errors=True)
@@ -184,6 +187,11 @@ def std_on_demand(src):
     with open(os.path.join(dst, "manifest.json"), "w") as f:
         json.dump(names, f)
     print(f"  web/std: {len(names)} files")
+    every = {n: open(os.path.join(std, n), "rb").read().decode("latin1") for n in names}
+    packed = os.path.join(HERE, "web", "std.json.gz")
+    with gzip.GzipFile(packed, "wb", mtime=0) as f:  # no timestamp: the same files, the same bytes
+        f.write(json.dumps(every, separators=(",", ":"), sort_keys=True).encode("ascii"))
+    print(f"  web/std.json.gz: {os.path.getsize(packed) / 1e6:.1f} MB")
 
 
 def bundle(src, bc, env, embeds, embed_std):

@@ -34,7 +34,25 @@ function fromBytes(bytes) {
   return decoder.decode(b);
 }
 
-function start(files) {
+// the standard library, all of it in one download (std.json.gz: path -> the file's bytes as
+// a latin1 string), so the compiler's reads cost no round trips; null if it can't be had,
+// and the compiler fetches files one by one from std/ instead
+async function loadStd() {
+  try {
+    var r = await fetch(new URL("std.json.gz", location.href));
+    if (!r.ok) return null;
+    var bytes = new Uint8Array(await r.arrayBuffer());
+    // gzip's own bytes, unless a server already undid it (Content-Encoding)
+    var text = bytes[0] === 0x1f && bytes[1] === 0x8b
+      ? await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))).text()
+      : new TextDecoder().decode(bytes);
+    return JSON.parse(text);
+  } catch (e) {
+    return null;
+  }
+}
+
+function start(files, std) {
   var t0 = performance.now();
   globalThis.jsoo_fs_tmp = Object.keys(files).map(function (k) { return { name: k, content: toBytes(files[k]) }; });
   globalThis.process = {
@@ -43,7 +61,12 @@ function start(files) {
     cwd: function () { return "/static"; },
     exit: function (c) { throw { hx_exit: c }; },
   };
-  globalThis.HX_STD = { url: new URL("std/", location.href).href };
+  globalThis.HX_STD = std
+    ? { manifest: Object.keys(std), read: function (path) {
+        postMessage({ type: "progress", files: ++libraryFiles });
+        return Object.prototype.hasOwnProperty.call(std, path) ? std[path] : null;
+      } }
+    : { url: new URL("std/", location.href).href };
   try { importScripts("haxe.js"); } catch (e) { if (!(e && e.hx_exit !== undefined)) throw e; }
   if (!globalThis.hx_request) throw new Error("the bundle has no resident compiler (rebuild it with the current patches)");
   started = true;
@@ -64,11 +87,17 @@ function request(args) {
   return { code: failed ? 1 : 0, ms: performance.now() - t0, stdout: fromBytes(stdout.join("\n")), stderr: fromBytes(stderr.join("\n")) };
 }
 
+// one message at a time, in order: the first waits for the standard library before the
+// compiler starts, and the others wait for it
+var queue = Promise.resolve();
 onmessage = function (ev) {
-  var msg = ev.data, r;
+  queue = queue.then(function () { return handle(ev.data); });
+};
+async function handle(msg) {
+  var r;
   try {
     if (!started) {
-      start(msg.files || {});
+      start(msg.files || {}, await loadStd());
     } else {
       for (var name in msg.files || {}) {
         if (msg.files[name] === null) globalThis.hx_remove_file(name);
@@ -86,4 +115,4 @@ onmessage = function (ev) {
   }
   r.id = msg.id;
   postMessage(r);
-};
+}

@@ -199,6 +199,9 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [x] Errors as you type: a --no-output build 0.8 s after the last keystroke, its errors
       marked as a build's are (no write, no reload). 2026-10-19.
 - [ ] Go to definition into the standard library or a library: open it read-only.
+- [x] The standard library in one download for the first build (web/std.json.gz, 0.5 MB,
+      read from memory) instead of a request per file: the first build on dev went from
+      ~23 s to ~3 s. 2026-10-19.
 - [ ] Outline, rename, find references (display/references): haxe-language-server's extras,
       if wanted.
 

@@ -137,6 +137,13 @@ a Worker per compile is the design.
 
 ## The standard library on demand
 
+The IDE's worker downloads the whole standard library in one file first, `web/std.json.gz`
+(0.5 MB, made by build.py: each file's bytes, gzipped), and gives the compiler its files
+from memory (`HX_STD = {read, manifest}`). Fetching them one by one, a round trip each, made
+the first build over the internet take about 23 s on dev.whirlinggizmo.com; with the one
+download it's about 3 s. Without the file, or where it can't be had, the worker falls back
+to fetching `std/` file by file, as below (the compiler check page still does).
+
 `/haxe/std/` in the bundle's filesystem is a device of its own (`hx_std_device` in
 `stubs.js`). It reads `manifest.json` once, so directory listings and existence checks
 need no network, and fetches a file's bytes the first time the compiler opens it with a
