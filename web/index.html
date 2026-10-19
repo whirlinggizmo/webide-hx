@@ -1558,7 +1558,7 @@ const FOLDER_FLAG = "chrome://flags/#file-system-access-api";
 const folderPicker = () => "showDirectoryPicker" in window;
 // why it can't, in the tooltip's brackets
 function folderUnavailable() {
-  return navigator.brave ? `enable the experimental flag in your browser to allow access: ${FOLDER_FLAG}` : "unavailable in this browser";
+  return navigator.brave ? `enable the experimental flag in your browser to allow access: ${FOLDER_FLAG}` : "not supported in this browser";
 }
 async function openFolder(handle) {
   await flushWrites();
@@ -1835,8 +1835,8 @@ $("reset").onclick = () => attempt(async () => {
 $("folder").onclick = () => attempt(async () => {
   if ($("folder").getAttribute("aria-disabled") === "true")
     return askPerson({ title: "Open folder (local)", ok: "OK", text: navigator.brave
-      ? `To open a folder local to this computer, enable the experimental flag in your browser: paste ${FOLDER_FLAG} into the address bar, turn it on, and restart the browser.`
-      : "Opening a folder local to this computer is unavailable in this browser. Chrome and Edge have it, and Brave with an experimental flag." });
+      ? `To open a folder local to this computer, enable the experimental flag in your browser: navigate to ${FOLDER_FLAG}. A browser restart is required.`
+      : "Local folder access is not supported in this browser. Consider switching to a Chromium-based browser such as Chrome, Edge or Brave." });
   if (project.folder) return closeFolder();
   if (reopen) {
     if (await reopen.requestPermission({ mode: "readwrite" }) !== "granted") return;
