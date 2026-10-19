@@ -182,7 +182,8 @@ line numbers, folding, the current line, bracket matching and closing, kept per 
 **App** says where the running app shows, checked: **Embedded** (in the IDE's pane),
 **Separate window** (its own window, which can go on another screen and is remembered where
 it was), or **Floating window** (small and always on top; picture-in-picture, Chromium
-only). **Open in new tab** opens another copy. The app needs nothing from the editor but
+only). **Restart** starts the app over from the latest build, wherever it is, its `@:hot`
+state included; **Open in new tab** opens another copy. The app needs nothing from the editor but
 the service worker, so it hot-reloads wherever it is; a window the page opened also starts
 over when the project changes, and closing it makes it Embedded again. The editor's page
 has to stay open: it's the compiler.

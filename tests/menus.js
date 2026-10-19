@@ -2,7 +2,7 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), Project > Select hxml…, App (Separate window: it hot-reloads there, and comes back,
+// with files and an empty one), Project > Select hxml…, App (Separate window: it hot-reloads there, Restart starts it over there, and it comes back,
 // Embedded, when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
@@ -156,7 +156,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await sleep(2500);
   step("and web-build.hxml again", /web-build\.hxml/.test(await ev("$('where').textContent")));
 
-  // ---- View: the program in a window of its own; it hot-reloads there; closing it brings
+  // ---- App: the program in a window of its own; it hot-reloads there; closing it brings
   // it back into the page
   await click(await box("#app-menu"));
   await click(await box("#app-window"));
@@ -185,6 +185,12 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
     await sleep(500);
     var after = await ev("program.win.location.href");
     step("starting the program over starts it in its window", /start=/.test(after) && after !== before && await ev("$('run').src === 'about:blank'"), [before, after]);
+    // App > Restart: the same, from the menu
+    await click(await box("#app-menu"));
+    await click(await box("#app-restart"));
+    await sleep(500);
+    var restarted = await ev("program.win.location.href");
+    step("App > Restart starts it over in its window", /start=/.test(restarted) && restarted !== after && await ev("$('run').src === 'about:blank' && program.kind === 'window'"), [after, restarted]);
   }
   await ev("program.win && program.win.close()");
   await sleep(1500);

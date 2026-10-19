@@ -155,6 +155,7 @@
         <button role="menuitemradio" id="app-window" aria-checked="false" title="The app in a window of its own, which can go on another screen">Separate window</button>
         <button role="menuitemradio" id="app-floating" aria-checked="false">Floating window</button>
         <hr role="separator">
+        <button role="menuitem" id="app-restart">Restart</button>
         <button role="menuitem" id="app-tab" title="Another copy of the app, in a new tab: it reloads with each build, and starts over when the tab is reloaded">Open in new tab</button>
       </div>
     </div>
@@ -1120,6 +1121,8 @@ async function build() {
   }
   version++;
   await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
+  // nothing running yet (the project's first build failed): this build starts it
+  if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
   status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
   out([r.stdout.trim()].concat(messages.rest).filter((x) => x).join("\n"));
   return { ok: true, r };
@@ -1445,7 +1448,7 @@ function show(name) {
 }
 // ---- the whole project: a build from scratch and the program started on it, at first and
 // when the project changes (a folder opened or closed, a zip imported)
-let starts = 0;
+let starts = 0, startingProgram = false;
 // ---- where the program runs: the frame in the page, or out of it, in a window of its own
 // ("window", which can go on another screen) or a picture-in-picture one ("pip", on top of
 // everything; Chromium). The program needs nothing from the page but the service worker,
@@ -1519,6 +1522,9 @@ function showView() {
   const floats = "documentPictureInPicture" in window;
   $("app-floating").setAttribute("aria-disabled", String(!floats));
   $("app-floating").title = "The app in a small window that stays on top" + (floats ? "" : " (not supported in this browser)");
+  const built = program.url !== "about:blank";
+  $("app-restart").setAttribute("aria-disabled", String(!built));
+  $("app-restart").title = built ? "Start the app over from the latest build: its state is lost" : "Start the app over (nothing has built yet)";
 }
 async function startProgram() {
   builtWith = null; // a build from scratch: whatever the build file was before doesn't matter
@@ -1527,8 +1533,11 @@ async function startProgram() {
   const assets = {};
   for (const f of names()) if (!isCode(f)) assets[f] = files[f];
   await tellAssets(assets, false);
-  const first = await build();
+  startingProgram = true;
+  let first;
+  try { first = await build(); } finally { startingProgram = false; }
   program.start(first.ok ? "run/?start=" + ++starts : "about:blank");
+  showView();
   if (!first.ok) return first;
   // a reload's build has its own defines, so its own cache: make it now, not at the first save
   const done = busy("build 1 running; warming the compiler for reloads", "warm");
@@ -1790,6 +1799,12 @@ $("app-floating").onclick = () => attempt(async () => {
   if (program.kind !== "pip") await program.out("pip");
 });
 $("app-tab").onclick = () => { window.open("run/", "_blank"); };
+// the app from its start, where it is: a fresh page on the latest build, so @:hot state
+// goes too
+$("app-restart").onclick = () => {
+  if (program.url === "about:blank") return;
+  program.start("run/?start=" + ++starts);
+};
 addEventListener("pagehide", () => { if (program.win && program.kind === "window") program.win.close(); });
 showView();
 $("build-item").onclick = () => save();
@@ -1999,6 +2014,17 @@ async function test() {
   step("the fixed edit builds and reloads", b4.ok, b4.ok ? Math.round(b4.r.ms) + " ms" : b4.r.stderr);
   step("the error marker is gone", CM.diagnosticCount(view.state) === 0, CM.diagnosticCount(view.state));
   report.reloadMs.push(Math.round(b4.r.ms));
+  // App > Restart: the app from its start, on the latest code; @:hot state goes too
+  const running = lastTicks(frameLog(), "Howdy again");
+  $("app-restart").click();
+  const restarted = await until(() => { const t = lastTicks(frameLog(), "Howdy again"); return t && running && t.ticks < running.ticks ? t : null; }, 15000);
+  step("Restart: the app starts over, on the latest code", restarted && $("app-restart").getAttribute("aria-disabled") === "false", { running, restarted });
+  // nothing running (as after a failed first build): a build that works starts it
+  program.start("about:blank"); showView();
+  const greyed = $("app-restart").getAttribute("aria-disabled") === "true";
+  const bs = await save();
+  const started = await until(() => lastTicks(frameLog(), "Howdy again"), 15000);
+  step("a build starts an app that wasn't running (Restart greyed until then)", greyed && bs.ok && started && $("app-restart").getAttribute("aria-disabled") === "false", { greyed, started });
   // a few more edits in a row: each is a build of one changed file
   for (let i = 0; i < 3; i++) {
     files["src/Hello.hx"] = good.replace("ticks % 4", "ticks % " + (2 + i));

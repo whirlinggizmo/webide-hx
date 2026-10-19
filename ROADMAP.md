@@ -129,6 +129,10 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       closing it brings the program back), picture-in-picture (Chromium; Rob tried it in
       Brave, 2026-10-19: works), or a new tab. It works because the program only talks to
       the service worker, which serves every client the same builds. 2026-10-18.
+- [x] App > Restart: the app from its start on the latest build, wherever it shows (its
+      @:hot state goes too); greyed until something has built. A build that works now
+      also starts an app that wasn't running (the project's first build had failed; it
+      stayed blank until the project was loaded again). 2026-10-19.
 - [ ] Place the program's window on a chosen screen (Window Management API, Chromium;
       a permission prompt).
 - [ ] A context menu on the tree's files (Rename, Delete).
