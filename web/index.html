@@ -225,8 +225,6 @@
         <button role="menuitem" id="export">Export zip</button>
         <hr role="separator">
         <button role="menuitem" id="libraries" title="The libraries this project uses, and those downloaded in this browser">Libraries…</button>
-        <button role="menuitem" id="add-library" title="A haxelib release or a GitHub repository: its haxe_libraries file, as lix writes it, and -lib in the build's hxml">Add library…</button>
-        <button role="menuitem" id="add-library-zip" title="A haxelib release's zip, from lib.haxe.org, for when the page cannot download it">Add library zip…</button>
         <hr role="separator">
         <button role="menuitem" id="reset" title="Back to the Example project, losing your changes">Reset to Example project…</button>
       </div>
@@ -276,8 +274,9 @@
     <ul id="libs-cached" class="libs" aria-labelledby="libs-cached-h"></ul>
     <div class="actions">
       <button value="ok" class="primary" id="libs-close">Close</button>
-      <button type="button" id="libs-add">Add library…</button>
-      <button type="button" id="libs-clear">Clear library cache…</button>
+      <button type="button" id="libs-add" title="A haxelib release or a GitHub repository: its haxe_libraries file, as lix writes it, and -lib in the build's hxml">Add library…</button>
+      <button type="button" id="libs-zip" title="A haxelib release's zip, from lib.haxe.org, for when the page cannot download it">Add library zip…</button>
+      <button type="button" id="libs-clear" title="Remove the libraries downloaded into this browser; the project's files are not touched">Clear library cache…</button>
     </div>
   </form>
 </dialog>
@@ -840,7 +839,7 @@ function parseHxml(file) {
         } else if (IN_EXTENSION) {
           // its newest release, asked of haxelib when the libraries are prepared
           cfg.libs.push({ name, unpinned: true, at: here, haxelib: true });
-        } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml (Project > Add library…)`);
+        } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml (Project > Libraries… > Add library…)`);
       }
       else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
       else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: the page builds JavaScript (--js)`);
@@ -1010,7 +1009,7 @@ async function downloadLibrary(lib) {
       catch (e) { tried.push(url); }
     }
     if (IN_EXTENSION) throw new LibraryError(`${m[1]} ${m[2]}: haxelib has no such release (or it couldn't be reached)`, lib.at);
-    throw new LibraryError(`${m[1]} ${m[2]}: the page couldn't download it (haxelib doesn't let pages read its files, and this site has no haxelib relay). Download it from https://lib.haxe.org/p/${m[1]}/${m[2]}/download/ and add it with Project > Add library zip…`, lib.at);
+    throw new LibraryError(`${m[1]} ${m[2]}: the page couldn't download it (haxelib doesn't let pages read its files, and this site has no haxelib relay). Download it from https://lib.haxe.org/p/${m[1]}/${m[2]}/download/ and add it with Project > Libraries… > Add library zip…`, lib.at);
   }
   if ((m = /^gh:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?#(.+)$/.exec(src))) {
     const [, owner, repo, ref] = m;
@@ -1103,7 +1102,7 @@ async function prepareLibraries(cfg) {
       const v = await haxelibNewest(lib.name, lib.at);
       Object.assign(lib, { version: v, source: `haxelib:/${lib.name}#${v}`, dir: `${lib.name}/${v}/haxelib` });
     }
-    cfg.notes.push(`${lib.name}: haxelib's newest, ${lib.version} (pin it: -lib ${lib.name}:${lib.version}, or Project > Add library…)`);
+    cfg.notes.push(`${lib.name}: haxelib's newest, ${lib.version} (pin it: -lib ${lib.name}:${lib.version}, or Project > Libraries… > Add library…)`);
   }
   const queue = cfg.libs.slice(), done = new Set(), args = [], dirs = [];
   while (queue.length) {
@@ -3062,7 +3061,12 @@ async function addLibrary(spec, replace) {
   libFiles.delete(lib.dir);
   return { lib, wrote, needs };
 }
-$("add-library").onclick = () => attempt(async () => {
+// (from Libraries…, which shows again after, with the library in its lists)
+$("libs-add").onclick = () => attempt(async () => {
+  $("libs").close();
+  try { return await addLibraryAsked(); } finally { await showLibraries(); }
+});
+async function addLibraryAsked() {
   const cfg = buildConfig();
   const spec = await askPerson({ title: "Add library",
     text: (IN_EXTENSION ? "A haxelib library as name (its newest release) or name:version (format:3.7.0)" : "A haxelib release as name:version (format:3.7.0)") + ", or a GitHub repository as https://github.com/owner/repo (#ref for a branch, a tag or a commit; none: its default branch). A name before or after the address gives the library that name, and a haxelib git command works as typed. Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
@@ -3074,7 +3078,7 @@ $("add-library").onclick = () => attempt(async () => {
   const r = await build();
   status(`${added.lib.name} ${added.lib.version} added (${added.wrote.join(", ")})` + (added.lib.guessed ? `; it has no haxelib.json: its class path is taken to be src/` : "") + (added.needs.length ? `; it needs ${added.needs.join(", ")} too, with a version: Add library… for each` : "") + (r.ok ? "" : "; the build failed"));
   return r;
-});
+}
 // a haxelib release's zip, added by hand to the library cache (as -lib name:version and
 // lix's haxelib: entries expect it), for when the page can't download it
 async function addLibraryZip(bytes) {
@@ -3088,7 +3092,7 @@ async function addLibraryZip(bytes) {
   status(`${meta.name} ${meta.version} added to the libraries`);
   return lib;
 }
-$("add-library-zip").onclick = () => $("libfile").click();
+$("libs-zip").onclick = () => { $("libs").close(); $("libfile").click(); };
 // ---- Project > Libraries…: what the project uses (its -lib lines and haxe_libraries files),
 // and what's downloaded in this browser (the library cache, every project's), with Use (the
 // library into this project: lix's file and -lib, from the cache, no download) and Remove
@@ -3184,7 +3188,6 @@ async function showLibraries() {
   if (!$("libs").open) { $("libs").showModal(); $("libs-close").focus(); }
 }
 $("libraries").onclick = () => attempt(showLibraries);
-$("libs-add").onclick = () => { $("libs").close(); $("add-library").click(); };
 $("libs-clear").onclick = () => attempt(async () => { await clearLibraryCacheAsked(); await showLibraries(); });
 // ---- Clear library cache…: the libraries downloaded into this browser, gone; they come
 // again at the next build that uses them. Only /libcache: the project (the browser's, or a
@@ -3228,7 +3231,9 @@ $("libfile").onchange = () => attempt(async () => {
   $("libfile").value = "";
   if (!file) return;
   await addLibraryZip(new Uint8Array(await file.arrayBuffer()));
-  return build();
+  const r = await build();
+  await showLibraries(); // the zip's library, in the cached list
+  return r;
 });
 $("export").onclick = () => {
   const a = document.createElement("a");

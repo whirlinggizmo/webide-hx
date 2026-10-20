@@ -185,14 +185,14 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       downloaded once per browser into a shared cache (IndexedDB at /libcache), hashed and
       pinned. haxelib releases: haxelib-files.haxe.org once it allows it (haxelib#693,
       opened), else the site's haxelib/ relay (serve.py locally; `hosting/`'s nginx mirror on a
-      server), else Project > Add library zip…. Git: jsDelivr (GitHub), GitLab's archive. The page test builds with
+      server), else Add library zip… (Project > Libraries…). Git: jsDelivr (GitHub), GitLab's archive. The page test builds with
       format 3.7.0 both ways. 2026-10-18.
 - [~] Unpinned `-lib name`: the newest version needs haxelib's API (Haxe remoting on
       lib.haxe.org, no CORS). Done in the all-in-one extension (2026-10-20: the newest, said
       in each build's output with how to pin it; dependencies without a version too; Add
       library… with a name alone). On the web it still asks for a version or a lix file; the
       mirror could pass the API through.
-- [x] Project > Add library…: `lix install` in the page. name:version (haxelib) or
+- [x] Add library… (now in Project > Libraries…): `lix install` in the page. name:version (haxelib) or
       gh://github.com/owner/repo#ref (made a commit by GitHub's API); lix's file for it
       and for each dependency with a version, then -lib in the build's hxml. Dependencies
       without a version are named for the person to add. Tests: the page test (lix's text

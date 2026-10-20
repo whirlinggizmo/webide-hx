@@ -191,7 +191,7 @@ over when the project changes, and closing it makes it Embedded again. The edito
 has to stay open: it's the compiler.
 **Project** has Build (also the button, and Ctrl-S), Select hxml… (which of the project's
 hxml files the page builds from; see below), Open folder (local)…, Import zip…, Export zip,
-Libraries…, Add library…, Add library zip… and Reset to Example project… (menus that work by keyboard too:
+Libraries… and Reset to Example project… (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
 
@@ -270,7 +270,7 @@ by every project in it (each version downloaded once):
   version nor a lix file is refused, asking for one: the page can't ask haxelib for the
   newest.
 
-**Project > Add library…** does what `lix install` does: give it a haxelib release as
+**Add library…** (in Project > Libraries…) does what `lix install` does: give it a haxelib release as
 `name:version` (`format:3.7.0`), or a GitHub repository as `gh://github.com/owner/repo#ref`
 (a branch, a tag or a commit; it's pinned to the commit). It downloads the library, writes
 `haxe_libraries/<name>.hxml` as lix writes it (the define, where it comes from, its
@@ -293,7 +293,7 @@ Where from:
 
 | Source | How |
 |---|---|
-| `haxelib:/name#1.2.3`, `-lib name:1.2.3` | haxelib-files.haxe.org, if it ever lets pages read it (HaxeFoundation/haxelib#693); else this site's `haxelib/` relay (`serve.py`, or the mirror in `hosting/`); else a zip you download from lib.haxe.org and add with Project > Add library zip… |
+| `haxelib:/name#1.2.3`, `-lib name:1.2.3` | haxelib-files.haxe.org, if it ever lets pages read it (HaxeFoundation/haxelib#693); else this site's `haxelib/` relay (`serve.py`, or the mirror in `hosting/`); else a zip you download from lib.haxe.org and add with Project > Libraries… > Add library zip… |
 | `gh://github.com/owner/repo#commit` | jsDelivr, file by file: works on any hosting (Add library… takes only the library's part of the repository: its class path, haxelib.json and extraParams.hxml); the all-in-one extension gets GitHub's zip in one request |
 | `gitlab://gitlab.com/owner/repo#ref` | GitLab's archive |
 | `https://…` | a zip, as it is |

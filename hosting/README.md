@@ -7,7 +7,7 @@ releases, which haxelib's file server doesn't let web pages read
 server of your own, this directory is a service that does both: one nginx container
 serving the page and a caching mirror of haxelib's release files, on the same site. Without
 it, the page still builds with libraries pinned to a git commit (lix's `gh:` entries,
-through jsDelivr) and with releases added by hand (Project > Add library zip…).
+through jsDelivr) and with releases added by hand (Project > Libraries… > Add library zip…).
 
 - `docker-compose.yml`: the container, on `127.0.0.1:10081` only, with the mirror's cache
   in a volume of its own.
