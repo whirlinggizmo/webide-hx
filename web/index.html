@@ -402,6 +402,7 @@ function asData(bytes) {
 const project = {
   root: "/browser",
   folder: null, // the open folder's handle; null when the project is the browser's
+  disk: null,   // ZenFS's file system for it
   path(name) { return this.root + "/" + name; },
   open() {
     return FS.configure({ mounts: {
@@ -413,7 +414,7 @@ const project = {
     const mounted = await FS.resolveMountConfig({ backend: FS.WebAccess, handle });
     if (this.folder) FS.umount("/folder");
     FS.mount("/folder", mounted);
-    this.root = "/folder"; this.folder = handle;
+    this.root = "/folder"; this.folder = handle; this.disk = mounted; // (the test slows its writes)
   },
   // a folder on disk, read again: ZenFS reads its whole tree when it's mounted and doesn't
   // see what changes outside the page after (another editor, git), so whatever works on a
@@ -423,7 +424,7 @@ const project = {
   },
   useBrowser() {
     if (this.folder) FS.umount("/folder");
-    this.root = "/browser"; this.folder = null;
+    this.root = "/browser"; this.folder = null; this.disk = null;
   },
   // every file, {name: data}, and every folder; files too big to take, by name, in `skipped`
   async load() {
@@ -442,15 +443,21 @@ const project = {
     return { files, skipped, dirs };
   },
   // in a folder, a write first checks the file wasn't changed by something else since the
-  // page read it (asking which version to keep if it was), and notes its new time after
+  // page read it (asking which version to keep if it was), and notes its new time after. A
+  // file's writes go one at a time: one checking while the last is still going (a real disk
+  // can be slow: Chromium checks each write as it's closed) would find that one's time, not
+  // noted yet, and take it for a change made outside
   async put(name, data) {
-    return folderOp(async () => {
+    const last = writing.get(name) || Promise.resolve();
+    const now = last.catch(() => {}).then(() => folderOp(async () => {
       if (this.folder && !(await folderWriteOk(name, data))) return;
       const p = this.path(name);
       await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
       await FS.fs.promises.writeFile(p, data);
       if (this.folder) await stamp(name);
-    });
+    }));
+    writing.set(name, now);
+    try { return await now; } finally { if (writing.get(name) === now) writing.delete(name); }
   },
   async remove(name) {
     return folderOp(async () => { await FS.fs.promises.rm(this.path(name), { force: true }); stamps.delete(name); });
@@ -534,6 +541,7 @@ const remembered = {
 // edit in another editor reloads the program as one in the page does. The look is skipped
 // while the page is changing the folder itself, and thrown away if it started to
 const stamps = new Map();
+const writing = new Map(); // a file -> its write going on (the next waits for it)
 const heldWrites = new Set(); // asked which version to keep, not answered yet: left alone
 let folderOps = 0, folderGen = 0, folderLooking = false;
 async function folderOp(f) {
@@ -3962,6 +3970,35 @@ async function test() {
        && JSON.stringify((await project.load()).files) === browserFiles, Object.keys(onDisk));
   await newFile("src/extra/Extra.hx");
   step("a new file is made in the folder", await read("src/extra/Extra.hx") === "package extra;\n\nclass Extra {\n}\n", await read("src/extra/Extra.hx"));
+  // saved again soon after, a few times, shorter and longer: the page's own writes aren't taken
+  // for changes made outside (ZenFS writes a shorter file in two goes, the second, cutting it
+  // to its size, after it says it's done: the file's time is noted after that)
+  let askedOwn = false;
+  show("src/extra/Extra.hx");
+  for (let i = 1; i <= 4; i++) {
+    files["src/extra/Extra.hx"] = `package extra;\n\nclass Extra { // ${i}${i % 2 ? " and a longer line" : ""}\n}\n`;
+    let saving = true;
+    save().finally(() => { saving = false; });
+    // (asked, the save waits for an answer: the page's version is kept)
+    if (await until(() => !saving || $("dialog").open, 15000) && $("dialog").open) { askedOwn = true; $("dialog-select").value = "page"; $("dialog-ok").click(); }
+    await until(() => !saving, 15000);
+    await new Promise((r) => setTimeout(r, 60));
+  }
+  step("a file saved again soon after: not asked about the page's own writes", !askedOwn && (await read("src/extra/Extra.hx")).includes("// 4"), await read("src/extra/Extra.hx"));
+  // a slow disk (a real one: Chromium checks each write as it's closed): saved again, by hand
+  // or as you type, while the last write is still going. Not asked either; the last one stays
+  const fastWrite = project.disk.write;
+  project.disk.write = async function (...a) { const r = await fastWrite.apply(this, a); await new Promise((res) => setTimeout(res, 300)); return r; };
+  let askedSlow = false;
+  const slowWrites = [project.put("src/extra/Extra.hx", "package extra;\n\nclass Extra { // slow one, a longer line\n}\n")];
+  await new Promise((r) => setTimeout(r, 100));
+  slowWrites.push(project.put("src/extra/Extra.hx", "package extra;\n\nclass Extra { // slow two\n}\n"));
+  let slowDone = false;
+  Promise.all(slowWrites).finally(() => { slowDone = true; });
+  if (await until(() => slowDone || $("dialog").open, 15000) && $("dialog").open) { askedSlow = true; $("dialog-select").value = "page"; $("dialog-ok").click(); }
+  await until(() => slowDone, 15000);
+  project.disk.write = fastWrite;
+  step("a write while the last is still going (a slow disk): not asked; the last one stays", !askedSlow && (await read("src/extra/Extra.hx")).includes("slow two"), await read("src/extra/Extra.hx"));
   await renameFile("notes/readme.md", "notes/README.md");
   step("a rename moves the file in the folder", await read("notes/README.md") === "# notes\n" && await read("notes/readme.md") === null);
   await deleteFile("src/extra/Extra.hx");
