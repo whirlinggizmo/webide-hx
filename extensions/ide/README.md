@@ -11,8 +11,10 @@ script moved to `ide.js` (an extension's pages can't have inline scripts). Load 
 directory with Load unpacked (`chrome://extensions`, Developer mode); the toolbar button
 opens the IDE.
 
-- `manifest.json`: Manifest V3; `debugger` (the IDE's debugger, built in) and
-  `unlimitedStorage` (projects and libraries kept for good).
+- `manifest.json`: Manifest V3; `debugger` (the IDE's debugger, built in),
+  `unlimitedStorage` (projects and libraries kept for good), and the sites libraries come
+  from (haxelib's files and API, GitHub's API, jsDelivr, GitLab), which an extension's page
+  can read where a web page can't (no mirror needed).
 - `background.js`: the toolbar button opens the IDE's tab.
 - `runner.html`, `shim.js`: the app's runner. A sandboxed page of the extension's: its own
   process, no storage, none of the extension's powers, no access to the IDE. It can't have

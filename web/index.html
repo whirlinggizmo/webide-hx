@@ -910,6 +910,7 @@ async function downloadLibrary(lib) {
       try { const bytes = await fetchBytes(url); return { files: zipFiles(bytes, true), hash: await sha256([bytes]), from: url }; }
       catch (e) { tried.push(url); }
     }
+    if (IN_EXTENSION) throw new LibraryError(`${m[1]} ${m[2]}: haxelib has no such release (or it couldn't be reached)`, lib.at);
     throw new LibraryError(`${m[1]} ${m[2]}: the page couldn't download it (haxelib doesn't let pages read its files, and this site has no haxelib relay). Download it from https://lib.haxe.org/p/${m[1]}/${m[2]}/download/ and add it with Project > Add library zip…`, lib.at);
   }
   if ((m = /^gh:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?#(.+)$/.exec(src))) {
@@ -1812,6 +1813,7 @@ const dbg = {
   calls: new Map(), n: 0,
 };
 function dbgCall(cmd, extra) {
+  if (IN_EXTENSION) return dbgLocal(cmd, extra);
   return new Promise((resolve, reject) => {
     const id = ++dbg.n;
     dbg.calls.set(id, (m) => m.error ? reject(new Error(m.error)) : resolve(m.result));
@@ -1827,6 +1829,33 @@ addEventListener("message", (e) => {
   else if (m.webideDebugger === "event") dbgEvent(m.event, m.params || {}, m.sessionId);
 });
 window.postMessage({ webideDebugger: "hello" }, location.origin);
+// in the all-in-one extension, the IDE is an extension page with the debugger permission: it
+// drives chrome.debugger itself, as the debugger extension's worker does (background.js):
+// its own tab, the app's runner a child session, events to dbgEvent
+let dbgTab = null;
+async function dbgLocal(cmd, extra) {
+  if (!dbgTab) {
+    dbgTab = { tabId: (await chrome.tabs.getCurrent()).id };
+    chrome.debugger.onEvent.addListener((source, method, params) => {
+      if (source.tabId !== dbgTab.tabId) return;
+      if (method === "Target.attachedToTarget") {
+        const child = { tabId: dbgTab.tabId, sessionId: params.sessionId };
+        chrome.debugger.sendCommand(child, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }).catch(() => {});
+        chrome.debugger.sendCommand(child, "Runtime.runIfWaitingForDebugger").catch(() => {});
+      }
+      dbgEvent(method, params, source.sessionId || null);
+    });
+    chrome.debugger.onDetach.addListener((source, reason) => { if (source.tabId === dbgTab.tabId) dbgEvent("detached", { reason }, null); });
+  }
+  if (cmd === "attach") {
+    try { await chrome.debugger.attach(dbgTab, "1.3"); } catch (e) { if (!/already attached/i.test(e.message)) throw e; }
+    return chrome.debugger.sendCommand(dbgTab, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
+  }
+  if (cmd === "detach") return chrome.debugger.detach(dbgTab).catch(() => {});
+  if (cmd === "send") return chrome.debugger.sendCommand({ tabId: dbgTab.tabId, sessionId: extra.sessionId }, extra.method, extra.params || {});
+  throw new Error("unknown command " + cmd);
+}
+if (IN_EXTENSION && typeof chrome !== "undefined" && chrome.debugger) dbg.present = true;
 // found: the gutter comes (each file's editor is made again with it), and the panel
 function dbgFound() {
   dbg.present = true;
@@ -1878,8 +1907,8 @@ function dbgEvent(method, p, sessionId) {
   if (method === "Target.detachedFromTarget" && p.sessionId === dbg.session) { dbg.session = null; dbg.scripts.clear(); dbg.placed = []; dbgResumed(); return; }
   if (sessionId !== dbg.session) return;
   if (method === "Debugger.scriptParsed") {
-    // a bundle of the app's (its map inline): its breakpoints placed
-    if (/\/run\//.test(p.url) && p.sourceMapURL && p.sourceMapURL.startsWith("data:")) {
+    // a bundle of the app's (its map inline; in the extension, a blob URL): its breakpoints placed
+    if ((/\/run\//.test(p.url) || (IN_EXTENSION && p.url.startsWith("blob:"))) && p.sourceMapURL && p.sourceMapURL.startsWith("data:")) {
       dbg.scripts.set(p.scriptId, { url: p.url, mapUrl: p.sourceMapURL, map: null, context: p.executionContextId });
       clearTimeout(dbg.placeSoon);
       dbg.placeSoon = setTimeout(dbgPlace, 30);
@@ -2297,9 +2326,9 @@ function showWhere() {
   const cfg = buildConfig();
   // where the project is (browsers tell a page a local folder's name, never its path), and
   // what it builds from
-  $("where-project").textContent = project.folder ? `[ Local Folder: ${project.folder.name} ]` : "[ Browser Hosted ]";
+  $("where-project").textContent = project.folder ? `[ Local Folder: ${project.folder.name} ]` : IN_EXTENSION ? "[ Extension Hosted ]" : "[ Browser Hosted ]";
   $("where-project").title = project.folder ? `The project is stored on this computer, in the folder ${project.folder.name}`
-    : "The project is stored in this browser" + (storageKept ? ", which keeps it until the site's data is cleared" : ", which may delete it when space runs low (Export zip keeps a copy)");
+    : (IN_EXTENSION ? "The project is stored in this extension, in this browser" : "The project is stored in this browser") + (storageKept ? ", which keeps it until the site's data is cleared" : ", which may delete it when space runs low (Export zip keeps a copy)");
   $("where-build").textContent = "hxml: " + (cfg.file || "none");
   $("where-build").title = cfg.file ? "The hxml file used for builds" : "No hxml file: builds use src/ and the class Main";
   $("folder").textContent = project.folder ? "Close folder (local)" : reopen ? `Reopen ${reopen.name} (local)…` : "Open folder (local)…";
@@ -2315,6 +2344,8 @@ let reopen = null; // a folder from the last visit, waiting for the person's per
 // and the answer can take as long as they like, so nothing waits for it
 let storageKept = false;
 async function keepStorage() {
+  // the all-in-one extension has unlimitedStorage: its storage is never cleared for space
+  if (IN_EXTENSION) { storageKept = true; showWhere(); return true; }
   try { storageKept = await navigator.storage.persisted() || await navigator.storage.persist(); } catch (e) { storageKept = false; }
   showWhere();
   return storageKept;

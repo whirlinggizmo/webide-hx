@@ -3,6 +3,8 @@
 //     brave --headless=new --remote-debugging-port=9333 --user-data-dir=TMP \
 //           --load-extension=extensions/debugger --disable-extensions-except=extensions/debugger URL/
 //     node tests/debugger.js 9333
+// or the all-in-one extension's IDE, whose debugger is built in: a browser started with
+// --load-extension=build/extension-ide, its chrome-extension://<id>/index.html open
 // Breakpoints from the gutter stop the app (no DevTools): the stop's call stack, variables
 // and line in the editor; the IDE going on meanwhile; step over; a breakpoint removed while
 // stopped there (no stop after); a hollow dot where a line has no code; a breakpoint that
@@ -35,7 +37,8 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
 
 (async function () {
   var targets = await (await fetch("http://127.0.0.1:" + port + "/json")).json();
-  var page = targets.find(function (t) { return t.type === "page" && /^https?:\/\/[^/]+\/(index\.html)?(\?.*)?$/.test(t.url); });
+  // the web IDE, or the all-in-one extension's (its debugger built in)
+  var page = targets.find(function (t) { return t.type === "page" && (/^https?:\/\/[^/]+\/(index\.html)?(\?.*)?$/.test(t.url) || /^chrome-extension:\/\/[a-p]{32}\/index\.html/.test(t.url)); });
   if (!page) { console.log("no IDE page among the targets"); process.exit(1); }
   ws = new WebSocket(page.webSocketDebuggerUrl);
   ws.onmessage = function (e) { var m = JSON.parse(e.data); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m.result || m); waiting.delete(m.id); } };

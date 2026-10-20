@@ -22,5 +22,13 @@
     "pages": [
       "runner.html"
     ]
-  }
+  },
+  "host_permissions": [
+    "https://haxelib-files.haxe.org/*",
+    "https://lib.haxe.org/*",
+    "https://api.github.com/*",
+    "https://data.jsdelivr.com/*",
+    "https://cdn.jsdelivr.net/*",
+    "https://gitlab.com/*"
+  ]
 }
