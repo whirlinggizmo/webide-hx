@@ -144,7 +144,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   var opts = JSON.parse(await ev("JSON.stringify([...$('dialog-select').options].map(o => [o.value, o.disabled]))"));
   step("Select hxml… lists the hxml files, those it can't build from turned off, and No hxml file", await ev("$('dialog-select').value") === "web-build.hxml"
        && opts.some(function (o) { return o[0] === "web.hxml" && o[1]; }) && opts.some(function (o) { return o[0] === "" && !o[1]; })
-       && await ev("[...$('dialog-select').options].some(o => o.value === '' && o.textContent === 'No hxml file (src/ for code, Main as the main class)')"), opts);
+       && await ev("[...$('dialog-select').options].some(o => o.value === '' && o.textContent === 'No hxml file: src/ for code, Main as the main class')"), opts);
   await ev("$('dialog-select').value = ''");
   await click(await box("#dialog-ok"));
   await sleep(2500);
