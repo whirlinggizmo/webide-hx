@@ -365,6 +365,20 @@ DevTools under `file://` as the compiler's paths (`/static/src/Hello.hx`). Open 
 `node tests/devtools.js PORT` checks this against a Chromium-based browser started with
 `--remote-debugging-port=PORT` on the IDE (`/`).
 
+Breakpoints can be set in the IDE too: a click in the gutter left of the line numbers, F9
+(as in VS Code), or App > Toggle breakpoint. A page can't open DevTools or set its
+breakpoints, so a build puts `js.Lib.debug();` (`debugger;` in JavaScript) at the start of
+each breakpoint's line, in the text the compiler gets for the app, never in the file. With
+DevTools open, the app stops there by itself, at the `.hx` line; with it closed, nothing
+happens. The build's source map is given the file's own text back, and that line's columns,
+so DevTools shows the file as it is. A breakpoint goes where a statement can start: when one
+is set, the compiler checks the code with it there, and a line where it doesn't compile (a
+declaration, the middle of an expression, a blank line) shows a hollow dot and is left out
+of builds. A closing brace is fine: the app stops before leaving the block. Breakpoints
+move with the text as it's edited and are kept per project, in this browser. Toggling one
+is a reload build (about 0.1 s). The app has its own process, so while it's stopped the IDE
+keeps working.
+
 Text crosses between the page and the compiler as UTF-8: the compiler's filesystem holds
 bytes, so `resident-worker.js` encodes sources and decodes output, and the standard
 library's on-demand fetch keeps bytes as bytes.

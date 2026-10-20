@@ -217,12 +217,15 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 
-- [ ] Breakpoints set in the IDE's gutter, paused in DevTools: a page can't open DevTools
+- [x] Breakpoints set in the IDE's gutter, paused in DevTools: a page can't open DevTools
       or set its breakpoints, but `debugger;` pauses there when DevTools is open (and does
       nothing when it isn't). So a breakpoint on a line puts `js.Lib.debug();` at its start
       in the source the compiler gets (not the file), on the same line, so the source map
       still points at it; a toggle is a reload build (~100 ms). Only where a statement can
-      start: a line where it doesn't compile is refused. (Rob's idea, 2026-10-19.)
+      start: a line where it doesn't compile is refused. (Rob's idea, 2026-10-19.) Done 2026-10-20: F9 and App > Toggle breakpoint too; the line
+      checked by the compiler when set (a closing brace works: the app stops before leaving
+      the block); the source map given the file's own text and columns back; kept per
+      project. The DevTools test stops the app from an IDE breakpoint alone.
 - [ ] Pausing in the IDE itself, without DevTools: page JavaScript can't drive the
       browser's debugger. The routes: a native host speaking the browser's debugging
       protocol (an install again), or instrumenting the compiled code to report lines and

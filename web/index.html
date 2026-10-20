@@ -95,6 +95,12 @@
   #viewing span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #viewing button { border: 0; background: transparent; padding: 0 6px; font-size: 15px; line-height: 1; color: var(--muted); }
   #editor .cm-editor { height: 100%; }
+  /* breakpoints: a red dot; hollow where no statement starts (the app can't stop there) */
+  .cm-breakpoints .cm-gutterElement { width: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .bp { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; }
+  .bp-ok { background: #e51400; }
+  .bp-checking { background: #e5140066; }
+  .bp-bad { border: 1.5px solid #888; }
   #editor .hover { max-width: 520px; padding: 4px 8px; font-size: 12px; }
   #editor .hover code { font-family: ui-monospace, monospace; white-space: pre-wrap; }
   #editor .signature b { color: var(--accent); }
@@ -156,6 +162,9 @@
         <button role="menuitemradio" id="app-floating" aria-checked="false">Floating window</button>
         <hr role="separator">
         <button role="menuitem" id="app-restart">Restart</button>
+        <hr role="separator">
+        <button role="menuitem" id="bp-toggle" title="Pause the app on the line with the cursor, when DevTools is open (F12)">Toggle breakpoint<kbd>F9</kbd></button>
+        <button role="menuitem" id="bp-clear">Remove all breakpoints</button>
         <button role="menuitem" id="app-tab" title="Another copy of the app, in a new tab: it reloads with each build, and starts over when the tab is reloaded">Open in new tab</button>
       </div>
     </div>
@@ -1278,7 +1287,7 @@ async function codeSources(cfg) {
 async function build() {
   syncEditor();
   const sources = {};
-  for (const f of names()) if (isCode(f)) sources["/static/" + f] = files[f];
+  for (const f of names()) if (isCode(f)) sources["/static/" + f] = withBreaks(f, files[f]);
   const cfg = buildConfig();
   showWhere();
   // another build file, or a change to one: what's code, the output and the main class may
@@ -1315,6 +1324,7 @@ async function build() {
   done();
   if (r.code >= 0) compilerUp = true;
   const messages = parseMessages(r.stderr);
+  withoutBreaks(messages.byFile);
   showDiagnostics(messages.byFile);
   if (r.code !== 0 || !r.output) {
     status("build failed; the program keeps what it has");
@@ -1322,7 +1332,7 @@ async function build() {
     return { ok: false, r };
   }
   version++;
-  await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
+  await tell({ type: "build", name: baseOf(cfg.out), version, js: mapWithoutBreaks(r.output) });
   // nothing running yet (the project's first build failed): this build starts it
   if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
   buildStatus = `build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "");
@@ -1605,11 +1615,205 @@ function savePrefs() {
 }
 dark.addEventListener("change", applyPrefs);
 
+// ---- breakpoints: set in the gutter (a click, or F9 as in VS Code), kept per file as the
+// text moves under them, and per project. A build puts `js.Lib.debug();` (debugger; in
+// JavaScript) at the start of each one's line, in the text the compiler gets for the app,
+// never in the file: so the app stops there when DevTools is open (F12), and DevTools shows
+// the .hx line (the source map). It goes where a statement can start: when one is set, the
+// compiler is asked whether the line compiles with it (a --no-output check); a line where it
+// doesn't is shown hollow and left out of builds
+const BREAK = "js.Lib.debug(); ";
+const breakpoints = new Map(); // file -> Map(line -> "ok" | "bad" | "checking")
+let BP = null;                 // the editor's parts: {field, toggle, kind, all, gutter}
+function breakpointSetup() {
+  class BreakMarker extends CM.GutterMarker {
+    constructor(kind) { super(); this.kind = kind; }
+    eq(o) { return o.kind === this.kind; }
+    toDOM() {
+      const d = document.createElement("div");
+      d.className = "bp bp-" + this.kind;
+      d.title = this.kind === "bad" ? "No statement starts on this line, so the app cannot stop here (click to remove)"
+        : this.kind === "checking" ? "Checking the line" : "Breakpoint: the app pauses here when DevTools is open (F12). Click to remove";
+      return d;
+    }
+  }
+  const marker = (kind) => new BreakMarker(kind);
+  const toggle = CM.StateEffect.define(), kind = CM.StateEffect.define(), all = CM.StateEffect.define();
+  const field = CM.StateField.define({
+    create: () => CM.RangeSet.empty,
+    update(set, tr) {
+      set = set.map(tr.changes);
+      for (const e of tr.effects) {
+        const doc = tr.state.doc;
+        if (e.is(all)) set = CM.RangeSet.of([...e.value].filter(([n]) => n >= 1 && n <= doc.lines).sort((a, b) => a[0] - b[0]).map(([n, k]) => marker(k).range(doc.line(n).from)));
+        else if (e.is(toggle)) {
+          const line = doc.lineAt(e.value);
+          let has = false;
+          set.between(line.from, line.to, () => { has = true; });
+          set = has ? set.update({ filter: (f) => f < line.from || f > line.to }) : set.update({ add: [marker("checking").range(line.from)] });
+        } else if (e.is(kind)) {
+          if (e.value.line > doc.lines) continue;
+          const line = doc.line(e.value.line);
+          let has = false;
+          set.between(line.from, line.to, () => { has = true; });
+          if (has) set = set.update({ filter: (f) => f < line.from || f > line.to, add: [marker(e.value.kind).range(line.from)] });
+        }
+      }
+      return set;
+    },
+  });
+  const gutter = CM.gutter({
+    class: "cm-breakpoints",
+    markers: (v) => v.state.field(field),
+    initialSpacer: () => marker("ok"),
+    domEventHandlers: { mousedown(v, line) { toggleBreakpoint(v, line.from); return true; } },
+  });
+  BP = { field, toggle, kind, all, gutter };
+}
+// a state's breakpoints: line -> kind
+function breakLines(state) {
+  const out = new Map(), set = state.field(BP.field, false);
+  if (set) set.between(0, state.doc.length, (from, to, m) => { const n = state.doc.lineAt(from).number; if (!out.has(n)) out.set(n, m.kind); });
+  return out;
+}
+const breakKey = () => "webide-hx-breakpoints" + (TESTING ? "-test" : "") + ":" + (project.folder ? "folder:" + project.folder.name : "browser");
+function saveBreakpoints() {
+  const o = {};
+  for (const [f, m] of breakpoints) if (m.size && f in files) o[f] = [...m];
+  try { localStorage.setItem(breakKey(), JSON.stringify(o)); } catch (e) {}
+}
+function loadBreakpoints() {
+  breakpoints.clear();
+  let o = {};
+  try { o = JSON.parse(localStorage.getItem(breakKey())) || {}; } catch (e) {}
+  for (const [f, list] of Object.entries(o)) breakpoints.set(f, new Map(list.map(([n, k]) => [n, k === "checking" ? "ok" : k])));
+}
+// the text the compiler gets for the app: each usable breakpoint's line with the call first
+function withBreaks(name, text) {
+  const bps = breakpoints.get(name);
+  if (!bps || !bps.size) return text;
+  const lines = text.split("\n");
+  for (const [n, k] of bps) {
+    if (k !== "ok" || n > lines.length) continue;
+    const at = lines[n - 1].search(/\S/);
+    if (at >= 0) lines[n - 1] = lines[n - 1].slice(0, at) + BREAK + lines[n - 1].slice(at);
+  }
+  return lines.join("\n");
+}
+// a build's messages on those lines, back to the columns of the file as it is
+function withoutBreaks(byFile) {
+  for (const [f, list] of byFile) {
+    const bps = breakpoints.get(f);
+    if (!bps) continue;
+    const lines = (files[f] || "").split("\n");
+    for (const d of list) {
+      if (bps.get(d.line) !== "ok" || d.from === null) continue;
+      const at = (lines[d.line - 1] || "").search(/\S/);
+      if (d.from - 1 >= at + BREAK.length) { d.from -= BREAK.length; if (d.lastLine === null) d.to -= BREAK.length; }
+    }
+  }
+  return byFile;
+}
+// the bundle's source map (inline, base64), as if the breakpoints' calls weren't there: the
+// files' own text, and on their lines the columns after a call moved back by its length.
+// So DevTools shows the file as it is
+const VLQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+function vlqDecode(seg) {
+  const out = [];
+  let value = 0, shift = 0;
+  for (const c of seg) {
+    const d = VLQ.indexOf(c);
+    value += (d & 31) << shift;
+    if (d & 32) { shift += 5; continue; }
+    out.push(value & 1 ? -(value >>> 1) : value >>> 1);
+    value = 0; shift = 0;
+  }
+  return out;
+}
+function vlqEncode(n) {
+  let v = n < 0 ? (-n << 1) | 1 : n << 1, out = "";
+  do { let d = v & 31; v >>>= 5; if (v) d |= 32; out += VLQ[d]; } while (v);
+  return out;
+}
+const MAP_URL = "\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,";
+function mapWithoutBreaks(js) {
+  const used = [...breakpoints].filter(([f, m]) => f in files && [...m.values()].includes("ok"));
+  const at = js.lastIndexOf(MAP_URL);
+  if (!used.length || at < 0) return js;
+  const bin = atob(js.slice(at + MAP_URL.length).trim());
+  const map = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))));
+  // per source index: {line -> the column where the call starts} for lines that have one
+  const moved = new Map();
+  for (const [f, m] of used) {
+    const i = map.sources.findIndex((s) => s.endsWith("/static/" + f));
+    if (i < 0) continue;
+    if (map.sourcesContent) map.sourcesContent[i] = files[f];
+    const lines = files[f].split("\n"), cols = new Map();
+    for (const [n, k] of m) if (k === "ok" && lines[n - 1] !== undefined && lines[n - 1].trim()) cols.set(n - 1, lines[n - 1].search(/\S/));
+    moved.set(i, cols);
+  }
+  let src = 0, sl = 0, sc = 0, nm = 0, osrc = 0, osl = 0, osc = 0, onm = 0;
+  map.mappings = map.mappings.split(";").map((line) => {
+    let gc = 0, ogc = 0;
+    return line.split(",").map((s) => {
+      if (!s) return s;
+      const v = vlqDecode(s);
+      gc += v[0];
+      let out = vlqEncode(gc - ogc); ogc = gc;
+      if (v.length >= 4) {
+        src += v[1]; sl += v[2]; sc += v[3];
+        let c = sc;
+        const cols = moved.get(src);
+        if (cols && cols.has(sl) && sc >= cols.get(sl) + BREAK.length) c = sc - BREAK.length;
+        out += vlqEncode(src - osrc) + vlqEncode(sl - osl) + vlqEncode(c - osc);
+        osrc = src; osl = sl; osc = c;
+        if (v.length >= 5) { nm += v[4]; out += vlqEncode(nm - onm); onm = nm; }
+      }
+      return out;
+    }).join(",");
+  }).join(";");
+  const bytes = new TextEncoder().encode(JSON.stringify(map));
+  let b = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) b += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return js.slice(0, at) + MAP_URL + btoa(b);
+}
+// whether a breakpoint can go on a line: the compiler checks the code with it there; it can if
+// that adds no error. A blank line can't have one
+async function breakpointFits(name, n) {
+  const text = files[name], line = text.split("\n")[n - 1] || "";
+  if (!line.trim()) return false;
+  const cfg = buildConfig();
+  if (!compilerUp || cfg.error) return true; // can't ask yet: the build will say
+  const sources = await codeSources(cfg), key = "/static/" + name, args = buildArgs(true).concat(["--no-output"]);
+  const errors = (r) => [...parseMessages(r.stderr).byFile.values()].flat().filter((d) => d.severity === "error").length;
+  const lines = text.split("\n");
+  lines[n - 1] = line.slice(0, line.search(/\S/)) + BREAK + line.slice(line.search(/\S/));
+  const withIt = await compile(args, Object.assign({}, sources, { [key]: lines.join("\n") }), null);
+  const without = await compile(args, sources, null);
+  return errors(withIt) <= errors(without);
+}
+// a click in the gutter, F9, or the App menu: a breakpoint on the line, or none
+async function toggleBreakpoint(v, pos) {
+  const name = current;
+  if (name === null || !isCode(name) || libraryView) return;
+  v.dispatch({ effects: BP.toggle.of(pos) });
+  const n = v.state.doc.lineAt(pos).number, kind = breakLines(v.state).get(n);
+  if (!kind) { status(`${name}:${n}: breakpoint removed`); return build(); }
+  const fits = await breakpointFits(name, n);
+  const k = fits ? "ok" : "bad";
+  if (current === name) view.dispatch({ effects: BP.kind.of({ line: n, kind: k }) });
+  else if (breakpoints.has(name) && breakpoints.get(name).has(n)) { breakpoints.get(name).set(n, k); saveBreakpoints(); }
+  if (!fits) { status(`${name}:${n}: no statement starts on this line, so the app can't stop here`); return; }
+  const r = await build();
+  if (r && r.ok) status(`${name}:${n}: breakpoint set; the app pauses there when DevTools is open (F12)`);
+  return r;
+}
 function makeState(name) {
   if (!isText(files[name]))
     return CM.EditorState.create({ doc: `${name}: ${files[name].length} bytes, not text; it can't be edited here`,
                                    extensions: [CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), prefExtensions(["theme", "fontSize"])] });
   const ext = [
+    isCode(name) ? [BP.field, BP.gutter, CM.keymap.of([{ key: "F9", preventDefault: true, run: (v) => { toggleBreakpoint(v, v.state.selection.main.head); return true; } }])] : [],
     // CodeMirror's basicSetup, in parts; those a preference turns on and off are in prefExtensions
     CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.dropCursor(), CM.EditorState.allowMultipleSelections.of(true),
     CM.indentOnInput(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
@@ -1625,10 +1829,15 @@ function makeState(name) {
     CM.lintGutter(),
     CM.EditorView.updateListener.of((u) => {
       if (u.docChanged && name === current && name in files) { files[name] = u.state.doc.toString(); keep(name); }
+      if (isCode(name) && (u.docChanged || u.transactions.some((t) => t.effects.length))) {
+        const lines = breakLines(u.state), before = breakpoints.get(name) || new Map();
+        if (JSON.stringify([...lines]) !== JSON.stringify([...before])) { breakpoints.set(name, lines); saveBreakpoints(); }
+      }
     }),
   ];
   if (name.endsWith(".hx")) ext.push(CM.StreamLanguage.define(CM.haxe));
   let st = CM.EditorState.create({ doc: files[name], extensions: ext });
+  if (isCode(name) && breakpoints.has(name)) st = st.update({ effects: BP.all.of(breakpoints.get(name)) }).state;
   const list = diagnostics.get(name);
   if (list && list.length) st = st.update(CM.setDiagnostics(st, toDiagnostics(st.doc, list))).state;
   return st;
@@ -1636,7 +1845,8 @@ function makeState(name) {
 // the editor shows files[current]: after a change made outside it (the test's edits), put it in
 function syncEditor() {
   if (view && current !== null && isText(files[current]) && view.state.doc.toString() !== files[current])
-    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: files[current] } });
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: files[current] },
+                    effects: isCode(current) && breakpoints.has(current) ? BP.all.of(breakpoints.get(current)) : [] });
 }
 
 function show(name) {
@@ -1755,6 +1965,7 @@ async function startProgram() {
 }
 // the page's files become `loaded` (project.load()'s): the tree and the editor
 function showProject(loaded) {
+  loadBreakpoints();
   for (const f of Object.keys(files)) { delete files[f]; delete saved[f]; }
   states.clear(); diagnostics.clear();
   for (const [f, data] of Object.entries(loaded.files)) files[f] = saved[f] = data;
@@ -2015,6 +2226,19 @@ $("app-floating").onclick = () => attempt(async () => {
   if ($("app-floating").getAttribute("aria-disabled") === "true")
     return askPerson({ title: "Floating window", ok: "OK", text: "A floating window is not supported in this browser. Consider switching to a Chromium-based browser such as Chrome, Edge or Brave." });
   if (program.kind !== "pip") await program.out("pip");
+});
+$("bp-toggle").onclick = () => attempt(async () => {
+  if (current === null || !isCode(current) || libraryView) { status("open a .hx file of the project to set a breakpoint in it"); return; }
+  view.focus();
+  await toggleBreakpoint(view, view.state.selection.main.head);
+});
+$("bp-clear").onclick = () => attempt(async () => {
+  const had = [...breakpoints.values()].some((m) => m.size);
+  breakpoints.clear(); saveBreakpoints();
+  for (const [f, st] of states) if (isCode(f) && f !== current) states.set(f, st.update({ effects: BP.all.of(new Map()) }).state);
+  if (current !== null && isCode(current)) view.dispatch({ effects: BP.all.of(new Map()) });
+  status("breakpoints removed");
+  if (had) return build();
 });
 $("app-tab").onclick = () => { const w = window.open(RUNNER, "_blank"); if (w) program.tabs.add(w); };
 // the app from its start, where it is: a fresh page on the latest build, so @:hot state
@@ -2425,6 +2649,32 @@ async function test() {
   files["src/Hello.hx"] = good;
   const bl = await save();
   step("a run of edits builds", report.reloadMs.every((ms) => ms >= 0) && bl.ok, report.reloadMs);
+
+  // ---- breakpoints: in the gutter; in the text the compiler gets for the app, not the file
+  show("src/Hello.hx");
+  const hxLines = files["src/Hello.hx"].split("\n");
+  const bpLine = hxLines.findIndex((l) => l.includes("ticks++;")) + 1, closeLine = hxLines.findIndex((l) => /^class /.test(l)) + 1;
+  await toggleBreakpoint(view, view.state.doc.line(bpLine).from);
+  const bundle1 = replay.build.js;
+  step("a breakpoint on a statement: set, the file as it was", breakLines(view.state).get(bpLine) === "ok" && !files["src/Hello.hx"].includes("js.Lib.debug")
+       && document.querySelector(".cm-breakpoints .bp-ok"), [...breakLines(view.state)]);
+  step("the app's build has it: debugger; in the bundle", (bundle1.match(/debugger;/g) || []).length === 1);
+  const map1 = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(bundle1.slice(bundle1.lastIndexOf(MAP_URL) + MAP_URL.length).trim()), (c) => c.charCodeAt(0))));
+  const hi = map1.sources.findIndex((s) => s.endsWith("/static/src/Hello.hx"));
+  step("and DevTools is shown the file as it is (the source map's text)", hi >= 0 && map1.sourcesContent[hi] === files["src/Hello.hx"]);
+  await toggleBreakpoint(view, view.state.doc.line(closeLine).from);
+  step("a breakpoint where no statement starts (a class's first line): hollow, left out of builds", breakLines(view.state).get(closeLine) === "bad"
+       && document.querySelector(".cm-breakpoints .bp-bad") && (replay.build.js.match(/debugger;/g) || []).length === 1, [...breakLines(view.state)]);
+  view.dispatch({ changes: { from: 0, insert: "\n" } });
+  step("breakpoints move with the text", breakLines(view.state).get(bpLine + 1) === "ok" && breakLines(view.state).get(closeLine + 1) === "bad"
+       && breakpoints.get("src/Hello.hx").get(bpLine + 1) === "ok", [...breakLines(view.state)]);
+  view.dispatch({ changes: { from: 0, to: 1, insert: "" } });
+  await save();
+  step("they're kept for the project", JSON.stringify(JSON.parse(localStorage.getItem(breakKey()))["src/Hello.hx"].sort((a, b) => a[0] - b[0]))
+       === JSON.stringify([[bpLine, "ok"], [closeLine, "bad"]].sort((a, b) => a[0] - b[0])), localStorage.getItem(breakKey()));
+  await toggleBreakpoint(view, view.state.doc.line(bpLine).from);
+  await toggleBreakpoint(view, view.state.doc.line(closeLine).from);
+  step("removed: out of the build", breakLines(view.state).size === 0 && !(replay.build.js.match(/debugger;/g) || []).length);
 
   // ---- what the compiler knows about the code: completion, hover, go to definition
   show("src/Hello.hx");
@@ -2849,9 +3099,13 @@ async function test() {
   if (!("indexedDB" in window)) { status("this page needs IndexedDB"); return; }
   applyPrefs(); // the page's theme, before anything shows
   [CM, FS] = await Promise.all([import("./vendor/codemirror.js"), import("./vendor/fs.js")]);
+  breakpointSetup();
   slots = Object.fromEntries(Object.keys(prefParts).map((k) => [k, new CM.Compartment()]));
   await project.open();
-  if (TESTING) { await project.clear(); await remembered.set(null); }
+  if (TESTING) {
+    await project.clear(); await remembered.set(null);
+    try { for (const k of Object.keys(localStorage)) if (k.startsWith("webide-hx-breakpoints-test")) localStorage.removeItem(k); } catch (e) {}
+  }
   else keepStorage();
   // the folder from the last visit, if the browser still lets the page have it
   const handle = await remembered.get().catch(() => null);

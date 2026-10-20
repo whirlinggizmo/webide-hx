@@ -158,6 +158,25 @@ async function checkBundle(label) {
     await new Promise(function (r) { setTimeout(r, 200); });
   step("the edit reloaded (bundle 2 loaded)", [...scripts.values()].some(function (s) { return /\/run\/hello\.js\?v=2/.test(s.url); }));
   await checkBundle("reloaded bundle");
+  // a breakpoint set in the IDE's gutter: no breakpoint of DevTools', the app stops by itself
+  // (the debugger; the build put there), at the .hx line, the file shown as it is; and the IDE
+  // isn't stopped with it (the app has its own process)
+  var stop = next("Debugger.paused", function (p) { return p.reason === "other"; }, 15000);
+  var n = await evaluate("(async () => { show('src/Hello.hx'); const n = files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes('" + LINE_TEXT + "')) + 1; await toggleBreakpoint(view, view.state.doc.line(n).from); return n; })()");
+  var stopped = await stop;
+  step("a breakpoint set in the IDE: the app stops there by itself", !!stopped, stopped && stopped.reason);
+  if (stopped) {
+    var loc = stopped.callFrames[0].location, s = scripts.get(loc.scriptId);
+    var ref = s && s.sourceMapURL, map = ref && JSON.parse(Buffer.from(ref.slice(ref.indexOf(",") + 1), "base64").toString("utf8"));
+    var at = map && decode(map).filter(function (m) { return m.gl === loc.lineNumber && m.gc <= loc.columnNumber; }).pop();
+    step("at Hello.hx:" + n + ", as DevTools maps it", at && /Hello\.hx$/.test(map.sources[at.src]) && at.sl === n - 1, at && { source: map.sources[at.src], line: at.sl + 1 });
+    var text = at && map.sourcesContent[at.src];
+    step("DevTools shows the file as it is (no call in it)", text && text.indexOf("js.Lib.debug") < 0 && text.split("\n")[n - 1].indexOf("ticks++;") >= 0);
+    var ide = await evaluate("(async () => { const t0 = performance.now(); await new Promise((r) => setTimeout(r, 50)); return Math.round(performance.now() - t0); })()");
+    step("the IDE runs while the app is stopped", ide < 1000, ide + " ms for a 50 ms timer");
+    await send("Debugger.resume", {}, s.session);
+  }
+  await evaluate("(async () => { const n = files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes('" + LINE_TEXT + "')) + 1; await toggleBreakpoint(view, view.state.doc.line(n).from); })()");
   ws.close();
   console.log(failures ? failures + " failed" : "all ok");
   process.exit(failures ? 1 : 0);
