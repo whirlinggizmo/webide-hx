@@ -226,14 +226,15 @@ Two, for two kinds of use:
 - [x] Gutter breakpoints that pause in DevTools, by putting `js.Lib.debug();` at the start
       of the line in the compiler's text (2026-10-20). A bridge to DevTools from outside,
       with its limits (only where a statement starts, a rebuild per toggle, one more stop
-      after a change while stopped: messages to a stopped app are dropped). To be removed
-      when the debugger extension lands: without it, DevTools as it is.
+      after a change while stopped: messages to a stopped app are dropped). Removed when
+      the debugger extension landed (2026-10-20): without it, DevTools as it is.
 - [x] Probe (2026-10-20): an MV3 extension attaches `chrome.debugger` to the IDE's tab; the
       runner's frame is a child session of its own; the debugger on that session only. A
       breakpoint at a `.hx` line (from the source map), stopped there, the call stack,
       variables, the IDE running meanwhile, step over, a breakpoint removed while stopped
       and no stop after. Headless Brave loads it with --load-extension.
-- [~] **The debugger extension** (optional; the IDE stays a web page). Small: a content
+- [x] **The debugger extension** (optional; the IDE stays a web page; 2026-10-20, `extension/`,
+      `tests/debugger.js`). Small: a content
       script on the IDE's pages bridges the page and the extension's worker, which drives
       `chrome.debugger` on the app's frame only. Permissions: debugger, and the IDE's own
       hosts. Attached only while there are breakpoints or a pause is asked for (Chrome

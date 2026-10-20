@@ -1,0 +1,14 @@
+{
+  "manifest_version": 3,
+  "name": "webide-hx debugger",
+  "version": "0.1.0",
+  "description": "Debug the app in webide-hx from the IDE itself: breakpoints, stepping, the call stack and variables, on the .hx lines.",
+  "minimum_chrome_version": "125",
+  "permissions": ["debugger"],
+  "background": { "service_worker": "background.js" },
+  "content_scripts": [{
+    "matches": ["http://127.0.0.1/*", "http://localhost/*", "https://dev.whirlinggizmo.com/*"],
+    "js": ["bridge.js"],
+    "run_at": "document_start"
+  }]
+}

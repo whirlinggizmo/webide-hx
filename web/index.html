@@ -72,6 +72,7 @@
   #prefs .actions { justify-content: flex-start; }
   button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
   button.primary { border-color: var(--accent); color: var(--accent); }
+  #run { flex: 1; min-height: 0; }
   main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
   /* the program in a window of its own: the editor has the page */
   body.program-out main { grid-template-columns: 1fr; }
@@ -101,6 +102,27 @@
   .bp-ok { background: #e51400; }
   .bp-checking { background: #e5140066; }
   .bp-bad { border: 1.5px solid #888; }
+  /* the debugger: the line the app is stopped at, and the panel under the app */
+  .cm-paused { background: #ffd70040; }
+  #debug { border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; display: flex; flex-direction: column; min-height: 0; }
+  #debug[hidden] { display: none; }
+  #debug .bar { display: flex; align-items: center; gap: 4px; padding: 3px 6px; }
+  #debug .bar span { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #debug .bar button { padding: 1px 8px; font-size: 12px; }
+  #debug .bar button[disabled] { opacity: 0.4; cursor: default; }
+  #debug .body { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); max-height: 40vh; min-height: 0; }
+  #debug .body[hidden] { display: none; }
+  #debug ol, #debug ul { margin: 0; padding: 4px 0; list-style: none; overflow: auto; background: var(--panel); font-family: ui-monospace, monospace; }
+  #dbg-stack li { padding: 1px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #dbg-stack li.on { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
+  #dbg-stack li .where { color: var(--muted); margin-left: 6px; }
+  #dbg-vars li { padding: 0 8px; white-space: nowrap; }
+  #dbg-vars ul { padding: 0 0 0 14px; }
+  #dbg-vars .scope { color: var(--muted); }
+  #dbg-vars .open { cursor: pointer; }
+  #dbg-vars .open::before { content: "▸ "; color: var(--muted); }
+  #dbg-vars .open.expanded::before { content: "▾ "; }
+  #dbg-vars .value { color: var(--accent); }
   #editor .hover { max-width: 520px; padding: 4px 8px; font-size: 12px; }
   #editor .hover code { font-family: ui-monospace, monospace; white-space: pre-wrap; }
   #editor .signature b { color: var(--accent); }
@@ -163,8 +185,8 @@
         <hr role="separator">
         <button role="menuitem" id="app-restart">Restart</button>
         <hr role="separator">
-        <button role="menuitem" id="bp-toggle" title="Pause the app on the line with the cursor, when DevTools is open (F12)">Toggle breakpoint<kbd>F9</kbd></button>
-        <button role="menuitem" id="bp-clear">Remove all breakpoints</button>
+        <button role="menuitem" id="bp-toggle" hidden title="Stop the app on the line with the cursor (the webide-hx debugger extension)">Toggle breakpoint<kbd>F9</kbd></button>
+        <button role="menuitem" id="bp-clear" hidden>Remove all breakpoints</button>
         <button role="menuitem" id="app-tab" title="Another copy of the app, in a new tab: it reloads with each build, and starts over when the tab is reloaded">Open in new tab</button>
       </div>
     </div>
@@ -250,6 +272,20 @@
   </section>
   <section id="program-pane">
     <iframe id="run" title="the running program"></iframe>
+    <div id="debug" hidden>
+      <div class="bar">
+        <span id="dbg-state">Debugger</span>
+        <button id="dbg-continue" title="Continue (F8)">Continue</button>
+        <button id="dbg-pause" title="Pause (F8)">Pause</button>
+        <button id="dbg-over" title="Step over (F10)">Step over</button>
+        <button id="dbg-into" title="Step into (F11)">Step into</button>
+        <button id="dbg-out" title="Step out (Shift+F11)">Step out</button>
+      </div>
+      <div class="body" hidden>
+        <ol id="dbg-stack" aria-label="Call stack"></ol>
+        <ul id="dbg-vars" aria-label="Variables"></ul>
+      </div>
+    </div>
   </section>
 </main>
 <script>
@@ -1096,13 +1132,13 @@ function libraryState(path, text) {
   return CM.EditorState.create({ doc: text, extensions: [
     CM.highlightSpecialChars(), CM.drawSelection(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
     CM.highlightSelectionMatches(), CM.keymap.of([{ key: "Ctrl-Alt-g", preventDefault: true, run: CM.gotoLine }, ...CM.defaultKeymap, ...CM.searchKeymap, ...CM.foldKeymap]),
-    prefExtensions(), CM.StreamLanguage.define(CM.haxe), CM.EditorState.readOnly.of(true), haxeNavigation(path),
+    prefExtensions(), CM.StreamLanguage.define(CM.haxe), CM.EditorState.readOnly.of(true), haxeNavigation(path), pausedLine(),
   ] });
 }
-async function showLibraryFile(path, range) {
+async function showLibraryFile(path, range, given) {
   let st = libraryStates.get(path);
   if (!st) {
-    const text = await libraryText(path);
+    const text = (await libraryText(path)) ?? given ?? null;
     if (text === null) return false;
     st = libraryState(path, text);
   }
@@ -1314,7 +1350,7 @@ async function codeSources(cfg) {
 async function build() {
   syncEditor();
   const sources = {};
-  for (const f of names()) if (isCode(f)) sources["/static/" + f] = withBreaks(f, files[f]);
+  for (const f of names()) if (isCode(f)) sources["/static/" + f] = files[f];
   const cfg = buildConfig();
   showWhere();
   // another build file, or a change to one: what's code, the output and the main class may
@@ -1351,7 +1387,6 @@ async function build() {
   done();
   if (r.code >= 0) compilerUp = true;
   const messages = parseMessages(r.stderr);
-  withoutBreaks(messages.byFile);
   showDiagnostics(messages.byFile);
   if (r.code !== 0 || !r.output) {
     status("build failed; the program keeps what it has");
@@ -1359,7 +1394,7 @@ async function build() {
     return { ok: false, r };
   }
   version++;
-  await tell({ type: "build", name: baseOf(cfg.out), version, js: mapWithoutBreaks(r.output) });
+  await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
   // nothing running yet (the project's first build failed): this build starts it
   if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
   buildStatus = `build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "");
@@ -1642,14 +1677,10 @@ function savePrefs() {
 }
 dark.addEventListener("change", applyPrefs);
 
-// ---- breakpoints: set in the gutter (a click, or F9 as in VS Code), kept per file as the
-// text moves under them, and per project. A build puts `js.Lib.debug();` (debugger; in
-// JavaScript) at the start of each one's line, in the text the compiler gets for the app,
-// never in the file: so the app stops there when DevTools is open (F12), and DevTools shows
-// the .hx line (the source map). It goes where a statement can start: when one is set, the
-// compiler is asked whether the line compiles with it (a --no-output check); a line where it
-// doesn't is shown hollow and left out of builds
-const BREAK = "js.Lib.debug(); ";
+// ---- breakpoints: set in the gutter (a click, or F9 as in VS Code) when the debugger
+// extension is there, kept per file as the text moves under them, and per project. The
+// debugger (below) places them in the app's code, where each line's code is (the source
+// map says); a line with no code of its own shows a hollow dot
 const breakpoints = new Map(); // file -> Map(line -> "ok" | "bad" | "checking")
 let BP = null;                 // the editor's parts: {field, toggle, kind, all, gutter}
 function breakpointSetup() {
@@ -1715,35 +1746,7 @@ function loadBreakpoints() {
   try { o = JSON.parse(localStorage.getItem(breakKey())) || {}; } catch (e) {}
   for (const [f, list] of Object.entries(o)) breakpoints.set(f, new Map(list.map(([n, k]) => [n, k === "checking" ? "ok" : k])));
 }
-// the text the compiler gets for the app: each usable breakpoint's line with the call first
-function withBreaks(name, text) {
-  const bps = breakpoints.get(name);
-  if (!bps || !bps.size) return text;
-  const lines = text.split("\n");
-  for (const [n, k] of bps) {
-    if (k !== "ok" || n > lines.length) continue;
-    const at = lines[n - 1].search(/\S/);
-    if (at >= 0) lines[n - 1] = lines[n - 1].slice(0, at) + BREAK + lines[n - 1].slice(at);
-  }
-  return lines.join("\n");
-}
-// a build's messages on those lines, back to the columns of the file as it is
-function withoutBreaks(byFile) {
-  for (const [f, list] of byFile) {
-    const bps = breakpoints.get(f);
-    if (!bps) continue;
-    const lines = (files[f] || "").split("\n");
-    for (const d of list) {
-      if (bps.get(d.line) !== "ok" || d.from === null) continue;
-      const at = (lines[d.line - 1] || "").search(/\S/);
-      if (d.from - 1 >= at + BREAK.length) { d.from -= BREAK.length; if (d.lastLine === null) d.to -= BREAK.length; }
-    }
-  }
-  return byFile;
-}
-// the bundle's source map (inline, base64), as if the breakpoints' calls weren't there: the
-// files' own text, and on their lines the columns after a call moved back by its length.
-// So DevTools shows the file as it is
+// the source maps' numbers (base64 VLQ)
 const VLQ = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 function vlqDecode(seg) {
   const out = [];
@@ -1757,90 +1760,300 @@ function vlqDecode(seg) {
   }
   return out;
 }
-function vlqEncode(n) {
-  let v = n < 0 ? (-n << 1) | 1 : n << 1, out = "";
-  do { let d = v & 31; v >>>= 5; if (v) d |= 32; out += VLQ[d]; } while (v);
-  return out;
-}
 const MAP_URL = "\n//# sourceMappingURL=data:application/json;charset=utf-8;base64,";
-function mapWithoutBreaks(js) {
-  const used = [...breakpoints].filter(([f, m]) => f in files && [...m.values()].includes("ok"));
-  const at = js.lastIndexOf(MAP_URL);
-  if (!used.length || at < 0) return js;
-  const bin = atob(js.slice(at + MAP_URL.length).trim());
-  const map = JSON.parse(new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))));
-  // per source index: {line -> the column where the call starts} for lines that have one
-  const moved = new Map();
-  for (const [f, m] of used) {
-    const i = map.sources.findIndex((s) => s.endsWith("/static/" + f));
-    if (i < 0) continue;
-    if (map.sourcesContent) map.sourcesContent[i] = files[f];
-    const lines = files[f].split("\n"), cols = new Map();
-    for (const [n, k] of m) if (k === "ok" && lines[n - 1] !== undefined && lines[n - 1].trim()) cols.set(n - 1, lines[n - 1].search(/\S/));
-    moved.set(i, cols);
-  }
-  let src = 0, sl = 0, sc = 0, nm = 0, osrc = 0, osl = 0, osc = 0, onm = 0;
-  map.mappings = map.mappings.split(";").map((line) => {
-    let gc = 0, ogc = 0;
-    return line.split(",").map((s) => {
-      if (!s) return s;
-      const v = vlqDecode(s);
-      gc += v[0];
-      let out = vlqEncode(gc - ogc); ogc = gc;
-      if (v.length >= 4) {
-        src += v[1]; sl += v[2]; sc += v[3];
-        let c = sc;
-        const cols = moved.get(src);
-        if (cols && cols.has(sl) && sc >= cols.get(sl) + BREAK.length) c = sc - BREAK.length;
-        out += vlqEncode(src - osrc) + vlqEncode(sl - osl) + vlqEncode(c - osc);
-        osrc = src; osl = sl; osc = c;
-        if (v.length >= 5) { nm += v[4]; out += vlqEncode(nm - onm); onm = nm; }
-      }
-      return out;
-    }).join(",");
-  }).join(";");
-  const bytes = new TextEncoder().encode(JSON.stringify(map));
-  let b = "";
-  for (let i = 0; i < bytes.length; i += 0x8000) b += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
-  return js.slice(0, at) + MAP_URL + btoa(b);
-}
-// whether a breakpoint can go on a line: the compiler checks the code with it there; it can if
-// that adds no error. A blank line can't have one
-async function breakpointFits(name, n) {
-  const text = files[name], line = text.split("\n")[n - 1] || "";
-  if (!line.trim()) return false;
-  const cfg = buildConfig();
-  if (!compilerUp || cfg.error) return true; // can't ask yet: the build will say
-  const sources = await codeSources(cfg), key = "/static/" + name, args = buildArgs(true).concat(["--no-output"]);
-  const errors = (r) => [...parseMessages(r.stderr).byFile.values()].flat().filter((d) => d.severity === "error").length;
-  const lines = text.split("\n");
-  lines[n - 1] = line.slice(0, line.search(/\S/)) + BREAK + line.slice(line.search(/\S/));
-  const withIt = await compile(args, Object.assign({}, sources, { [key]: lines.join("\n") }), null);
-  const without = await compile(args, sources, null);
-  return errors(withIt) <= errors(without);
-}
-// a click in the gutter, F9, or the App menu: a breakpoint on the line, or none
-async function toggleBreakpoint(v, pos) {
+// a click in the gutter, F9, or the App menu: a breakpoint on the line, or none; the
+// debugger places it (or takes it away)
+function toggleBreakpoint(v, pos) {
   const name = current;
-  if (name === null || !isCode(name) || libraryView) return;
+  if (name === null || !isCode(name) || libraryView || !dbg.present) return;
   v.dispatch({ effects: BP.toggle.of(pos) });
-  const n = v.state.doc.lineAt(pos).number, kind = breakLines(v.state).get(n);
-  if (!kind) { status(`${name}:${n}: breakpoint removed`); return build(); }
-  const fits = await breakpointFits(name, n);
-  const k = fits ? "ok" : "bad";
-  if (current === name) view.dispatch({ effects: BP.kind.of({ line: n, kind: k }) });
-  else if (breakpoints.has(name) && breakpoints.get(name).has(n)) { breakpoints.get(name).set(n, k); saveBreakpoints(); }
-  if (!fits) { status(`${name}:${n}: no statement starts on this line, so the app can't stop here`); return; }
-  const r = await build();
-  if (r && r.ok) status(`${name}:${n}: breakpoint set; the app pauses there when DevTools is open (F12)`);
-  return r;
+  const n = v.state.doc.lineAt(pos).number, set = breakLines(v.state).has(n);
+  status(`${name}:${n}: breakpoint ${set ? "set" : "removed"}`);
+  return dbgSync();
+}
+// ---- the debugger, when the webide-hx debugger extension (extension/) is installed. Its
+// content script (bridge.js) answers on this page; through it, the IDE drives the browser's
+// debugger on the app's runner only (a child session: the app has its own process), so the
+// IDE itself is never stopped. Attached while there are breakpoints, or a pause is asked
+// for or on (Chrome shows a banner while an extension debugs). Breakpoints go into each of
+// the app's bundles where the source map puts their lines; a stop shows the call stack and
+// variables in the panel under the app, and the line in the editor. For now with the app
+// embedded (a window or a tab of its own is another tab to attach to)
+const dbg = {
+  present: false, attached: false, attaching: null, session: null,
+  enabled: null,        // the debugger switched on for the app's session
+  at: null,             // where the shown frame is stopped: "file:line"
+  scripts: new Map(),   // scriptId -> {url, mapUrl, map (decoded when needed), context}
+  placed: [],           // breakpoint ids placed, for taking them all away
+  paused: null,         // the Debugger.paused event's params while stopped
+  frame: 0, pauseAsked: false,
+  calls: new Map(), n: 0,
+};
+function dbgCall(cmd, extra) {
+  return new Promise((resolve, reject) => {
+    const id = ++dbg.n;
+    dbg.calls.set(id, (m) => m.error ? reject(new Error(m.error)) : resolve(m.result));
+    window.postMessage(Object.assign({ webideDebugger: "cmd", id, cmd }, extra), location.origin);
+  });
+}
+const dbgSend = (method, params) => dbgCall("send", { sessionId: dbg.session, method, params });
+addEventListener("message", (e) => {
+  if (e.source !== window || e.origin !== location.origin || !e.data || typeof e.data.webideDebugger !== "string") return;
+  const m = e.data;
+  if (m.webideDebugger === "here" && !dbg.present) dbgFound();
+  else if (m.webideDebugger === "reply" && dbg.calls.has(m.id)) { dbg.calls.get(m.id)(m); dbg.calls.delete(m.id); }
+  else if (m.webideDebugger === "event") dbgEvent(m.event, m.params || {}, m.sessionId);
+});
+window.postMessage({ webideDebugger: "hello" }, location.origin);
+// found: the gutter comes (each file's editor is made again with it), and the panel
+function dbgFound() {
+  dbg.present = true;
+  if (!view) return; // the page isn't up yet: makeState has it from the start
+  for (const f of [...states.keys()]) if (isCode(f) && f !== current) states.delete(f);
+  if (current !== null && isCode(current)) { states.delete(current); const c = current; current = null; show(c); }
+  dbgShow();
+  dbgSync();
+}
+function dbgWanted() {
+  return dbg.present && !program.kind && ([...breakpoints.values()].some((m) => m.size) || dbg.pauseAsked || !!dbg.paused);
+}
+// attached when wanted, detached when not; breakpoints placed
+async function dbgSync() {
+  if (!dbg.present) return;
+  if (!dbgWanted()) {
+    if (dbg.attached) { dbg.attached = false; dbg.session = null; dbg.scripts.clear(); dbg.placed = []; await dbgCall("detach").catch(() => {}); }
+    dbgMarkAll("checking");
+    dbgShow();
+    return;
+  }
+  if (!dbg.attached) {
+    if (!dbg.attaching) dbg.attaching = (async () => {
+      try {
+        await dbgCall("attach");
+        dbg.attached = true;
+        for (let i = 0; i < 50 && !dbg.session; i++) await new Promise((r) => setTimeout(r, 40));
+        if (!dbg.session) throw new Error("the app's runner wasn't found (it needs the app on a site of its own)");
+        await dbg.enabled;
+      } catch (e) { dbg.attached = false; status("debugger: " + e.message); }
+      finally { dbg.attaching = null; }
+    })();
+    await dbg.attaching;
+    if (!dbg.attached) return;
+  }
+  await dbgPlace();
+  dbgShow();
+}
+function dbgEvent(method, p, sessionId) {
+  if (method === "detached") { dbg.attached = false; dbg.session = null; dbg.scripts.clear(); dbg.placed = []; dbgResumed(); dbgShow(); return; }
+  if (method === "Target.attachedToTarget") {
+    // the pane's runner: the app's session
+    if (p.targetInfo.type === "iframe" && RUNNER && p.targetInfo.url.startsWith(RUNNER) && !dbg.session) {
+      dbg.session = p.sessionId;
+      dbg.enabled = dbgSend("Runtime.enable").then(() => dbgSend("Debugger.enable")).catch(() => {});
+    }
+    return;
+  }
+  if (method === "Target.detachedFromTarget" && p.sessionId === dbg.session) { dbg.session = null; dbg.scripts.clear(); dbg.placed = []; dbgResumed(); return; }
+  if (sessionId !== dbg.session) return;
+  if (method === "Debugger.scriptParsed") {
+    // a bundle of the app's (its map inline): its breakpoints placed
+    if (/\/run\//.test(p.url) && p.sourceMapURL && p.sourceMapURL.startsWith("data:")) {
+      dbg.scripts.set(p.scriptId, { url: p.url, mapUrl: p.sourceMapURL, map: null, context: p.executionContextId });
+      clearTimeout(dbg.placeSoon);
+      dbg.placeSoon = setTimeout(dbgPlace, 30);
+    }
+  } else if (method === "Runtime.executionContextDestroyed" || method === "Runtime.executionContextsCleared") {
+    for (const [id, s] of [...dbg.scripts]) if (method === "Runtime.executionContextsCleared" || s.context === p.executionContextId) dbg.scripts.delete(id);
+  } else if (method === "Debugger.paused") { dbg.paused = p; dbg.frame = 0; dbg.pauseAsked = false; dbgShowPause(); }
+  else if (method === "Debugger.resumed") dbgResumed();
+}
+// a bundle's map, decoded: its sources and each mapping (generated line and column, source,
+// source line)
+function dbgMap(script) {
+  if (script.map) return script.map;
+  const url = script.mapUrl, body = url.slice(url.indexOf(",") + 1);
+  const json = /;base64$/.test(url.slice(0, url.indexOf(","))) ? new TextDecoder().decode(Uint8Array.from(atob(body), (c) => c.charCodeAt(0))) : decodeURIComponent(body);
+  const map = JSON.parse(json), segs = [];
+  let src = 0, sl = 0, sc = 0;
+  map.mappings.split(";").forEach((line, gl) => {
+    let gc = 0;
+    line.split(",").forEach((s) => { if (!s) return; const v = vlqDecode(s); gc += v[0]; if (v.length >= 4) { src += v[1]; sl += v[2]; sc += v[3]; segs.push({ gl, gc, src, sl }); } });
+  });
+  // a source's path in the compiler's filesystem: /static/<project file>, /haxe/std/..., /libcache/...
+  const paths = map.sources.map((s) => s.replace(/^file:\/*/, "/"));
+  return (script.map = { segs, paths, contents: map.sourcesContent || [] });
+}
+// where a generated position comes from: {path, line} (line from 1), or null
+function dbgBack(scriptId, line, col) {
+  const s = dbg.scripts.get(scriptId);
+  if (!s) return null;
+  const m = dbgMap(s);
+  let best = null;
+  for (const x of m.segs) { if (x.gl === line && x.gc <= col) best = x; else if (x.gl > line) break; }
+  return best ? { path: m.paths[best.src], line: best.sl + 1, text: m.contents[best.src] } : null;
+}
+// every breakpoint, in every bundle of the app's: each at its line's first code (none: hollow)
+async function dbgPlace() {
+  if (!dbg.attached || !dbg.session) return;
+  const old = dbg.placed;
+  dbg.placed = [];
+  await Promise.all(old.map((id) => dbgSend("Debugger.removeBreakpoint", { breakpointId: id }).catch(() => {})));
+  const kinds = new Map();
+  for (const [f, lines] of breakpoints) for (const n of lines.keys()) kinds.set(f + "\n" + n, "bad");
+  for (const [scriptId, s] of dbg.scripts) {
+    const m = dbgMap(s);
+    for (const [f, lines] of breakpoints) {
+      const src = m.paths.indexOf("/static/" + f);
+      if (src < 0) continue;
+      for (const n of lines.keys()) {
+        const at = m.segs.find((x) => x.src === src && x.sl === n - 1);
+        if (!at) continue;
+        try {
+          const r = await dbgSend("Debugger.setBreakpoint", { location: { scriptId, lineNumber: at.gl, columnNumber: at.gc } });
+          dbg.placed.push(r.breakpointId);
+          kinds.set(f + "\n" + n, "ok");
+        } catch (e) {}
+      }
+    }
+  }
+  // the dots say which have code: hollow where none of the app's code is on the line
+  for (const [key, k] of kinds) { const [f, n] = key.split("\n"); dbgMark(f, +n, dbg.scripts.size ? k : "checking"); }
+}
+function dbgMark(f, n, k) {
+  if (f === current && view.state.field(BP.field, false)) view.dispatch({ effects: BP.kind.of({ line: n, kind: k }) });
+  else if (breakpoints.has(f) && breakpoints.get(f).has(n) && breakpoints.get(f).get(n) !== k) { breakpoints.get(f).set(n, k); if (states.has(f)) states.delete(f); saveBreakpoints(); }
+}
+function dbgMarkAll(k) { for (const [f, lines] of breakpoints) for (const n of [...lines.keys()]) dbgMark(f, n, k); }
+// stopped: the panel, the stack's top frame shown
+function dbgShowPause() {
+  const p = dbg.paused;
+  $("dbg-stack").replaceChildren(...p.callFrames.map((f, i) => {
+    const li = document.createElement("li"), at = dbgBack(f.location.scriptId, f.location.lineNumber, f.location.columnNumber);
+    li.textContent = f.functionName || "(anonymous)";
+    const where = document.createElement("span");
+    where.className = "where";
+    where.textContent = at ? `${at.path.replace(/^\/static\//, "").replace(/^\/haxe\/std\//, "std/")}:${at.line}` : "(not Haxe code)";
+    li.append(where);
+    li.onclick = () => dbgFrame(i);
+    return li;
+  }));
+  dbgFrame(0);
+  dbgShow();
+}
+async function dbgFrame(i) {
+  const p = dbg.paused;
+  if (!p) return;
+  dbg.frame = i;
+  [...$("dbg-stack").children].forEach((li, j) => li.classList.toggle("on", j === i));
+  const f = p.callFrames[i], at = dbgBack(f.location.scriptId, f.location.lineNumber, f.location.columnNumber);
+  if (at) {
+    if (at.path.startsWith("/static/") && at.path.slice(8) in files) { show(at.path.slice(8)); }
+    else await showLibraryFile(at.path, null, at.text);
+    const line = view.state.doc.line(Math.min(at.line, view.state.doc.lines));
+    view.dispatch({ effects: [setPaused.of(line.from), CM.EditorView.scrollIntoView(line.from, { y: "center" })] });
+    dbg.at = `${at.path.replace(/^\/static\//, "")}:${at.line}`;
+    status(`stopped at ${dbg.at}` + (p.reason && p.reason !== "other" ? ` (${p.reason})` : ""));
+  } else dbg.at = null;
+  dbgShow();
+  // its variables: each scope (but the global one), and `this`
+  const lists = [];
+  for (const sc of f.scopeChain) {
+    if (sc.type === "global") continue;
+    lists.push(dbgTree(sc.type === "local" ? "Local" : sc.type === "closure" ? "Closure" : sc.type, sc.object.objectId, sc.type === "local"));
+  }
+  if (f.this && f.this.type === "object") lists.push(dbgValue("this", f.this));
+  $("dbg-vars").replaceChildren(...lists);
+}
+// a value: its text, and for an object, a list of its own properties when clicked
+function dbgValueText(v) {
+  if (!v) return "";
+  if (v.type === "string") return JSON.stringify(v.value);
+  if (v.value !== undefined) return String(v.value);
+  return v.description || v.type;
+}
+function dbgValue(name, v) {
+  const li = document.createElement("li"), val = document.createElement("span");
+  li.append(name + ": ");
+  val.className = "value"; val.textContent = dbgValueText(v);
+  li.append(val);
+  // objects, and functions too: a Haxe class is one, with its statics on it
+  if (v && v.objectId && (v.type === "object" || v.type === "function")) {
+    li.classList.add("open");
+    li.onclick = async (e) => {
+      e.stopPropagation();
+      if (li.classList.toggle("expanded")) li.append(await dbgProps(v.objectId));
+      else li.lastChild.tagName === "UL" && li.lastChild.remove();
+    };
+  }
+  return li;
+}
+function dbgTree(label, objectId, open) {
+  const li = document.createElement("li");
+  li.className = "scope open" + (open ? " expanded" : "");
+  li.append(label);
+  const fill = async () => li.append(await dbgProps(objectId));
+  li.onclick = (e) => { e.stopPropagation(); if (li.classList.toggle("expanded")) fill(); else li.lastChild.tagName === "UL" && li.lastChild.remove(); };
+  if (open) fill();
+  return li;
+}
+async function dbgProps(objectId) {
+  const ul = document.createElement("ul");
+  try {
+    const r = await dbgSend("Runtime.getProperties", { objectId, ownProperties: true, generatePreview: false });
+    for (const p of r.result) if (p.value && !(p.name === "__proto__")) ul.append(dbgValue(p.name, p.value));
+  } catch (e) { ul.append(e.message); }
+  return ul;
+}
+function dbgResumed() {
+  if (!dbg.paused) return;
+  dbg.paused = null; dbg.at = null;
+  $("dbg-stack").replaceChildren(); $("dbg-vars").replaceChildren();
+  if (view && setPaused) view.dispatch({ effects: setPaused.of(null) });
+  dbgShow();
+  dbgSync();
+}
+// the panel: shown with the extension; its buttons by state
+function dbgShow() {
+  $("debug").hidden = !dbg.present;
+  $("debug").querySelector(".body").hidden = !dbg.paused;
+  const stopped = !!dbg.paused, on = dbg.attached && !!dbg.session;
+  $("dbg-continue").disabled = !stopped;
+  $("dbg-pause").disabled = stopped;
+  for (const id of ["dbg-over", "dbg-into", "dbg-out"]) $(id).disabled = !stopped;
+  $("dbg-state").textContent = program.kind ? "Debugger: with the app embedded (App > Embedded)"
+    : stopped ? "Stopped" + (dbg.at ? " at " + dbg.at : "") : on ? "Debugging" : "Debugger: set a breakpoint (F9) or Pause";
+  for (const id of ["bp-toggle", "bp-clear"]) $(id).hidden = !dbg.present;
+}
+const dbgDo = (method) => () => attempt(async () => {
+  if (method === "Debugger.pause") { dbg.pauseAsked = true; await dbgSync(); }
+  if (!dbg.session) return;
+  await dbgSend(method);
+});
+// the line the app is stopped at, marked in whichever editor shows it
+let setPaused = null, pausedField = null;
+function pausedLine() {
+  if (!pausedField) {
+    setPaused = CM.StateEffect.define();
+    const mark = CM.Decoration.line({ class: "cm-paused" });
+    pausedField = CM.StateField.define({
+      create: () => CM.Decoration.none,
+      update(set, tr) {
+        set = set.map(tr.changes);
+        for (const e of tr.effects) if (e.is(setPaused)) set = e.value === null ? CM.Decoration.none : CM.Decoration.set([mark.range(e.value)]);
+        return set;
+      },
+      provide: (f) => CM.EditorView.decorations.from(f),
+    });
+  }
+  return pausedField;
 }
 function makeState(name) {
   if (!isText(files[name]))
     return CM.EditorState.create({ doc: `${name}: ${files[name].length} bytes, not text; it can't be edited here`,
                                    extensions: [CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), prefExtensions(["theme", "fontSize"])] });
   const ext = [
-    isCode(name) ? [BP.field, BP.gutter, CM.keymap.of([{ key: "F9", preventDefault: true, run: (v) => { toggleBreakpoint(v, v.state.selection.main.head); return true; } }])] : [],
+    isCode(name) && dbg.present ? [BP.field, BP.gutter, CM.keymap.of([{ key: "F9", preventDefault: true, run: (v) => { toggleBreakpoint(v, v.state.selection.main.head); return true; } }])] : [],
+    pausedLine(),
     // CodeMirror's basicSetup, in parts; those a preference turns on and off are in prefExtensions
     CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.dropCursor(), CM.EditorState.allowMultipleSelections.of(true),
     CM.indentOnInput(), CM.syntaxHighlighting(CM.defaultHighlightStyle, { fallback: true }),
@@ -1856,7 +2069,7 @@ function makeState(name) {
     CM.lintGutter(),
     CM.EditorView.updateListener.of((u) => {
       if (u.docChanged && name === current && name in files) { files[name] = u.state.doc.toString(); keep(name); }
-      if (isCode(name) && (u.docChanged || u.transactions.some((t) => t.effects.length))) {
+      if (isCode(name) && dbg.present && (u.docChanged || u.transactions.some((t) => t.effects.length))) {
         const lines = breakLines(u.state), before = breakpoints.get(name) || new Map();
         if (JSON.stringify([...lines]) !== JSON.stringify([...before])) { breakpoints.set(name, lines); saveBreakpoints(); }
       }
@@ -1864,7 +2077,7 @@ function makeState(name) {
   ];
   if (name.endsWith(".hx")) ext.push(CM.StreamLanguage.define(CM.haxe));
   let st = CM.EditorState.create({ doc: files[name], extensions: ext });
-  if (isCode(name) && breakpoints.has(name)) st = st.update({ effects: BP.all.of(breakpoints.get(name)) }).state;
+  if (isCode(name) && dbg.present && breakpoints.has(name)) st = st.update({ effects: BP.all.of(breakpoints.get(name)) }).state;
   const list = diagnostics.get(name);
   if (list && list.length) st = st.update(CM.setDiagnostics(st, toDiagnostics(st.doc, list))).state;
   return st;
@@ -1873,7 +2086,7 @@ function makeState(name) {
 function syncEditor() {
   if (view && current !== null && isText(files[current]) && view.state.doc.toString() !== files[current])
     view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: files[current] },
-                    effects: isCode(current) && breakpoints.has(current) ? BP.all.of(breakpoints.get(current)) : [] });
+                    effects: isCode(current) && dbg.present && breakpoints.has(current) ? BP.all.of(breakpoints.get(current)) : [] });
 }
 
 function show(name) {
@@ -1972,6 +2185,7 @@ function showView() {
   const built = program.url !== "about:blank";
   $("app-restart").setAttribute("aria-disabled", String(!built));
   $("app-restart").title = built ? "Start the app over from the latest build: its state is lost" : "Start the app over (nothing has built yet)";
+  if (dbg.present) { dbgShow(); dbgSync(); }
 }
 async function startProgram() {
   builtWith = null; // a build from scratch: whatever the build file was before doesn't matter
@@ -2265,7 +2479,22 @@ $("bp-clear").onclick = () => attempt(async () => {
   for (const [f, st] of states) if (isCode(f) && f !== current) states.set(f, st.update({ effects: BP.all.of(new Map()) }).state);
   if (current !== null && isCode(current)) view.dispatch({ effects: BP.all.of(new Map()) });
   status("breakpoints removed");
-  if (had) return build();
+  if (had) return dbgSync();
+});
+$("dbg-continue").onclick = dbgDo("Debugger.resume");
+$("dbg-pause").onclick = dbgDo("Debugger.pause");
+$("dbg-over").onclick = dbgDo("Debugger.stepOver");
+$("dbg-into").onclick = dbgDo("Debugger.stepInto");
+$("dbg-out").onclick = dbgDo("Debugger.stepOut");
+// the debugger's keys, as in VS Code (F11 can be the browser's full screen: the button is there)
+addEventListener("keydown", (e) => {
+  if (!dbg.present) return;
+  const k = e.key === "F11" && e.shiftKey ? "out" : { F8: dbg.paused ? "continue" : "pause", F10: "over", F11: "into" }[e.key];
+  if (!k || e.ctrlKey || e.altKey || e.metaKey) return;
+  const b = $("dbg-" + k);
+  if (b.disabled) return;
+  e.preventDefault();
+  b.click();
 });
 $("app-tab").onclick = () => { const w = window.open(RUNNER, "_blank"); if (w) program.tabs.add(w); };
 // the app from its start, where it is: a fresh page on the latest build, so @:hot state
@@ -2677,31 +2906,13 @@ async function test() {
   const bl = await save();
   step("a run of edits builds", report.reloadMs.every((ms) => ms >= 0) && bl.ok, report.reloadMs);
 
-  // ---- breakpoints: in the gutter; in the text the compiler gets for the app, not the file
-  show("src/Hello.hx");
-  const hxLines = files["src/Hello.hx"].split("\n");
-  const bpLine = hxLines.findIndex((l) => l.includes("ticks++;")) + 1, closeLine = hxLines.findIndex((l) => /^class /.test(l)) + 1;
-  await toggleBreakpoint(view, view.state.doc.line(bpLine).from);
-  const bundle1 = replay.build.js;
-  step("a breakpoint on a statement: set, the file as it was", breakLines(view.state).get(bpLine) === "ok" && !files["src/Hello.hx"].includes("js.Lib.debug")
-       && document.querySelector(".cm-breakpoints .bp-ok"), [...breakLines(view.state)]);
-  step("the app's build has it: debugger; in the bundle", (bundle1.match(/debugger;/g) || []).length === 1);
-  const map1 = JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(bundle1.slice(bundle1.lastIndexOf(MAP_URL) + MAP_URL.length).trim()), (c) => c.charCodeAt(0))));
-  const hi = map1.sources.findIndex((s) => s.endsWith("/static/src/Hello.hx"));
-  step("and DevTools is shown the file as it is (the source map's text)", hi >= 0 && map1.sourcesContent[hi] === files["src/Hello.hx"]);
-  await toggleBreakpoint(view, view.state.doc.line(closeLine).from);
-  step("a breakpoint where no statement starts (a class's first line): hollow, left out of builds", breakLines(view.state).get(closeLine) === "bad"
-       && document.querySelector(".cm-breakpoints .bp-bad") && (replay.build.js.match(/debugger;/g) || []).length === 1, [...breakLines(view.state)]);
-  view.dispatch({ changes: { from: 0, insert: "\n" } });
-  step("breakpoints move with the text", breakLines(view.state).get(bpLine + 1) === "ok" && breakLines(view.state).get(closeLine + 1) === "bad"
-       && breakpoints.get("src/Hello.hx").get(bpLine + 1) === "ok", [...breakLines(view.state)]);
-  view.dispatch({ changes: { from: 0, to: 1, insert: "" } });
-  await save();
-  step("they're kept for the project", JSON.stringify(JSON.parse(localStorage.getItem(breakKey()))["src/Hello.hx"].sort((a, b) => a[0] - b[0]))
-       === JSON.stringify([[bpLine, "ok"], [closeLine, "bad"]].sort((a, b) => a[0] - b[0])), localStorage.getItem(breakKey()));
-  await toggleBreakpoint(view, view.state.doc.line(bpLine).from);
-  await toggleBreakpoint(view, view.state.doc.line(closeLine).from);
-  step("removed: out of the build", breakLines(view.state).size === 0 && !(replay.build.js.match(/debugger;/g) || []).length);
+  // ---- without the debugger extension: debugging is DevTools'; the IDE adds nothing of its own
+  if (!dbg.present) {
+    show("src/Hello.hx");
+    step("without the debugger extension: no breakpoint gutter, no debug panel, no breakpoint items",
+         !document.querySelector(".cm-breakpoints") && $("debug").hidden && $("bp-toggle").hidden && $("bp-clear").hidden);
+    step("and the app's bundle is the compiler's own (nothing put in)", !/debugger;/.test(replay.build.js));
+  }
 
   // ---- what the compiler knows about the code: completion, hover, go to definition
   show("src/Hello.hx");
@@ -3153,6 +3364,7 @@ async function test() {
   await connectRunner();
   await tell({ type: "reset" });
   const first = await startProgram();
+  if (dbg.present) { dbgShow(); dbgSync(); }
   if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
   // a step that throws ends the test: the report says what ran, and the error
   if (TESTING && first.ok) test().catch((e) => {

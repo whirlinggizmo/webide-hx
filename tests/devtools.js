@@ -3,7 +3,8 @@
 // gets the bundle's source map as DevTools does (inline, or over the network past the
 // page's service worker), sets a breakpoint where
 // the map puts a line of Hello.hx, waits for it to hit, and checks the pause maps back to
-// that line, with the program's state readable there. The app runs on another site than the
+// that line, with the program's state readable there; then, stopped at one, an edit saved:
+// built at once, and taken by the app once it goes on. The app runs on another site than the
 // IDE (runner.html), so in a frame of its own process: reached, as DevTools reaches it, by
 // attaching to that frame's target (each with a session of its own).
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/
@@ -158,41 +159,28 @@ async function checkBundle(label) {
     await new Promise(function (r) { setTimeout(r, 200); });
   step("the edit reloaded (bundle 2 loaded)", [...scripts.values()].some(function (s) { return /\/run\/hello\.js\?v=2/.test(s.url); }));
   await checkBundle("reloaded bundle");
-  // a breakpoint set in the IDE's gutter: no breakpoint of DevTools', the app stops by itself
-  // (the debugger; the build put there), at the .hx line, the file shown as it is; and the IDE
-  // isn't stopped with it (the app has its own process)
-  var stop = next("Debugger.paused", function (p) { return p.reason === "other"; }, 15000);
-  var n = await evaluate("(async () => { show('src/Hello.hx'); const n = files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes('" + LINE_TEXT + "')) + 1; await toggleBreakpoint(view, view.state.doc.line(n).from); return n; })()");
-  var stopped = await stop;
-  step("a breakpoint set in the IDE: the app stops there by itself", !!stopped, stopped && stopped.reason);
+  // stopped at a breakpoint of DevTools', the person saves an edit: the IDE builds at once (it
+  // doesn't wait on the stopped app, and what it sends meanwhile is dropped), and once the
+  // app goes on it takes that build
+  var bundle = [...scripts.entries()].filter(function (e) { return /\/run\/hello\.js/.test(e[1].url) && e[1].sourceMapURL; }).pop();
+  var sid = bundle[1].session, map = JSON.parse(Buffer.from(bundle[1].sourceMapURL.slice(bundle[1].sourceMapURL.indexOf(",") + 1), "base64").toString("utf8"));
+  var hx = map.sources.findIndex(function (x) { return /Hello\.hx$/.test(x); }), lines = map.sourcesContent[hx].split("\n");
+  var at = decode(map).find(function (m) { return m.src === hx && m.sl === lines.findIndex(function (l) { return l.indexOf(LINE_TEXT) >= 0; }); });
+  var bp = await send("Debugger.setBreakpoint", { location: { scriptId: bundle[0], lineNumber: at.gl, columnNumber: at.gc } }, sid);
+  var stopped = await next("Debugger.paused", function (p, s) { return s === sid; }, 10000);
+  step("stopped at a breakpoint of DevTools'", !!stopped);
   if (stopped) {
-    var loc = stopped.callFrames[0].location, s = scripts.get(loc.scriptId);
-    var ref = s && s.sourceMapURL, map = ref && JSON.parse(Buffer.from(ref.slice(ref.indexOf(",") + 1), "base64").toString("utf8"));
-    var at = map && decode(map).filter(function (m) { return m.gl === loc.lineNumber && m.gc <= loc.columnNumber; }).pop();
-    step("at Hello.hx:" + n + ", as DevTools maps it", at && /Hello\.hx$/.test(map.sources[at.src]) && at.sl === n - 1, at && { source: map.sources[at.src], line: at.sl + 1 });
-    var text = at && map.sourcesContent[at.src];
-    step("DevTools shows the file as it is (no call in it)", text && text.indexOf("js.Lib.debug") < 0 && text.split("\n")[n - 1].indexOf("ticks++;") >= 0);
-    var ide = await evaluate("(async () => { const t0 = performance.now(); await new Promise((r) => setTimeout(r, 50)); return Math.round(performance.now() - t0); })()");
-    step("the IDE runs while the app is stopped", ide < 1000, ide + " ms for a 50 ms timer");
-    // the breakpoint removed while the app is stopped there: the IDE builds at once (it
-    // doesn't wait on the stopped runner), and once the app goes on, it takes that build
-    // and doesn't stop there again
     var t0 = Date.now();
-    var removed = await evaluate("(async () => { const n = files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes('" + LINE_TEXT + "')) + 1; const r = await toggleBreakpoint(view, view.state.doc.line(n).from); return { ok: r && r.ok, version, left: breakLines(view.state).size }; })()");
-    step("removed while stopped there: the IDE builds at once", removed.ok && removed.left === 0 && Date.now() - t0 < 2000, { ms: Date.now() - t0, removed: removed });
-    // stopped a while, as a person would be: questions the IDE sends meanwhile are dropped too
-    await new Promise(function (r) { setTimeout(r, 3500); });
+    var built = await evaluate("(async () => { show('src/Hello.hx'); files['src/Hello.hx'] = files['src/Hello.hx'].replace('ticks % 2', 'ticks % 3'); const r = await save(); return { ok: r.ok, version }; })()");
+    await new Promise(function (r) { setTimeout(r, 3500); }); // stopped a while, as a person would be
+    step("an edit saved while it's stopped: the IDE builds at once", built.ok && Date.now() - t0 < 6000, built);
     var tookBefore = await evaluate("appTook");
-    step("the stopped app hasn't taken that build yet", tookBefore < removed.version, { took: tookBefore, build: removed.version });
-    var again = 0;
-    on("Debugger.paused", function (p, ss) { if (ss === s.session && p.reason === "other") { again++; send("Debugger.resume", {}, ss); } });
-    await send("Debugger.resume", {}, s.session);
+    step("the stopped app hasn't taken that build yet", tookBefore < built.version, { took: tookBefore, build: built.version });
+    await send("Debugger.removeBreakpoint", { breakpointId: bp.breakpointId }, sid);
+    await send("Debugger.resume", {}, sid);
     var took = false;
-    for (var w = 0; w < 50 && !took; w++) { took = (await evaluate("appTook")) >= removed.version; if (!took) await new Promise(function (r) { setTimeout(r, 100); }); }
+    for (var w = 0; w < 50 && !took; w++) { took = (await evaluate("appTook")) >= built.version; if (!took) await new Promise(function (r) { setTimeout(r, 100); }); }
     step("once it goes on, it takes the build", took);
-    var afterTook = again;
-    await new Promise(function (r) { setTimeout(r, 3000); });
-    step("and doesn't stop there again after (3 s, about 6 ticks)", again === afterTook, { stopsBeforeTheReload: afterTook, stopsAfter: again - afterTook });
   }
   ws.close();
   console.log(failures ? failures + " failed" : "all ok");

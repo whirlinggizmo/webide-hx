@@ -365,19 +365,21 @@ DevTools under `file://` as the compiler's paths (`/static/src/Hello.hx`). Open 
 `node tests/devtools.js PORT` checks this against a Chromium-based browser started with
 `--remote-debugging-port=PORT` on the IDE (`/`).
 
-Breakpoints can be set in the IDE too: a click in the gutter left of the line numbers, F9
-(as in VS Code), or App > Toggle breakpoint. A page can't open DevTools or set its
-breakpoints, so a build puts `js.Lib.debug();` (`debugger;` in JavaScript) at the start of
-each breakpoint's line, in the text the compiler gets for the app, never in the file. With
-DevTools open, the app stops there by itself, at the `.hx` line; with it closed, nothing
-happens. The build's source map is given the file's own text back, and that line's columns,
-so DevTools shows the file as it is. A breakpoint goes where a statement can start: when one
-is set, the compiler checks the code with it there, and a line where it doesn't compile (a
-declaration, the middle of an expression, a blank line) shows a hollow dot and is left out
-of builds. A closing brace is fine: the app stops before leaving the block. Breakpoints
-move with the text as it's edited and are kept per project, in this browser. Toggling one
-is a reload build (about 0.1 s). The app has its own process, so while it's stopped the IDE
-keeps working.
+To debug in the IDE itself, there's an optional browser extension (Chromium), in
+`extension/` (its README says how to install it). With it, the editor has a breakpoint gutter
+(a click, or F9), and a panel under the app has Continue, Pause, Step over/into/out (F8, F10,
+F11, Shift+F11), the call stack (a click shows that frame's line) and the variables
+(objects, and classes with their statics, open on a click); the line the app is stopped at
+is marked in the editor. The extension drives the browser's debugger on the app's frame
+only, so the IDE goes on while the app is stopped. Breakpoints are placed where the source
+map puts their lines, in every bundle the app has loaded, and again after each hot reload;
+a line with no code of its own shows a hollow dot. They move with the text and are kept
+per project. For now it debugs the app embedded in the IDE. `node tests/debugger.js PORT`
+checks it against a browser started with the extension (`--load-extension=extension`).
+
+Messages to a frame whose process is stopped in the debugger are dropped (Chromium:
+measured, whatever their size), so a build saved while the app is stopped doesn't reach it
+then; the IDE keeps track of the build each runner has and sends it again once it can.
 
 Text crosses between the page and the compiler as UTF-8: the compiler's filesystem holds
 bytes, so `resident-worker.js` encodes sources and decodes output, and the standard
