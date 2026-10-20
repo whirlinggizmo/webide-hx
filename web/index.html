@@ -603,6 +603,7 @@ addEventListener("message", (e) => {
   if (m.type === "ready") { runnerReady(w); return; }
   const r = runners.get(w);
   if (!r) return;
+  catchUp(w, r);
   if (m.type === "need") toRunner(w, { type: "file", id: m.id, body: servedFile(m.path) });
   // the app took the latest build: the status says it reloaded (if it still says reloading)
   else if (m.type === "took" && w === program.target()) {
@@ -622,7 +623,8 @@ async function runnerReady(w) {
   r.ready = false; r.log = "";
   toRunner(w, { type: "theme", theme: prefs.theme });
   await askRunner(w, { type: "sw", msg: { type: "reset" } });
-  if (replay.build) await askRunner(w, { type: "sw", msg: replay.build });
+  r.has = 0; r.asking = false;
+  if (replay.build) { const m = await askRunner(w, { type: "sw", msg: replay.build }); if (m.data) r.has = m.data.version; }
   r.ready = true;
   const url = program.urlFor(w);
   if (url) toRunner(w, { type: "start", url });
@@ -653,9 +655,27 @@ async function tell(msg) {
   if (msg.type === "reset") replay.build = null;
   else if (msg.type === "build") replay.build = msg;
   for (const w of [...runners.keys()]) if (w.closed) runners.delete(w);
-  const sent = [...runners].filter(([, r]) => r.ready).map(([w]) => askRunner(w, { type: "sw", msg }));
+  const sent = [...runners].filter(([, r]) => r.ready).map(([w, r]) => askRunner(w, { type: "sw", msg }).then((m) => {
+    if (m.data && m.data.version !== undefined) r.has = m.data.version;
+  }));
   await Promise.race([Promise.all(sent), new Promise((r) => setTimeout(r, TELL_WAIT_MS))]);
 }
+// a runner behind the latest build gets it again. A build sent to a runner whose app was
+// stopped in the debugger can be lost (seen in Brave: the runner page takes nothing while
+// stopped); so a runner that hasn't said it has the latest is asked which it has (a small
+// message, answered once it can), and sent the build if that's older
+function catchUp(w, r) {
+  if (!replay.build || w.closed || !r.ready || r.asking || (r.has || 0) >= replay.build.version) return;
+  r.asking = true;
+  askRunner(w, { type: "sw", msg: { type: "noop" } }).then((m) => {
+    const has = m.data ? m.data.version : 0;
+    if (has >= replay.build.version) { r.has = has; r.asking = false; return; }
+    return askRunner(w, { type: "sw", msg: replay.build }).then((b) => { if (b.data) r.has = b.data.version; r.asking = false; });
+  });
+}
+// every second, and at once when a runner that's behind is heard from (an app going on
+// after a stop logs straight away)
+setInterval(() => { for (const [w, r] of runners) catchUp(w, r); }, 1000);
 async function connectRunner() {
   await findRunner();
   $("run").src = RUNNER;

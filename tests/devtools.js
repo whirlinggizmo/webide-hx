@@ -174,9 +174,24 @@ async function checkBundle(label) {
     step("DevTools shows the file as it is (no call in it)", text && text.indexOf("js.Lib.debug") < 0 && text.split("\n")[n - 1].indexOf("ticks++;") >= 0);
     var ide = await evaluate("(async () => { const t0 = performance.now(); await new Promise((r) => setTimeout(r, 50)); return Math.round(performance.now() - t0); })()");
     step("the IDE runs while the app is stopped", ide < 1000, ide + " ms for a 50 ms timer");
+    // the breakpoint removed while the app is stopped there: the IDE builds at once (it
+    // doesn't wait on the stopped runner), and once the app goes on, it takes that build
+    // and doesn't stop there again
+    var t0 = Date.now();
+    var removed = await evaluate("(async () => { const n = files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes('" + LINE_TEXT + "')) + 1; const r = await toggleBreakpoint(view, view.state.doc.line(n).from); return { ok: r && r.ok, version, left: breakLines(view.state).size }; })()");
+    step("removed while stopped there: the IDE builds at once", removed.ok && removed.left === 0 && Date.now() - t0 < 2000, { ms: Date.now() - t0, removed: removed });
+    var tookBefore = await evaluate("appTook");
+    step("the stopped app hasn't taken that build yet", tookBefore < removed.version, { took: tookBefore, build: removed.version });
+    var again = 0;
+    on("Debugger.paused", function (p, ss) { if (ss === s.session && p.reason === "other") { again++; send("Debugger.resume", {}, ss); } });
     await send("Debugger.resume", {}, s.session);
+    var took = false;
+    for (var w = 0; w < 50 && !took; w++) { took = (await evaluate("appTook")) >= removed.version; if (!took) await new Promise(function (r) { setTimeout(r, 100); }); }
+    step("once it goes on, it takes the build", took);
+    var afterTook = again;
+    await new Promise(function (r) { setTimeout(r, 3000); });
+    step("and doesn't stop there again after (3 s, about 6 ticks)", again === afterTook, { stopsBeforeTheReload: afterTook, stopsAfter: again - afterTook });
   }
-  await evaluate("(async () => { const n = files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes('" + LINE_TEXT + "')) + 1; await toggleBreakpoint(view, view.state.doc.line(n).from); })()");
   ws.close();
   console.log(failures ? failures + " failed" : "all ok");
   process.exit(failures ? 1 : 0);
