@@ -64,6 +64,16 @@
   dialog .actions { display: flex; flex-direction: row-reverse; gap: 8px; margin-top: 4px; }
   dialog .actions .danger { border-color: var(--error); color: var(--error); }
   #prefs { width: min(500px, calc(100vw - 32px)); }
+  #libs { width: min(620px, calc(100vw - 32px)); }
+  #libs h3 { margin: 10px 0 4px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+  #libs ul.libs { list-style: none; margin: 0; padding: 0; max-height: 30vh; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+  #libs ul.libs li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 13px; border-top: 1px solid var(--line); }
+  #libs ul.libs li:first-child { border-top: 0; }
+  #libs ul.libs li.none { color: var(--muted); }
+  #libs .lib-name { font-family: ui-monospace, monospace; }
+  #libs .lib-about { flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #libs ul.libs button { padding: 1px 8px; font-size: 12px; }
+  #libs ul.libs button[disabled] { opacity: 0.4; cursor: default; }
   #prefs .grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; }
   #prefs select, #prefs input[type=number] { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); justify-self: start; }
   #prefs input[type=number] { width: 70px; }
@@ -214,6 +224,7 @@
         <button role="menuitem" id="import" title="A zip as the project stored in this browser, replacing it">Import zip…</button>
         <button role="menuitem" id="export">Export zip</button>
         <hr role="separator">
+        <button role="menuitem" id="libraries" title="The libraries this project uses, and those downloaded in this browser">Libraries…</button>
         <button role="menuitem" id="add-library" title="A haxelib release or a GitHub repository: its haxe_libraries file, as lix writes it, and -lib in the build's hxml">Add library…</button>
         <button role="menuitem" id="add-library-zip" title="A haxelib release's zip, from lib.haxe.org, for when the page cannot download it">Add library zip…</button>
         <button role="menuitem" id="clear-libraries" title="Remove the libraries downloaded into this browser; the project's files are not touched">Clear library cache…</button>
@@ -254,6 +265,20 @@
     <div class="actions">
       <button value="ok" class="primary" id="prefs-done">Done</button>
       <button value="defaults" id="prefs-defaults" formnovalidate>Defaults</button>
+    </div>
+  </form>
+</dialog>
+<dialog id="libs" aria-labelledby="libs-title">
+  <form method="dialog">
+    <h2 id="libs-title">Libraries</h2>
+    <h3 id="libs-used-h">This project uses</h3>
+    <ul id="libs-used" class="libs" aria-labelledby="libs-used-h"></ul>
+    <h3 id="libs-cached-h">Downloaded in this browser</h3>
+    <ul id="libs-cached" class="libs" aria-labelledby="libs-cached-h"></ul>
+    <div class="actions">
+      <button value="ok" class="primary" id="libs-close">Close</button>
+      <button type="button" id="libs-add">Add library…</button>
+      <button type="button" id="libs-clear">Clear library cache…</button>
     </div>
   </form>
 </dialog>
@@ -1059,7 +1084,8 @@ async function storeLibrary(lib, got) {
     await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
     await FS.fs.promises.writeFile(p, data);
   }
-  await FS.fs.promises.writeFile(libPath(lib.dir, ".webide-hx.json"), JSON.stringify({ source: lib.source, from: got.from, sha256: got.hash, files: Object.keys(got.files).length }));
+  await FS.fs.promises.writeFile(libPath(lib.dir, ".webide-hx.json"), JSON.stringify(Object.assign({ source: lib.source, from: got.from, sha256: got.hash, files: Object.keys(got.files).length },
+    got.part !== undefined && got.part !== null ? { part: got.part } : {})));
   hashes[key] = got.hash;
   try { localStorage.setItem(libHashesKey, JSON.stringify(hashes)); } catch (e) {}
 }
@@ -3064,6 +3090,102 @@ async function addLibraryZip(bytes) {
   return lib;
 }
 $("add-library-zip").onclick = () => $("libfile").click();
+// ---- Project > Libraries…: what the project uses (its -lib lines and haxe_libraries files),
+// and what's downloaded in this browser (the library cache, every project's), with Use (the
+// library into this project: lix's file and -lib, from the cache, no download) and Remove
+// (that library out of the cache)
+async function dirBytes(path) {
+  const fsp = FS.fs.promises;
+  let n = 0;
+  for (const e of await fsp.readdir(path, { withFileTypes: true }).catch(() => [])) {
+    const p = path + "/" + e.name;
+    n += e.isDirectory() ? await dirBytes(p) : (await fsp.stat(p)).size;
+  }
+  return n;
+}
+// every library in the cache: {dir (name/version/kind[/commit]), name, version, kind, source, from, part, bytes}
+async function cachedLibraries() {
+  const fsp = FS.fs.promises, out = [];
+  const walk = async (rel, depth) => {
+    const entries = await fsp.readdir(rel ? libPath(rel) : LIBCACHE, { withFileTypes: true }).catch(() => []);
+    if (entries.some((e) => e.name === ".webide-hx.json")) {
+      let m = {};
+      try { m = JSON.parse(await libText(rel, ".webide-hx.json")); } catch (e) {}
+      const [name, version, kind] = rel.split("/");
+      out.push(Object.assign({}, m, { dir: rel, name, version, kind, bytes: await dirBytes(libPath(rel)) }));
+      return;
+    }
+    if (depth < 4) for (const e of entries) if (e.isDirectory()) await walk(rel ? rel + "/" + e.name : e.name, depth + 1);
+  };
+  await walk("", 0);
+  return out.sort((a, b) => a.dir.localeCompare(b.dir));
+}
+const sizeText = (n) => n >= 1 << 20 ? `${(n / (1 << 20)).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`;
+// where a library comes from, said briefly: haxelib, GitHub owner/repo@commit, a URL
+function libFrom(source) {
+  let m;
+  if (!source) return "";
+  if (/^haxelib:/.test(source)) return "haxelib";
+  if ((m = /^gh:\/\/github\.com\/([^#]+)#(.+)$/.exec(source))) return `GitHub ${m[1]}@${m[2].slice(0, 7)}`;
+  if ((m = /^gitlab:\/\/gitlab\.com\/([^#]+)#(.+)$/.exec(source))) return `GitLab ${m[1]}@${m[2].slice(0, 7)}`;
+  return source;
+}
+// a cached library into the project: lix's file for it (as Add library… writes it) and -lib
+// in the build's hxml; nothing downloaded
+async function useCachedLibrary(c) {
+  const lib = { name: c.name, version: c.version, source: c.source, dir: c.dir, cp: c.part !== undefined ? c.part : null };
+  const { meta, extra } = await cachedLibrary(lib);
+  const file = `haxe_libraries/${lib.name}.hxml`, text = lixFile(lib, meta, extra);
+  if (file in files && files[file] !== text && !(await askPerson({ title: `Replace ${file}?`, ok: "Replace",
+      text: `The project has ${lib.name} already, as another version or from another place. Its file is written again for ${lib.version} (${libFrom(lib.source)}).` }))) return null;
+  await putFile(file, text);
+  const cfg = buildConfig();
+  if (cfg.file) await putFile(cfg.file, withLib(files[cfg.file], lib.name));
+  const missing = Object.keys(meta.dependencies || {}).filter((d) => !LIBRARIES[d] && !(`haxe_libraries/${d}.hxml` in files));
+  const r = await build();
+  status(`${lib.name} ${lib.version} in the project` + (missing.length ? `; it needs ${missing.join(", ")} too (Add library…)` : "") + (r.ok ? "" : "; the build failed"));
+  return r;
+}
+async function showLibraries() {
+  const cfg = buildConfig(), cached = await cachedLibraries();
+  const inUse = new Set(cfg.libs.map((l) => l.dir).filter((d) => d));
+  const item = (cls, ...parts) => { const li = document.createElement("li"); if (cls) li.className = cls; li.append(...parts); return li; };
+  const span = (cls, text) => { const s = document.createElement("span"); s.className = cls; s.textContent = text; return s; };
+  const button = (text, title, onclick) => { const b = document.createElement("button"); b.type = "button"; b.textContent = text; b.title = title; b.onclick = onclick; return b; };
+  // what the project uses
+  const used = [];
+  for (const l of cfg.libs) {
+    const got = l.dir && cached.some((c) => c.dir === l.dir);
+    const version = l.version || (l.dir ? l.dir.split("/")[1] : ""); // a lix file's: its cache folder's name says it
+    used.push(item("", span("lib-name", l.name + (version ? " " + version : "")),
+      span("lib-about", (l.unpinned && !l.version ? "no version: haxelib's newest, when it builds" : libFrom(l.source)) + " · " + (got ? "downloaded" : "not downloaded yet: the next build gets it"))));
+  }
+  $("libs-used").replaceChildren(...(used.length ? used : [item("none", cfg.error ? "(the build file can't be read: " + cfg.error.message + ")" : "None (hotreload-hx comes with the page)")]));
+  // what's in the cache
+  const rows = cached.map((c) => {
+    const here = inUse.has(c.dir);
+    const use = button("Use", here ? "This project uses it" : `Add ${c.name} ${c.version} to this project: lix's file and -lib, no download`,
+      () => attempt(async () => { $("libs").close(); await useCachedLibrary(c); }));
+    use.disabled = here;
+    const remove = button("Remove", `Remove ${c.name} ${c.version} from this browser's library cache; a build that needs it downloads it again`,
+      () => attempt(async () => {
+        if (!(await askPerson({ title: `Remove ${c.name} ${c.version}?`, ok: "Remove", danger: true,
+          text: `It goes from the libraries downloaded in this browser (${sizeText(c.bytes)}). The project's files are not touched; a build that needs it downloads it again.` }))) return showLibraries();
+        await FS.fs.promises.rm(libPath(c.dir), { recursive: true, force: true });
+        libFiles.delete(c.dir);
+        status(`${c.name} ${c.version} removed from the library cache`);
+        return showLibraries();
+      }));
+    return item(here ? "used" : "", span("lib-name", `${c.name} ${c.version}`),
+      span("lib-about", [libFrom(c.source), sizeText(c.bytes), here ? "in this project" : ""].filter((x) => x).join(" · ")), use, remove);
+  });
+  $("libs-cached").replaceChildren(...(rows.length ? rows : [item("none", "None yet")]));
+  // Close first in focus (Enter closes; it never removes anything)
+  if (!$("libs").open) { $("libs").showModal(); $("libs-close").focus(); }
+}
+$("libraries").onclick = () => attempt(showLibraries);
+$("libs-add").onclick = () => { $("libs").close(); $("add-library").click(); };
+$("libs-clear").onclick = () => { $("libs").close(); $("clear-libraries").click(); };
 // ---- Clear library cache…: the libraries downloaded into this browser, gone; they come
 // again at the next build that uses them. Only /libcache: the project (the browser's, or a
 // folder on this computer) is another store. The hashes stay, so a new download is still
@@ -3519,6 +3641,23 @@ async function test() {
        && /^-D fooberry=\d/.test(files["haxe_libraries/fooberry.hxml"] || "") && /download "gh:\/\/github\.com\/HaxeFoundation\/format#[0-9a-f]{40}" into fooberry\//.test(files["haxe_libraries/fooberry.hxml"] || ""),
        named && named.lib ? files["haxe_libraries/fooberry.hxml"].split("\n").slice(0, 2) : named);
   await deleteFile("haxe_libraries/fooberry.hxml");
+  // Project > Libraries…: what the project uses, what's downloaded; Use and Remove
+  await showLibraries();
+  const row = (text) => [...$("libs-cached").children].find((li) => li.textContent.includes(text));
+  step("Libraries…: what the project uses, and what's downloaded in this browser (Close in focus)", $("libs").open && document.activeElement === $("libs-close") && /format/.test($("libs-used").textContent)
+       && row("format 3.7.0") && /haxelib/.test(row("format 3.7.0haxelib").textContent) && row("webidetestlib 1.0.0"),
+       [$("libs-used").textContent, [...$("libs-cached").children].map((li) => li.querySelector(".lib-name").textContent + " · " + li.querySelector(".lib-about").textContent)]);
+  const fetchedBefore = performance.getEntriesByType("resource").length;
+  row("format 3.7.0haxelib").querySelector("button").click(); // Use (the project has format from GitHub: replace)
+  if (await until(() => $("dialog").open && /Replace/.test($("dialog-title").textContent), 5000)) $("dialog-ok").click();
+  const used = await until(() => /haxelib:\/format#3\.7\.0/.test(files["haxe_libraries/format.hxml"] || "") && files["web-build.hxml"].split("\n").includes("-lib format") && !activity && "yes", 15000);
+  step("Use: a downloaded library into the project (lix's file, -lib), nothing downloaded", used
+       && !performance.getEntriesByType("resource").slice(fetchedBefore).some((e) => /\/files\/3\.0\/|jsdelivr|codeload/.test(e.name)), files["haxe_libraries/format.hxml"]);
+  await showLibraries();
+  row("webidetestlib 1.0.0").querySelectorAll("button")[1].click(); // Remove
+  if (await until(() => $("dialog").open && /Remove webidetestlib/.test($("dialog-title").textContent), 5000)) $("dialog-ok").click();
+  step("Remove: that library goes from the cache, nothing else", await until(() => !row("webidetestlib 1.0.0") && row("format 3.7.0") && "yes", 5000) && !(await libHas("webidetestlib/1.0.0/haxelib")) && await libHas("format/3.7.0/haxelib"));
+  $("libs").close();
   step("what isn't a library is refused, saying what is", librarySpecProblem("not a library!") && (IN_EXTENSION || librarySpecProblem("format")) && !librarySpecProblem("format:3.7.0") && !librarySpecProblem("github.com/o/r#main"));
   // the extension only: haxelib's API (no CORS for a web page), for a library's newest release
   if (IN_EXTENSION) {

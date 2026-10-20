@@ -279,6 +279,11 @@ that names a version (a file the project has is kept), and adds `-lib <name>` to
 build's hxml. A dependency without a version (haxelib's "any") is named in the status, to
 add the same way. A library already in the project is replaced only after asking.
 
+**Project > Libraries…** lists what the project uses (its `-lib` lines and `haxe_libraries/`
+files: version, where from, downloaded or not) and what's downloaded in this browser (every
+project's: name, version, where from, size). **Use** puts a downloaded one in the project
+(lix's file and `-lib`, nothing downloaded); **Remove** takes one out of the cache.
+
 **Project > Clear library cache…** removes the libraries downloaded into this browser
 (they come again at the next build that uses them). It touches nothing of the project's,
 in the browser or in a local folder; the first download's hashes are kept, so a library
