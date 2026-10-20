@@ -97,7 +97,8 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   await ev("(async () => { show('src/Hello.hx'); view.dispatch({ changes: { from: 0, insert: '// a line above\\n' } }); await save(); })()");
   var moved = await ev("[...breakLines(view.state)].map(([l]) => l)");
   step("the breakpoint moved with the edit", moved.length === 1 && moved[0] === n + 1, moved);
-  var after = await until("dbg.paused && dbg.scripts.size > 1 && " + stoppedAt, 15000);
+  // (a stop in the old bundle, before the new one is in, is gone on from, as a person would)
+  var after = await until("(dbg.paused && dbg.scripts.size <= 1 ? ($('dbg-continue').click(), false) : dbg.paused && dbg.scripts.size > 1 && " + stoppedAt + ")", 15000);
   step("after the hot reload, it stops at the new line", after === "src/Hello.hx:" + (n + 1), after);
   await toggle(n + 1);
   await ev("$('dbg-continue').click()");
