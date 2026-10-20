@@ -215,21 +215,44 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       every non-code file up front. A change sends only the name. A runner whose app is
       busy or hung doesn't hold up builds (200 ms at most). 2026-10-20.
 
-## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
+## 5. Debugging in the IDE
 
-- [x] Breakpoints set in the IDE's gutter, paused in DevTools: a page can't open DevTools
-      or set its breakpoints, but `debugger;` pauses there when DevTools is open (and does
-      nothing when it isn't). So a breakpoint on a line puts `js.Lib.debug();` at its start
-      in the source the compiler gets (not the file), on the same line, so the source map
-      still points at it; a toggle is a reload build (~100 ms). Only where a statement can
-      start: a line where it doesn't compile is refused. (Rob's idea, 2026-10-19.) Done 2026-10-20: F9 and App > Toggle breakpoint too; the line
-      checked by the compiler when set (a closing brace works: the app stops before leaving
-      the block); the source map given the file's own text and columns back; kept per
-      project. The DevTools test stops the app from an IDE breakpoint alone.
-- [ ] Pausing in the IDE itself, without DevTools: page JavaScript can't drive the
-      browser's debugger. The routes: a native host speaking the browser's debugging
-      protocol (an install again), or instrumenting the compiled code to report lines and
-      pause, where pausing is the hard part (the program and the page share a thread).
+Without an extension, debugging is DevTools': the bundles carry their source maps and the
+`.hx` text, so breakpoints, stepping and variables work there on the `.hx` lines, and the app
+has its own process, so the IDE goes on while it's stopped. A page can't drive the
+debugger, so debugging inside the IDE needs a browser extension (Chromium: `chrome.debugger`).
+Two, for two kinds of use:
+
+- [x] Gutter breakpoints that pause in DevTools, by putting `js.Lib.debug();` at the start
+      of the line in the compiler's text (2026-10-20). A bridge to DevTools from outside,
+      with its limits (only where a statement starts, a rebuild per toggle, one more stop
+      after a change while stopped: messages to a stopped app are dropped). To be removed
+      when the debugger extension lands: without it, DevTools as it is.
+- [x] Probe (2026-10-20): an MV3 extension attaches `chrome.debugger` to the IDE's tab; the
+      runner's frame is a child session of its own; the debugger on that session only. A
+      breakpoint at a `.hx` line (from the source map), stopped there, the call stack,
+      variables, the IDE running meanwhile, step over, a breakpoint removed while stopped
+      and no stop after. Headless Brave loads it with --load-extension.
+- [~] **The debugger extension** (optional; the IDE stays a web page). Small: a content
+      script on the IDE's pages bridges the page and the extension's worker, which drives
+      `chrome.debugger` on the app's frame only. Permissions: debugger, and the IDE's own
+      hosts. Attached only while there are breakpoints or a pause is asked for (Chrome
+      shows a banner while it is). In the IDE: real breakpoints from the gutter (no
+      rebuild; re-placed after each hot reload from the new map), a Run and Debug panel
+      (continue, step over/into/out, the call stack, variables), the stopped line marked in
+      the editor. Then: values on hover, watches, pause on exceptions, conditional
+      breakpoints and logpoints, a console in the stopped app; the app in a window or tab
+      of its own (another tab to attach to).
+- [ ] **An all-in-one extension**, an alternative to the web IDE for whoever wants it: the
+      IDE as an extension page, with the compiler and the standard library inside it
+      (offline, nothing to host; the bundle uses no eval), the library cache in the
+      extension's storage (never evicted), libraries straight from haxelib, GitHub and
+      GitLab (no mirror, and the newest version for an unpinned `-lib`), and the debugger.
+      The app runs in a sandboxed extension page (its own process in Chromium, no second
+      site needed), which has no service worker: builds, files and hot reload by
+      postMessage, so hotreload-hx's JS client needs a postMessage transport. Maybe later:
+      a locally installed Haxe through native messaging (every target, native speed), as an
+      option.
 
 ## 6. Language server (after a resident compiler)
 
