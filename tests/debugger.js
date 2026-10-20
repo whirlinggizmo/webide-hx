@@ -138,7 +138,8 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   await ev("(async () => { await program.out('window'); })()");
   await until("program.kind === 'window' && (runners.get(program.win) || {}).ready", 15000);
   await toggle(w);
-  var inWindow = await until("dbg.paused && dbg.paused.key.startsWith('t:') && dbg.at", 15000);
+  // (a window just opened can have its timers slowed too, headless: the app's next tick can take a while)
+  var inWindow = await until("dbg.paused && dbg.paused.key.startsWith('t:') && dbg.at", 30000);
   step("the app in a window of its own: a breakpoint stops it there", inWindow === "src/Hello.hx:" + w, inWindow);
   step("the panel comes under the editor, with the stack", await ev("$('debug').parentNode === document.querySelector('.edit') && !$('debug').hidden && /onTick/.test($('dbg-stack').textContent)"));
   await toggle(w);
