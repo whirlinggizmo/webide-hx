@@ -39,7 +39,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
 (async function () {
   var targets = await (await fetch("http://127.0.0.1:" + port + "/json")).json();
   // the web IDE, or the all-in-one extension's (its debugger built in)
-  var page = targets.find(function (t) { return t.type === "page" && (/^https?:\/\/[^/]+\/(index\.html)?(\?.*)?$/.test(t.url) || /^chrome-extension:\/\/[a-p]{32}\/index\.html/.test(t.url)); });
+  var page = targets.find(function (t) { return t.type === "page" && (/^https?:\/\/[^?#]*\/(index\.html)?(\?.*)?$/.test(t.url) || /^chrome-extension:\/\/[a-p]{32}\/index\.html/.test(t.url)); });
   if (!page) { console.log("no IDE page among the targets"); process.exit(1); }
   ws = new WebSocket(page.webSocketDebuggerUrl);
   ws.onmessage = function (e) { var m = JSON.parse(e.data); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m.result || m); waiting.delete(m.id); } };
