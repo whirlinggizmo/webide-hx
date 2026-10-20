@@ -10,9 +10,9 @@ services:
     environment:
       - WEBIDE_PATH=/webide-hx/   # where the site's web server forwards to it
       # where the app runs: this same container, reached by another site's name (README.md);
-      # empty, the IDE's own origin
-      - WEBIDE_RUNNER=
-      - WEBIDE_IDE=
+      # both empty, the IDE's own origin
+      - WEBIDE_RUNNER=https://run.whirlinggizmos.com/webide-hx/
+      - WEBIDE_IDE=https://dev.whirlinggizmo.com
     ports:
       - "127.0.0.1:10081:80"   # not 10080: browsers refuse that port (testing it directly fails)
     volumes:
