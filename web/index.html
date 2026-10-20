@@ -3425,7 +3425,7 @@ async function test() {
   step("-lib format with lix's haxe_libraries/format.hxml: the GitHub commit, through jsDelivr", lx.ok && lx2.ok && await libHas(`format/3.7.0/github/${sha}`)
        && await until(() => frameLog().includes("adler again true"), 15000), lx.ok ? (lx2.ok ? frameLog().split("\n").slice(-3) : lx2.r.stderr) : lx.r.stderr);
   const marker = JSON.parse(await libText(`format/3.7.0/github/${sha}`, ".webide-hx.json"));
-  step("and says where it came from", /jsDelivr/.test(marker.from) && marker.files > 100, marker);
+  step("and says where it came from (jsDelivr; the extension, GitHub's zip)", (IN_EXTENSION ? /^GitHub/ : /jsDelivr/).test(marker.from) && marker.files > 100, marker);
   show("src/UsesFormat.hx");
   await goToDefinition("src/UsesFormat.hx", view, view.state.doc.toString().indexOf("Adler32()") + 2);
   step("go to definition into a library: its file, read-only", libraryView && libraryView.path.startsWith(`/libcache/format/3.7.0/github/${sha}/`)
