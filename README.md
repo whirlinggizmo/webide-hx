@@ -319,7 +319,11 @@ in DevTools doesn't stop the IDE; and the app's code, libraries included, can't 
 IDE's storage: the project, the library cache, a local folder's handle.
 
 The IDE opens `runner.html` on that site for each place the app shows (its pane, a separate
-or floating window, a new tab). The runner registers `sw.js`, the DevServer's part (it
+or floating window, a new tab). A window or a tab of its own is `app.html`, a page of the
+IDE's own site that frames the runner: the runner's site has a name near the IDE's
+(whirlinggizmos.com, whirlinggizmo.com), and Chromium asks of a page of such a site
+whether the familiar one was meant ("Did you mean ...?"); it doesn't of a frame. `app.html`
+hands what its runner says on to the IDE that opened it. The runner registers `sw.js`, the DevServer's part (it
 serves `run/`, the latest bundle and the assets, and answers hotreload-hx's `/__hotreload`
 polls, so the app works as it would with the desktop DevServer), and the IDE hands it each
 build by `postMessage`. Files are served as a static server (or a CDN) would serve them:

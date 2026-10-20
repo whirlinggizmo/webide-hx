@@ -236,14 +236,14 @@ def editor():
 
 def extension_ide():
     """build/extension-ide/: the all-in-one extension (extensions/ide/), assembled from web/ as
-    it's built: its files but the web runner's (runner.html, sw.js), the checks page and test
+    it's built: its files but the web runner's (runner.html, sw.js, app.html), the checks page and test
     reports; extensions/ide/'s; and index.html's inline script moved to ide.js, since an
     extension's pages can't have inline scripts"""
     web, out = os.path.join(HERE, "web"), os.path.join(BUILD, "extension-ide")
     if not os.path.exists(os.path.join(web, "haxe.js")):
         sys.exit("web/ isn't built: run build.py (with --hotreload) first")
     shutil.rmtree(out, ignore_errors=True)
-    skip = shutil.ignore_patterns("runner.html", "sw.js", "checks", "report*.json", "config.json")
+    skip = shutil.ignore_patterns("runner.html", "sw.js", "app.html", "checks", "report*.json", "config.json")
     shutil.copytree(web, out, ignore=skip)
     page = open(os.path.join(out, "index.html"), encoding="utf-8").read()
     scripts = re.findall(r"<script>\n(.*?)</script>", page, re.S)

@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Haxe program</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; }
+  @media (prefers-color-scheme: dark) { html, body { background: #111; } }
+  iframe { border: 0; width: 100%; height: 100%; display: block; }
+  p { font: 14px/1.4 system-ui, sans-serif; margin: 16px; }
+</style>
+</head>
+<body>
+<script>
+// The app in a window or a tab of its own (App > Separate window, Open in new tab) on the
+// hosted site: this page, of the IDE's own site, frames the app's runner, which is on a site
+// of its own (a process of its own). The runner's page opened as it is would do, but its
+// site's name is near the IDE's, and a browser asks of such a page whether the IDE's was
+// meant; of a frame it doesn't. What the runner says comes to this page (its parent) and is
+// handed on to the IDE that opened it; the IDE speaks to the runner itself
+const webide = () => { try { return window.opener && window.opener.webide; } catch (e) { return null; } };
+if (!webide()) {
+  const p = document.createElement("p");
+  p.textContent = "The app runs in webide-hx: open it from there.";
+  document.body.append(p);
+} else {
+  const f = document.createElement("iframe");
+  f.title = "the running program";
+  f.src = webide().runner();
+  document.body.append(f);
+  addEventListener("message", (e) => { const ide = webide(); if (ide && e.source === f.contentWindow) ide.said(e); });
+}
+</script>
+</body>
+</html>

@@ -737,6 +737,13 @@ function fromRunner(e) {
   else if (m.id !== undefined && runnerReplies.has(m.id)) { runnerReplies.get(m.id)(m); runnerReplies.delete(m.id); }
 }
 addEventListener("message", fromRunner);
+// the app in a window or a tab of its own, on the hosted site: app.html, a page of the IDE's
+// own site that frames the runner (a page of the runner's own address, on a site whose name
+// is near the IDE's, has the browser asking whether the IDE's was meant). It hands on what
+// its runner says, and asks where the runner is, through window.webide. The extension's
+// runner pages are opened as they are (no site, nothing to mistake)
+const APP_PAGE = IN_EXTENSION ? null : new URL("app.html", location.href).href;
+if (!IN_EXTENSION) window.webide = { runner: () => RUNNER, said: (e) => fromRunner(e) };
 // a runner (new, or reloaded): filled in, then shown the app if it's where the app shows
 async function runnerReady(w) {
   const r = runners.get(w) || { log: "", waiters: [] };
@@ -2126,7 +2133,12 @@ async function dbgSync() {
   if (!dbg.attaching) dbg.attaching = (async () => {
     try {
       if (!dbg.attached) { await dbgCall("attach"); dbg.attached = true; }
-      for (const t of await dbgCall("attachTabs", { prefix: RUNNER })) dbgAdd("t:" + t.tabId, t.tabId, null);
+      // the windows and tabs of the app's: the extension's runner is the tab; app.html's is a
+      // frame of it, in a process of its own, found as the pane's is
+      for (const t of await dbgCall("attachTabs", { prefix: APP_PAGE || RUNNER })) {
+        if (APP_PAGE) await dbgCall("send", { tabId: t.tabId, method: "Target.setAutoAttach", params: { autoAttach: true, waitForDebuggerOnStart: false, flatten: true } });
+        else dbgAdd("t:" + t.tabId, t.tabId, null);
+      }
       for (let i = 0; i < 50 && !dbg.targets.size; i++) await new Promise((r) => setTimeout(r, 40));
       if (!dbg.targets.size) throw new Error("the app's runner wasn't found (it needs the app on a site of its own)");
       await Promise.all([...dbg.targets.values()].map((t) => t.enabled));
@@ -2140,14 +2152,15 @@ async function dbgSync() {
 }
 function dbgEvent(method, p, sessionId, tabId) {
   if (method === "detached") { if (p.reason === "canceled_by_user") dbg.cancelled = true; dbgForget(); dbgShow(); return; }
-  if (method === "tabDetached") { dbgDrop("t:" + p.tabId); return; }
-  if (!tabId && method === "Target.attachedToTarget") {
-    // the pane's runner (a frame of the IDE's tab, in a process of its own)
-    if (p.targetInfo.type === "iframe" && RUNNER && p.targetInfo.url.startsWith(RUNNER)) dbgAdd("c:" + p.sessionId, null, p.sessionId);
+  if (method === "tabDetached") { for (const t of [...dbg.targets.values()]) if (t.tabId === p.tabId) dbgDrop(t.key); return; }
+  if (method === "Target.attachedToTarget") {
+    // a runner that's a frame, in a process of its own: the pane's (of the IDE's tab), or
+    // app.html's (of a window's or a tab's)
+    if (p.targetInfo.type === "iframe" && RUNNER && p.targetInfo.url.startsWith(RUNNER)) dbgAdd("c:" + p.sessionId, tabId, p.sessionId);
     return;
   }
-  if (!tabId && method === "Target.detachedFromTarget") { dbgDrop("c:" + p.sessionId); return; }
-  const key = tabId ? (sessionId ? null : "t:" + tabId) : "c:" + sessionId, t = key && dbg.targets.get(key);
+  if (method === "Target.detachedFromTarget") { dbgDrop("c:" + p.sessionId); return; }
+  const key = sessionId ? "c:" + sessionId : tabId ? "t:" + tabId : null, t = key && dbg.targets.get(key);
   if (!t) return;
   if (method === "Debugger.scriptParsed") {
     // a bundle of the app's (its map inline; in the extension, a blob URL): its breakpoints placed
@@ -2536,13 +2549,18 @@ const program = {
   kind: null, win: null, frame: null, watch: null,
   url: "about:blank",
   tabs: new Set(), // runners in tabs of their own (Open in new tab): each runs the app too
+  // a window or a tab of the app's: its runner (app.html's frame, where there's app.html)
+  runnerOf(w) {
+    if (!w || !APP_PAGE) return w;
+    try { return w.frames[0] || null; } catch (e) { return null; }
+  },
   // the runner that shows the app now
   target() {
-    return this.kind === "window" ? this.win : this.kind === "pip" ? this.frame.contentWindow : $("run").contentWindow;
+    return this.kind === "window" ? this.runnerOf(this.win) : this.kind === "pip" ? this.frame.contentWindow : $("run").contentWindow;
   },
   // what a runner should show when it's ready: the app, if it's where the app shows (or a tab)
   urlFor(w) {
-    if (this.tabs.has(w)) return this.url === "about:blank" ? null : "run/?start=" + ++starts;
+    if ([...this.tabs].some((t) => this.runnerOf(t) === w)) return this.url === "about:blank" ? null : "run/?start=" + ++starts;
     if (w === this.target()) return this.url;
     if (w === $("run").contentWindow) return "about:blank"; // the pane's, while the app is out
     return null;
@@ -2572,11 +2590,15 @@ const program = {
       let at = {};
       try { at = JSON.parse(localStorage.getItem(PROGRAM_WINDOW)) || {}; } catch (e) {}
       const features = ["popup", `width=${at.w || 640}`, `height=${at.h || 480}`].concat(at.x !== undefined ? [`left=${at.x}`, `top=${at.y}`] : []);
-      const win = window.open(RUNNER, "haxe-program", features.join(","));
+      const win = window.open(APP_PAGE || RUNNER, "haxe-program", features.join(","));
       if (!win) throw new Error("the browser blocked the window: allow pop-ups for this page");
       this.win = win;
-      // closed by the person: back into the page
-      this.watch = setInterval(() => { if (win.closed) this.back(); }, 500);
+      // closed by the person: back into the page; app.html's place read here (it's of this
+      // site; the extension's runner says where it is)
+      this.watch = setInterval(() => {
+        if (win.closed) { this.back(); return; }
+        if (APP_PAGE) try { this.placed(win, { x: win.screenX, y: win.screenY, w: win.innerWidth, h: win.innerHeight }); } catch (e) {}
+      }, 500);
     } else {
       const pip = await documentPictureInPicture.requestWindow({ width: 480, height: 360 });
       const f = pip.document.createElement("iframe");
@@ -2601,7 +2623,7 @@ const program = {
   back(quiet) {
     const win = this.win;
     clearInterval(this.watch);
-    if (win) runners.delete(this.kind === "pip" ? this.frame.contentWindow : win);
+    if (win) runners.delete(this.kind === "pip" ? this.frame.contentWindow : this.runnerOf(win));
     this.kind = null; this.win = null; this.frame = null;
     if (win && !win.closed) win.close();
     document.body.classList.remove("program-out");
@@ -2933,7 +2955,7 @@ addEventListener("keydown", (e) => {
   e.preventDefault();
   b.click();
 });
-$("app-tab").onclick = () => { const w = window.open(RUNNER, "_blank"); if (w) program.tabs.add(w); };
+$("app-tab").onclick = () => { const w = window.open(APP_PAGE || RUNNER, "_blank"); if (w) program.tabs.add(w); };
 // the app from its start, where it is: a fresh page on the latest build, so @:hot state
 // goes too
 $("app-restart").onclick = () => {

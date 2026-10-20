@@ -133,13 +133,14 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   await until("!dbg.attached && !dbg.paused", 5000);
 
   // the app in a window of its own: a breakpoint stops it there (that window's tab, attached
-  // because the IDE opened it), and the panel comes under the editor
+  // because the IDE opened it; the runner is the tab, or app.html's frame in it), and the
+  // panel comes under the editor
   var w = await ev(lineOf("ticks++;"));
   await ev("(async () => { await program.out('window'); })()");
-  await until("program.kind === 'window' && (runners.get(program.win) || {}).ready", 15000);
+  await until("program.kind === 'window' && (runners.get(program.runnerOf(program.win)) || {}).ready", 15000);
   await toggle(w);
   // (a window just opened can have its timers slowed too, headless: the app's next tick can take a while)
-  var inWindow = await until("dbg.paused && dbg.paused.key.startsWith('t:') && dbg.at", 30000);
+  var inWindow = await until("dbg.paused && (dbg.targets.get(dbg.paused.key) || {}).tabId && dbg.at", 30000);
   step("the app in a window of its own: a breakpoint stops it there", inWindow === "src/Hello.hx:" + w, inWindow);
   step("the panel comes under the editor, with the stack", await ev("$('debug').parentNode === document.querySelector('.edit') && !$('debug').hidden && /onTick/.test($('dbg-stack').textContent)"));
   await toggle(w);
@@ -150,10 +151,16 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   step("back in the pane: the panel too", await ev("$('debug').parentNode === $('program-pane')"));
   // a tab of its own (Open in new tab): stopped there too
   await ev("$('app-tab').click()");
-  await until("[...program.tabs].some((t) => runners.get(t) && runners.get(t).ready)", 15000);
+  await until("[...program.tabs].some((t) => runners.get(program.runnerOf(t)) && runners.get(program.runnerOf(t)).ready)", 15000);
   await toggle(w);
-  // (a tab opened in the background has its timers slowed: the app's next tick can take a while)
-  var inTab = await until("[...dbg.stopped.keys()].some((k) => k.startsWith('t:')) && 'yes'", 30000);
+  // (a tab opened in the background has its timers slowed: the app's next tick can take a while.
+  // The pane runs the app too, and its runner can share a process with the tab's (one site,
+  // opened from one page): stopped there first, the tab's waits, so it's let go on)
+  var inTab = null;
+  for (var t0 = Date.now(); !inTab && Date.now() - t0 < 30000; ) {
+    inTab = await until("[...dbg.stopped.keys()].some((k) => (dbg.targets.get(k) || {}).tabId) && 'yes'", 2000);
+    if (!inTab && await ev("dbg.stopped.size > 0")) await ev("$('dbg-continue').click()");
+  }
   step("the app in a tab of its own: a breakpoint stops it there", inTab === "yes", await ev("[...dbg.stopped.keys()]"));
   await toggle(w);
   await ev("$('dbg-continue').click()");

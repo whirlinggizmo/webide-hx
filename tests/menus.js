@@ -189,33 +189,33 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await sleep(2500);
   var popup = null;
   for (var w = 0; w < 20 && !popup; w++) {
-    popup = (await (await fetch("http://127.0.0.1:" + port + "/json")).json()).find(function (t) { return t.type === "page" && /\/runner\.html/.test(t.url); });
+    popup = (await (await fetch("http://127.0.0.1:" + port + "/json")).json()).find(function (t) { return t.type === "page" && /\/(app|runner)\.html/.test(t.url); });
     if (!popup) await sleep(250);
   }
   step("App > Separate window opens it, checked, and the page gives the editor its room", popup && await ev("document.body.classList.contains('program-out') && (runners.get($('run').contentWindow) || {}).url === 'about:blank' && $('app-window').getAttribute('aria-checked') === 'true' && $('app-embedded').getAttribute('aria-checked') === 'false'"),
        popup && popup.url);
   if (popup) {
-    var pws = new WebSocket(popup.webSocketDebuggerUrl), pid = 0, pwait = new Map();
-    pws.onmessage = function (e) { var m = JSON.parse(e.data); if (m.id && pwait.has(m.id)) { pwait.get(m.id)(m.result || m); pwait.delete(m.id); } };
-    await new Promise(function (r) { pws.onopen = r; });
-    var pev = async function (x) { var r = await new Promise(function (res) { var i = ++pid; pwait.set(i, res); pws.send(JSON.stringify({ id: i, method: "Runtime.evaluate", params: { expression: x, returnByValue: true } })); }); return r.result ? r.result.value : undefined; };
+    // on the hosted site, the window is app.html, of the IDE's own site, which frames the
+    // runner: no page of the runner's address (its site's name, near the IDE's, has the browser
+    // asking whether the IDE's was meant); in the extension, the runner's page itself
+    var ideOrigin = await ev("location.origin");
+    step("the window's page is of the IDE's own site (the runner a frame of it), or the extension's", popup.url.startsWith(ideOrigin + "/"), popup.url);
     await ev("(async () => { show('src/Hello.hx'); files['src/Hello.hx'] = files['src/Hello.hx'].replace(\"'$greeting, $name! (ticks\", \"'$greeting out there, $name! (ticks\"); await save(); })()");
     var seen = false;
-    for (var w2 = 0; w2 < 40 && !seen; w2++) { seen = /out there/.test(await pev("document.getElementById('app').contentDocument.getElementById('log').textContent") || ""); if (!seen) await sleep(250); }
+    for (var w2 = 0; w2 < 40 && !seen; w2++) { seen = /out there/.test(await ev("frameLog()") || ""); if (!seen) await sleep(250); }
     step("an edit hot-reloads the program in its window", seen);
     step("the window's place is kept for next time", !!(await ev("localStorage.getItem('webide-hx-program-window')")));
-    pws.close();
     // the project changing (a folder opened, a zip imported) starts the program over: in its window
-    var before = await ev("(runners.get(program.win) || {}).url");
+    var before = await ev("(runners.get(program.runnerOf(program.win)) || {}).url");
     await ev("startProgram()");
     await sleep(1500);
-    var after = await ev("(runners.get(program.win) || {}).url");
+    var after = await ev("(runners.get(program.runnerOf(program.win)) || {}).url");
     step("starting the program over starts it in its window", /start=/.test(after) && after !== before && await ev("(runners.get($('run').contentWindow) || {}).url === 'about:blank'"), [before, after]);
     // App > Restart: the same, from the menu
     await click(await box("#app-menu"));
     await click(await box("#app-restart"));
     await sleep(1500);
-    var restarted = await ev("(runners.get(program.win) || {}).url");
+    var restarted = await ev("(runners.get(program.runnerOf(program.win)) || {}).url");
     step("App > Restart starts it over in its window", /start=/.test(restarted) && restarted !== after && await ev("(runners.get($('run').contentWindow) || {}).url === 'about:blank' && program.kind === 'window'"), [after, restarted]);
   }
   await ev("program.win && program.win.close()");
