@@ -2026,7 +2026,7 @@ $("build-file").onclick = () => attempt(async () => {
     .concat([{ value: "", label: "None: src/ for code, Main for the main class" }]);
   const now = buildConfig().file || "";
   const answer = await askPerson({ title: "Select hxml", text: "The hxml file used for builds (its class paths, --main, --js and options; hotreload-hx comes with the page).",
-                                   choices, value: now, ok: "Use it" });
+                                   choices, value: now, ok: "Select" });
   if (answer === null || answer === now) return;
   try { localStorage.setItem(buildChoiceKey(), answer); } catch (e) {}
   return build();
