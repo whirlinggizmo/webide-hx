@@ -3,19 +3,21 @@
 //   run/            the program's page: a log, and the bundle
 //   run/<bundle>    the latest build (any ?v=), stamped with its number as the DevServer does
 //                   (built with -D source-map=inline, it carries its source map inside)
-//   run/assets/...  files the page gave it
+//   run/<file>      a project file, as a static server would serve it: asked of the IDE (through
+//                   the runner page) the first time the app asks for it, then kept; a 404 if
+//                   the project has no such file. Only what the app asks for leaves the IDE
 //   /__hotreload?since=N         held until there's a build newer than N (or 20 s), then
 //                                {version, url}: the JS reloader imports url next
-//   /__hotreload_assets?since=N  held until assets newer than N changed, then {version, urls}
-// The page hands it builds and assets by postMessage, each with a MessageChannel port to
-// answer on.
+//   /__hotreload_assets?since=N  held until a file the app has changed since N, then {version, urls}
+// The runner page hands it builds, and the names of files that changed, by postMessage, each
+// with a MessageChannel port to answer on.
 
 const HOLD_MS = 20000;
 const state = {
   name: "main.js",       // the bundle's file name, as the program's page loads it
   version: 0,
   js: null,
-  assets: new Map(),     // path under run/ -> {body, type}: body is text, or bytes (a Uint8Array)
+  assets: new Map(),     // files the app has had: path under run/ -> {body, type}; body is text, or bytes
   assetVersion: 0,
   assetChanges: [],      // {version, urls}
   waiting: [],           // held polls: {ready(), answer(), clientId, until}
@@ -40,17 +42,18 @@ self.addEventListener("message", (e) => {
     state.js = "globalThis.__hotreload_built = " + m.version + "; " + m.js;
     wake();
   } else if (m.type === "assets") {
+    // files that changed (or went): the copies go, and the app hears of those it has had,
+    // so it asks again and gets the new ones
     const urls = [];
-    for (const [path, body] of Object.entries(m.files)) {
-      if (body === null) state.assets.delete(path);
-      else state.assets.set(path, { body, type: typeOf(path) });
-      urls.push(scopePath() + path);
-    }
-    if (m.changed) {
+    for (const path of m.paths) if (state.assets.delete(path)) urls.push(scopePath() + path);
+    if (urls.length) {
       state.assetVersion++;
       state.assetChanges.push({ version: state.assetVersion, urls });
       wake();
     }
+  } else if (m.type === "cached") {
+    if (port) port.postMessage({ paths: [...state.assets.keys()].sort() });
+    return;
   } else if (m.type === "reset") {
     state.version = 0; state.js = null; state.assets.clear();
     state.assetVersion = 0; state.assetChanges = [];
@@ -150,6 +153,30 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(state.js === null ? respond("// no build yet", "text/javascript", 404) : respond(state.js, "text/javascript"));
     return;
   }
-  const asset = state.assets.get(rest);
-  e.respondWith(asset ? respond(asset.body, asset.type) : respond("not found: " + rest, "text/plain", 404));
+  e.respondWith(fileFor(rest).then((f) => f ? respond(f.body, f.type) : respond("not found: " + rest, "text/plain", 404)));
 });
+
+// a project file: kept, or asked of the IDE through a runner page (each runner page is
+// connected to the IDE that opened it)
+const asking = new Map(); // path -> the answer on its way, for requests at once
+async function fileFor(path) {
+  if (state.assets.has(path)) return state.assets.get(path);
+  if (!asking.has(path)) asking.set(path, (async () => {
+    const pages = (await self.clients.matchAll({ type: "window", includeUncontrolled: true })).filter((c) => /\/runner\.html(\?|#|$)/.test(new URL(c.url).pathname + new URL(c.url).search));
+    for (const page of pages) {
+      const body = await new Promise((resolve) => {
+        const ch = new MessageChannel();
+        const t = setTimeout(() => resolve(undefined), 10000);
+        ch.port1.onmessage = (ev) => { clearTimeout(t); resolve(ev.data.body); };
+        page.postMessage({ type: "need", path }, [ch.port2]);
+      });
+      if (body === undefined) continue; // that page didn't answer: another
+      if (body === null) return null;
+      const f = { body, type: typeOf(path) };
+      state.assets.set(path, f);
+      return f;
+    }
+    return null;
+  })().finally(() => asking.delete(path)));
+  return asking.get(path);
+}

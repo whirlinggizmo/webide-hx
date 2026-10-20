@@ -25,7 +25,8 @@
 // config.json allows (locally: the same port on 127.0.0.1 or localhost)
 const $ = (id) => document.getElementById(id);
 const ide = window.opener || (window.parent !== window ? window.parent : null);
-let ideOrigin = null, reg = null, theme = null;
+let ideOrigin = null, reg = null, theme = null, needCount = 0;
+const needs = new Map(); // a file asked of the IDE -> what answers the service worker
 
 async function allowedIdes() {
   let cfg = {};
@@ -78,6 +79,13 @@ $("app").addEventListener("load", () => { applyTheme(appDoc()); watchLog(); say(
   const sw = reg.installing || reg.waiting || reg.active;
   if (sw.state !== "activated")
     await new Promise((r) => sw.addEventListener("statechange", () => sw.state === "activated" && r()));
+  // a file the app asked for that the service worker doesn't have: asked of the IDE
+  navigator.serviceWorker.addEventListener("message", (e) => {
+    if (!e.data || e.data.type !== "need" || !e.ports[0] || !ideOrigin) { if (e.ports[0]) e.ports[0].postMessage({}); return; }
+    const id = ++needCount;
+    needs.set(id, (body) => e.ports[0].postMessage({ body }));
+    say({ type: "need", id, path: e.data.path });
+  });
   addEventListener("message", async (e) => {
     if (e.source !== ide || !allowed.has(e.origin)) return;
     ideOrigin = e.origin;
@@ -85,6 +93,7 @@ $("app").addEventListener("load", () => { applyTheme(appDoc()); watchLog(); say(
     if (m.type === "hello") say({ type: "ready" });
     else if (m.type === "sw") say({ type: "sw", id: m.id, data: await tell(m.msg) });
     else if (m.type === "start") $("app").src = m.url;
+    else if (m.type === "file" && needs.has(m.id)) { needs.get(m.id)(m.body); needs.delete(m.id); }
     else if (m.type === "theme") { theme = m.theme; applyTheme(document); applyTheme(appDoc()); }
     // for the IDE's test: what the app's page fetches, and how its output follows the end
     else if (m.type === "fetch") {

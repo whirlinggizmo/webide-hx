@@ -312,9 +312,15 @@ The IDE opens `runner.html` on that site for each place the app shows (its pane,
 or floating window, a new tab). The runner registers `sw.js`, the DevServer's part (it
 serves `run/`, the latest bundle and the assets, and answers hotreload-hx's `/__hotreload`
 polls, so the app works as it would with the desktop DevServer), and the IDE hands it each
-build and asset by `postMessage`. A runner that starts later, or reloads, says so and the
-IDE fills it in. The runner listens only to the IDE that opened it, from an origin it
-allows.
+build by `postMessage`. Files are served as a static server (or a CDN) would serve them:
+the first time the app asks for one, the runner's service worker asks the IDE for it and
+keeps it; one the project doesn't have is a 404, and code isn't served (it's in the
+bundle). So only what the app asks for leaves the IDE. When a file changes, the IDE sends
+just its name: the runner drops its copy and tells the app, which asks again. The app sees
+plain URLs and plain responses, as it will from wherever it's hosted. A runner that starts
+later, or reloads, says so and the IDE gives it the latest build. The runner listens only
+to the IDE that opened it, from an origin it allows; and the IDE doesn't wait on a runner
+whose app is busy (it catches up when it's free).
 
 Where it is comes from `config.json` next to the page: `{"runner": "<the same web/
 directory, on the other site>", "ide": "<the IDE's origin>"}`. Without one, locally, the

@@ -580,7 +580,7 @@ async function findRunner() {
 }
 const runnerOrigin = () => new URL(RUNNER).origin;
 const runners = new Map(); // a runner's window -> {ready, log, waiters}
-const replay = { build: null, assets: {} };
+const replay = { build: null }; // what a runner that comes later is given (files it asks for)
 const runnerReplies = new Map();
 let runnerMsgs = 0;
 const toRunner = (w, m) => { try { w.postMessage(m, runnerOrigin()); } catch (e) {} };
@@ -593,7 +593,8 @@ addEventListener("message", (e) => {
   if (m.type === "ready") { runnerReady(w); return; }
   const r = runners.get(w);
   if (!r) return;
-  if (m.type === "log") r.log = m.text;
+  if (m.type === "need") toRunner(w, { type: "file", id: m.id, body: servedFile(m.path) });
+  else if (m.type === "log") r.log = m.text;
   else if (m.type === "themed") r.theme = m.theme;
   else if (m.type === "loaded") { r.url = m.url; toRunner(w, { type: "theme", theme: prefs.theme }); }
   else if (m.type === "place") program.placed(w, m);
@@ -606,12 +607,17 @@ async function runnerReady(w) {
   r.ready = false; r.log = "";
   toRunner(w, { type: "theme", theme: prefs.theme });
   await askRunner(w, { type: "sw", msg: { type: "reset" } });
-  await askRunner(w, { type: "sw", msg: { type: "assets", files: replay.assets, changed: false } });
   if (replay.build) await askRunner(w, { type: "sw", msg: replay.build });
   r.ready = true;
   const url = program.urlFor(w);
   if (url) toRunner(w, { type: "start", url });
   for (const f of r.waiters.splice(0)) f();
+}
+// a file the app asked for, as a static server would have it: the project's file, or null
+// (a 404). Code isn't served (it's in the bundle); a path that isn't a project file isn't either
+function servedFile(path) {
+  path = decodeURIComponent(path || "");
+  return path in files && !isCode(path) ? files[path] : null;
 }
 // the runner in a window, once it's ready
 function runnerUp(w, ms = 20000) {
@@ -629,9 +635,8 @@ function runnerUp(w, ms = 20000) {
 // messages in order, so it catches up then)
 const TELL_WAIT_MS = 200;
 async function tell(msg) {
-  if (msg.type === "reset") { replay.build = null; replay.assets = {}; }
+  if (msg.type === "reset") replay.build = null;
   else if (msg.type === "build") replay.build = msg;
-  else if (msg.type === "assets") for (const [p, b] of Object.entries(msg.files)) { if (b === null) delete replay.assets[p]; else replay.assets[p] = b; }
   for (const w of [...runners.keys()]) if (w.closed) runners.delete(w);
   const sent = [...runners].filter(([, r]) => r.ready).map(([w]) => askRunner(w, { type: "sw", msg }));
   await Promise.race([Promise.all(sent), new Promise((r) => setTimeout(r, TELL_WAIT_MS))]);
@@ -1322,7 +1327,10 @@ async function build() {
 // assets the program has, changed or removed (null): told to the service worker, and, when
 // `changed`, to the program as an edit is
 function tellAssets(list, changed) {
-  return tell({ type: "assets", files: list, changed });
+  // only the names: a runner that has a file drops it and asks again (sw.js), one that
+  // doesn't never needed it
+  if (!changed) return;
+  return tell({ type: "assets", paths: Object.keys(list) });
 }
 
 async function save() {
@@ -1725,9 +1733,6 @@ async function startProgram() {
   builtWith = null; // a build from scratch: whatever the build file was before doesn't matter
   await tell({ type: "reset" });
   version = 0;
-  const assets = {};
-  for (const f of names()) if (!isCode(f)) assets[f] = files[f];
-  await tellAssets(assets, false);
   startingProgram = true;
   let first;
   try { first = await build(); } finally { startingProgram = false; }
@@ -2332,6 +2337,8 @@ async function test() {
     await askRunner(program.target(), { type: "spin", ms: 1500 });
     clearInterval(tick);
     step("an app busy for 1.5 s doesn't stop the IDE (its own process)", ticks > 75, ticks);
+    const cached = (await askRunner(program.target(), { type: "sw", msg: { type: "cached" } })).data.paths;
+    step("the runner has only the files the app asked for", JSON.stringify(cached) === JSON.stringify(["assets/greeting.txt"]), cached);
     // nor the compiler: a build while the app is busy for 3 s finishes long before it is
     show("src/Hello.hx");
     const busyFrom = performance.now();
@@ -2499,6 +2506,8 @@ async function test() {
   await deleteFile("assets/notes.txt");
   const removed = await runnerFetch("assets/notes.txt").then((r) => r.status);
   step("a removed asset isn't", removed === 404, removed);
+  const codeServed = await runnerFetch("src/Hello.hx").then((r) => r.status);
+  step("code isn't served as a file (it's in the bundle)", codeServed === 404, codeServed);
   const badName = await newFile("../x.hx").then(() => "made", (e) => e.message);
   step("a bad file name is refused", /not a file name/.test(badName), badName);
 

@@ -210,6 +210,11 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       Tests: page test (both browsers, both ways), menus, DevTools (the app's frame is its
       own target now), reload. 2026-10-20.
 
+- [x] Files on demand: the runner asks the IDE for a file the first time the app requests
+      it (then keeps it; a 404 if there's none; code isn't served), instead of being sent
+      every non-code file up front. A change sends only the name. A runner whose app is
+      busy or hung doesn't hold up builds (200 ms at most). 2026-10-20.
+
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 
 - [ ] Breakpoints set in the IDE's gutter, paused in DevTools: a page can't open DevTools
