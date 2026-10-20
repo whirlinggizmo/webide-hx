@@ -1784,7 +1784,7 @@ function toggleBreakpoint(v, pos) {
   status(`${name}:${n}: breakpoint ${set ? "set" : "removed"}`);
   return dbgSync();
 }
-// ---- the debugger, when the webide-hx debugger extension (extension/) is installed. Its
+// ---- the debugger, when the webide-hx debugger extension (extensions/debugger/) is installed. Its
 // content script (bridge.js) answers on this page; through it, the IDE drives the browser's
 // debugger on the app's runner only (a child session: the app has its own process), so the
 // IDE itself is never stopped. Attached while there are breakpoints, or a pause is asked

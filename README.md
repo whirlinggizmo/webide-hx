@@ -366,7 +366,7 @@ DevTools under `file://` as the compiler's paths (`/static/src/Hello.hx`). Open 
 `--remote-debugging-port=PORT` on the IDE (`/`).
 
 To debug in the IDE itself, there's an optional browser extension (Chromium), in
-`extension/` (its README says how to install it). With it, the editor has a breakpoint gutter
+`extensions/debugger/` (its README says how to install it). With it, the editor has a breakpoint gutter
 (a click, or F9), and a panel under the app has Continue, Pause, Step over/into/out (F8, F10,
 F11, Shift+F11), the call stack (a click shows that frame's line) and the variables
 (objects, and classes with their statics, open on a click); the line the app is stopped at
@@ -375,7 +375,7 @@ only, so the IDE goes on while the app is stopped. Breakpoints are placed where 
 map puts their lines, in every bundle the app has loaded, and again after each hot reload;
 a line with no code of its own shows a hollow dot. They move with the text and are kept
 per project. For now it debugs the app embedded in the IDE. `node tests/debugger.js PORT`
-checks it against a browser started with the extension (`--load-extension=extension`).
+checks it against a browser started with the extension (`--load-extension=extensions/debugger`).
 
 Messages to a frame whose process is stopped in the debugger are dropped (Chromium:
 measured, whatever their size), so a build saved while the app is stopped doesn't reach it

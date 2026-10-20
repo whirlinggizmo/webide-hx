@@ -233,7 +233,7 @@ Two, for two kinds of use:
       breakpoint at a `.hx` line (from the source map), stopped there, the call stack,
       variables, the IDE running meanwhile, step over, a breakpoint removed while stopped
       and no stop after. Headless Brave loads it with --load-extension.
-- [x] **The debugger extension** (optional; the IDE stays a web page; 2026-10-20, `extension/`,
+- [x] **The debugger extension** (optional; the IDE stays a web page; 2026-10-20, `extensions/debugger/`,
       `tests/debugger.js`). Small: a content
       script on the IDE's pages bridges the page and the extension's worker, which drives
       `chrome.debugger` on the app's frame only. Permissions: debugger, and the IDE's own

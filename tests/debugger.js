@@ -1,7 +1,7 @@
-// Checks debugging in the IDE with the webide-hx debugger extension (extension/), in a
+// Checks debugging in the IDE with the webide-hx debugger extension (extensions/debugger/), in a
 // Chromium-based browser started with it loaded:
 //     brave --headless=new --remote-debugging-port=9333 --user-data-dir=TMP \
-//           --load-extension=extension --disable-extensions-except=extension URL/
+//           --load-extension=extensions/debugger --disable-extensions-except=extensions/debugger URL/
 //     node tests/debugger.js 9333
 // Breakpoints from the gutter stop the app (no DevTools): the stop's call stack, variables
 // and line in the editor; the IDE going on meanwhile; step over; a breakpoint removed while
