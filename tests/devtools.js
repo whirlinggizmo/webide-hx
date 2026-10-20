@@ -180,6 +180,8 @@ async function checkBundle(label) {
     var t0 = Date.now();
     var removed = await evaluate("(async () => { const n = files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes('" + LINE_TEXT + "')) + 1; const r = await toggleBreakpoint(view, view.state.doc.line(n).from); return { ok: r && r.ok, version, left: breakLines(view.state).size }; })()");
     step("removed while stopped there: the IDE builds at once", removed.ok && removed.left === 0 && Date.now() - t0 < 2000, { ms: Date.now() - t0, removed: removed });
+    // stopped a while, as a person would be: questions the IDE sends meanwhile are dropped too
+    await new Promise(function (r) { setTimeout(r, 3500); });
     var tookBefore = await evaluate("appTook");
     step("the stopped app hasn't taken that build yet", tookBefore < removed.version, { took: tookBefore, build: removed.version });
     var again = 0;
