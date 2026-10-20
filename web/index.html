@@ -810,6 +810,9 @@ function parseHxml(file) {
           read(lix, here, stack.concat([f]), true);
         } else if (version) {
           cfg.libs.push({ name, version, source: `haxelib:/${name}#${version}`, dir: `${name}/${version}/haxelib`, at: here, haxelib: true });
+        } else if (IN_EXTENSION) {
+          // its newest release, asked of haxelib when the libraries are prepared
+          cfg.libs.push({ name, unpinned: true, at: here, haxelib: true });
         } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml (Project > Add library…)`);
       }
       else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
@@ -901,6 +904,73 @@ async function fetchBytes(url) {
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
   return new Uint8Array(await r.arrayBuffer());
 }
+// haxelib's API (lib.haxe.org: Haxe remoting, a call serialized as Haxe serializes), for a
+// library's newest release. Only in the all-in-one extension: a web page can't call it (no
+// CORS). Asked once a session per library
+const HAXELIB_API = "https://lib.haxe.org/api/3.0/index.n/";
+const newestVersions = new Map();
+async function haxelibNewest(name, at) {
+  if (newestVersions.has(name)) return newestVersions.get(name);
+  const str = (t) => "y" + encodeURIComponent(t).length + ":" + encodeURIComponent(t);
+  const call = "a" + str("api") + str("infos") + "h" + "a" + str(name) + "h";
+  let text;
+  try {
+    const r = await fetch(HAXELIB_API, { method: "POST", headers: { "X-Haxe-Remoting": "1", "Content-Type": "application/x-www-form-urlencoded" }, body: "__x=" + encodeURIComponent(call) });
+    text = await r.text();
+  } catch (e) { throw new LibraryError(`${name}: haxelib couldn't be reached for its newest version`, at); }
+  let info;
+  try { if (!text.startsWith("hxr")) throw new Error(); info = hxUnserialize(text.slice(3)); }
+  catch (e) { throw new LibraryError(`${name}: haxelib's answer couldn't be read`, at); }
+  if (info && info.__exception !== undefined) throw new LibraryError(`${name}: haxelib says ${info.__exception}`, at);
+  if (!info || !info.curversion) throw new LibraryError(`${name}: haxelib has no release of it`, at);
+  newestVersions.set(name, info.curversion);
+  return info.curversion;
+}
+// a value as Haxe's Serializer writes it (what remoting answers): null, booleans, numbers,
+// strings (and their back-references), anonymous objects, arrays, lists, maps, class
+// instances, enums, dates, object back-references, an exception ({__exception})
+function hxUnserialize(s) {
+  let p = 0;
+  const strings = [], cache = [];
+  const int = () => { const m = /^-?\d+/.exec(s.slice(p)); p += m[0].length; return parseInt(m[0], 10); };
+  const float = () => { const m = /^[-+]?[\d.eE+-]+/.exec(s.slice(p)); p += m[0].length; return parseFloat(m[0]); };
+  const fields = (o) => { while (s[p] !== "g") { const k = read(); o[k] = read(); } p++; return o; };
+  function read() {
+    const c = s[p++];
+    switch (c) {
+      case "n": return null;
+      case "t": return true;
+      case "f": return false;
+      case "z": return 0;
+      case "i": return int();
+      case "d": return float();
+      case "k": return NaN;
+      case "m": return -Infinity;
+      case "p": return Infinity;
+      case "y": { const len = int(); p++; const v = decodeURIComponent(s.substr(p, len)); p += len; strings.push(v); return v; }
+      case "R": return strings[int()];
+      case "r": return cache[int()];
+      case "o": { const o = {}; cache.push(o); return fields(o); }
+      case "c": { const name = read(), o = { __class: name }; cache.push(o); return fields(o); }
+      case "a": {
+        const a = []; cache.push(a);
+        for (;;) {
+          if (s[p] === "h") { p++; return a; }
+          if (s[p] === "u") { p++; const n = int(); for (let i = 0; i < n; i++) a.push(null); continue; }
+          a.push(read());
+        }
+      }
+      case "l": { const a = []; cache.push(a); while (s[p] !== "h") a.push(read()); p++; return a; }
+      case "b": case "q": case "M": { const o = {}; cache.push(o); while (s[p] !== "h") { const k = c === "q" ? (p++, int()) : read(); o[k] = read(); } p++; return o; }
+      case "v": { if (s[p + 4] === "-") { const d = s.substr(p, 19); p += 19; return d; } return new Date(float()); }
+      case "w": { const e = read(), ctor = read(); p++; const n = int(), args = []; for (let i = 0; i < n; i++) args.push(read()); return { __enum: e, __ctor: ctor, args }; }
+      case "j": { const e = read(); p++; const index = int(); p++; const n = int(), args = []; for (let i = 0; i < n; i++) args.push(read()); return { __enum: e, __index: index, args }; }
+      case "x": return { __exception: read() };
+      default: throw new Error(`Haxe serialization: no ${c} at ${p - 1}`);
+    }
+  }
+  return read();
+}
 // a library's files, from where its source says, and a hash of what came
 async function downloadLibrary(lib) {
   const src = lib.source;
@@ -962,6 +1032,16 @@ async function libText(dir, rel) {
 // ones add (a lix one's are in its hxml), and their dependencies; sets cfg.libArgs and
 // cfg.libDirs
 async function prepareLibraries(cfg) {
+  // -lib name with no version (the extension only): haxelib's newest, said in the output of
+  // every build while it isn't pinned
+  cfg.notes = [];
+  for (const lib of cfg.libs) if (lib.unpinned) {
+    if (!lib.version) {
+      const v = await haxelibNewest(lib.name, lib.at);
+      Object.assign(lib, { version: v, source: `haxelib:/${lib.name}#${v}`, dir: `${lib.name}/${v}/haxelib` });
+    }
+    cfg.notes.push(`${lib.name}: haxelib's newest, ${lib.version} (pin it: -lib ${lib.name}:${lib.version}, or Project > Add library…)`);
+  }
   const queue = cfg.libs.slice(), done = new Set(), args = [], dirs = [];
   while (queue.length) {
     const lib = queue.shift();
@@ -985,8 +1065,10 @@ async function prepareLibraries(cfg) {
     }
     for (const [dep, v] of Object.entries(meta.dependencies || {})) {
       if (LIBRARIES[dep] || cfg.libs.some((x) => x.name === dep)) continue;
-      if (!v) throw new LibraryError(`${lib.name} ${lib.version} needs ${dep}, with no version: pin one in the hxml (-lib ${dep}:1.2.3)`, lib.at);
-      queue.push({ name: dep, version: v, source: `haxelib:/${dep}#${v}`, dir: `${dep}/${v}/haxelib`, at: lib.at, haxelib: true });
+      if (!v && !IN_EXTENSION) throw new LibraryError(`${lib.name} ${lib.version} needs ${dep}, with no version: pin one in the hxml (-lib ${dep}:1.2.3)`, lib.at);
+      const dv = v || await haxelibNewest(dep, lib.at); // no version: haxelib's newest (the extension only)
+      if (!v) cfg.notes.push(`${dep} (for ${lib.name}): haxelib's newest, ${dv}`);
+      queue.push({ name: dep, version: dv, source: `haxelib:/${dep}#${dv}`, dir: `${dep}/${dv}/haxelib`, at: lib.at, haxelib: true });
     }
   }
   cfg.libArgs = args;
@@ -1424,7 +1506,7 @@ async function build() {
   if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
   buildStatus = `build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "");
   status(buildStatus + (version > 1 ? (appTook >= version ? ", reloaded" : ", reloading") : ""));
-  out([r.stdout.trim()].concat(messages.rest).filter((x) => x).join("\n"));
+  out([r.stdout.trim()].concat(messages.rest, cfg.notes || []).filter((x) => x).join("\n"));
   return { ok: true, r };
 }
 
@@ -2773,10 +2855,12 @@ $("zipfile").onchange = () => attempt(async () => {
 // dependencies' -lib, its class path, its extraParams.hxml), for each dependency with a
 // version too; then -lib <name> in the build's hxml
 const LIB_SPEC = /^(?:haxelib:\/)?([A-Za-z0-9_.-]+)[:#]([0-9][^\s:#]*)$/;
+const NAME_SPEC = /^(?:haxelib:\/)?([A-Za-z0-9_.-]+)$/; // the extension only: haxelib's newest
 const GH_SPEC = /^(?:gh:\/\/|https:\/\/)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?#(\S+)$/;
 function librarySpecProblem(spec) {
-  if (LIB_SPEC.test(spec) || GH_SPEC.test(spec)) return null;
-  return "not a library: a haxelib release as name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref";
+  if (LIB_SPEC.test(spec) || GH_SPEC.test(spec) || (IN_EXTENSION && NAME_SPEC.test(spec))) return null;
+  return IN_EXTENSION ? "not a library: a haxelib library as name (its newest) or name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref"
+    : "not a library: a haxelib release as name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref";
 }
 // a ref (a branch, a tag, a commit) as its commit, from GitHub's API
 async function githubCommit(owner, repo, ref) {
@@ -2825,6 +2909,7 @@ function withLib(text, name) {
 // existing lix file may be replaced (the one asked for: asked; a dependency's: kept)
 async function addLibrary(spec, replace) {
   let lib, m;
+  if (IN_EXTENSION && (m = NAME_SPEC.exec(spec))) spec = `${m[1]}:${await haxelibNewest(m[1], null)}`;
   if ((m = LIB_SPEC.exec(spec))) {
     lib = { name: m[1], version: m[2], source: `haxelib:/${m[1]}#${m[2]}`, dir: `${m[1]}/${m[2]}/haxelib`, at: null };
   } else if ((m = GH_SPEC.exec(spec))) {
@@ -2850,8 +2935,9 @@ async function addLibrary(spec, replace) {
   // without (haxelib's "any") needs a version from the person
   for (const [dep, v] of Object.entries(meta.dependencies || {})) {
     if (LIBRARIES[dep] || `haxe_libraries/${dep}.hxml` in files) continue;
-    if (!v || !/^[0-9]/.test(v)) { needs.push(dep); continue; }
-    const sub = await addLibrary(`${dep}:${v}`, async () => false);
+    if (!IN_EXTENSION && (!v || !/^[0-9]/.test(v))) { needs.push(dep); continue; }
+    if (v && !/^[0-9]/.test(v)) { needs.push(dep); continue; } // a git dependency: by hand
+    const sub = await addLibrary(v ? `${dep}:${v}` : dep, async () => false); // none: haxelib's newest (the extension)
     if (sub) { wrote.push(...sub.wrote); needs.push(...sub.needs); }
   }
   await putFile(file, lixFile(lib, meta, extra));
@@ -2861,7 +2947,7 @@ async function addLibrary(spec, replace) {
 $("add-library").onclick = () => attempt(async () => {
   const cfg = buildConfig();
   const spec = await askPerson({ title: "Add library",
-    text: "A haxelib release as name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref (a branch, a tag or a commit). Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
+    text: (IN_EXTENSION ? "A haxelib library as name (its newest release) or name:version (format:3.7.0)" : "A haxelib release as name:version (format:3.7.0)") + ", or a GitHub repository as gh://github.com/owner/repo#ref (a branch, a tag or a commit). Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
     value: "", ok: "Add", check: librarySpecProblem });
   if (!spec) return;
   const added = await addLibrary(spec, (file) => askPerson({ title: `Replace ${file}?`, text: "The project has this library already. Its file is written again for the version asked for.", ok: "Replace" }));
@@ -3210,15 +3296,16 @@ async function test() {
   // ---- the build file: the example's web-build.hxml (the one that builds JavaScript)
   step("the build comes from web-build.hxml, the hxml that builds JavaScript", buildConfig().file === "web-build.hxml"
        && $("where").textContent.includes("web-build.hxml"), $("where").textContent);
-  step("the others are refused, each with why", /--run/.test(parseHxml("web.hxml").error.message) && /-lib hxcpp-debug-server/.test(parseHxml("debug.hxml").error.message)
+  // (debug.hxml's unpinned -lib: refused on the web; the extension asks haxelib for its newest)
+  step("the others are refused, each with why", /--run/.test(parseHxml("web.hxml").error.message) && (IN_EXTENSION || /-lib hxcpp-debug-server/.test(parseHxml("debug.hxml").error.message))
        && /--cpp/.test(parseHxml("release.hxml").error.message), [parseHxml("web.hxml").error.message, parseHxml("release.hxml").error.message]);
   // an hxml the page can't use: said on its line; fixed, it builds
   const hxml = files["web-build.hxml"];
   show("web-build.hxml");
-  files["web-build.hxml"] = hxml + "-lib format\n";
+  files["web-build.hxml"] = hxml + "--cwd elsewhere\n";
   const hb = await save();
   const hd = diagnostics.get("web-build.hxml") || [];
-  step("an hxml line the page can't do fails the build, marked on that line", !hb.ok && hd.length === 1 && /-lib format/.test(hd[0].message)
+  step("an hxml line the page can't do fails the build, marked on that line", !hb.ok && hd.length === 1 && /--cwd/.test(hd[0].message)
        && hd[0].line === hxml.split("\n").length, hd);
   files["web-build.hxml"] = hxml;
   const hf = await save();
@@ -3281,7 +3368,8 @@ async function test() {
   files["web-build.hxml"] = base + "-lib nosuchlib\n";
   const nv = await save();
   const nvd = diagnostics.get("web-build.hxml") || [];
-  step("-lib without a version, nor a lix file: asked to pin one, on its line", !nv.ok && nvd.length === 1 && /which version/.test(nvd[0].message), nvd);
+  // (the extension asks haxelib for the newest, which hasn't this one)
+  step("-lib without a version, nor a lix file: asked to pin one (in the extension, haxelib's answer), on its line", !nv.ok && nvd.length === 1 && (IN_EXTENSION ? /haxelib says No such Project/ : /which version/).test(nvd[0].message), nvd);
   files["web-build.hxml"] = base + "-lib nosuchlib:9.9.9\n";
   const nd = await save();
   step("a release that can't be downloaded: said, with what to do", !nd.ok && (IN_EXTENSION ? /haxelib has no such release/ : /couldn't download it.*Add library zip/).test((diagnostics.get("web-build.hxml") || [{}])[0].message || ""),
@@ -3304,8 +3392,9 @@ async function test() {
   step("Add library…: lix's file, with its dependencies' -lib, class path and extraParams", ad && files["haxe_libraries/webidetestlib.hxml"] ===
        `-D webidetestlib=1.0.0\n# @install: lix --silent download "haxelib:/webidetestlib#1.0.0" into webidetestlib/1.0.0/haxelib\n-lib format\n-lib tink_core\n-cp ${L}/webidetestlib/1.0.0/haxelib/src\n--macro define('webidetestlib_on')\n`,
        files["haxe_libraries/webidetestlib.hxml"]);
-  step("a dependency with a version gets its file; one without is said", ad && JSON.stringify(ad.wrote) === JSON.stringify(["haxe_libraries/webidetestlib.hxml", "haxe_libraries/format.hxml"])
-       && JSON.stringify(ad.needs) === JSON.stringify(["tink_core"]) && files["haxe_libraries/format.hxml"] ===
+  // (one without a version: said on the web; in the extension, haxelib's newest, with its file)
+  step("a dependency with a version gets its file; one without is said (in the extension, the newest)", ad && JSON.stringify(ad.wrote) === JSON.stringify(["haxe_libraries/webidetestlib.hxml", "haxe_libraries/format.hxml"].concat(IN_EXTENSION ? ["haxe_libraries/tink_core.hxml"] : []))
+       && JSON.stringify(ad.needs) === JSON.stringify(IN_EXTENSION ? [] : ["tink_core"]) && files["haxe_libraries/format.hxml"] ===
        `-D format=3.7.0\n# @install: lix --silent download "haxelib:/format#3.7.0" into format/3.7.0/haxelib\n-cp ${L}/format/3.7.0/haxelib/\n`, [ad && ad.wrote, ad && ad.needs, files["haxe_libraries/format.hxml"]]);
   const kept0 = await addLibrary("webidetestlib:1.0.0", async () => false);
   step("one the project has is replaced only when the person says so", kept0 === null);
@@ -3325,7 +3414,20 @@ async function test() {
   const ghSha = gh && gh.lib ? gh.lib.source.split("#")[1] : "", ghDir = gh && gh.lib ? gh.lib.dir : "";
   step("Add library… from GitHub: the branch made a commit, lix's file for it", gh && gh.lib && /^[0-9a-f]{40}$/.test(ghSha) && ghDir === `format/${gh.lib.version}/github/${ghSha}` && await libHas(ghDir)
        && files["haxe_libraries/format.hxml"].includes(`download "gh://github.com/HaxeFoundation/format#${ghSha}" into ${ghDir}\n`), gh && gh.lib ? files["haxe_libraries/format.hxml"] : gh);
-  step("what isn't a library is refused, saying what is", librarySpecProblem("format") && !librarySpecProblem("format:3.7.0") && !librarySpecProblem("github.com/o/r#main"));
+  step("what isn't a library is refused, saying what is", librarySpecProblem("not a library!") && (IN_EXTENSION || librarySpecProblem("format")) && !librarySpecProblem("format:3.7.0") && !librarySpecProblem("github.com/o/r#main"));
+  // the extension only: haxelib's API (no CORS for a web page), for a library's newest release
+  if (IN_EXTENSION) {
+    const newest = await haxelibNewest("format", null).catch((e) => e.message);
+    step("haxelib's newest release of a library (its API)", /^\d+\.\d+\.\d+/.test(newest), newest);
+    const unknown = await haxelibNewest("nosuchlib-webide", null).then(() => "found", (e) => e.message);
+    step("one haxelib doesn't have: said", /haxelib says No such Project/.test(unknown), unknown);
+    await deleteFile("haxe_libraries/format.hxml");
+    await putFile("web-build.hxml", base + "-lib format\n");
+    const un = await build();
+    step("-lib format with no version: built with the newest, and the output says so", un.ok && $("out").textContent.includes(`format: haxelib's newest, ${newest}`), un.ok ? [$("out").textContent, buildConfig().notes] : un.r.stderr);
+    const bare = await addLibrary("format", async () => true).catch((e) => e.message);
+    step("Add library… with a name alone: the newest, pinned in lix's file", bare && bare.lib && files["haxe_libraries/format.hxml"].startsWith(`-D format=${newest}\n`), bare && bare.lib ? files["haxe_libraries/format.hxml"].split("\n")[0] : bare);
+  }
   // back as it was
   await deleteFolder("haxe_libraries");
   show("src/Hello.hx");

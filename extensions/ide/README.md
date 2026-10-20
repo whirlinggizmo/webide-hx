@@ -14,7 +14,10 @@ opens the IDE.
 - `manifest.json`: Manifest V3; `debugger` (the IDE's debugger, built in),
   `unlimitedStorage` (projects and libraries kept for good), and the sites libraries come
   from (haxelib's files and API, GitHub's API, jsDelivr, GitLab), which an extension's page
-  can read where a web page can't (no mirror needed).
+  can read where a web page can't (no mirror needed). So `-lib name` without a version
+  builds with haxelib's newest release (the output says which, and how to pin it), a
+  dependency without one gets the newest too, and Add library… takes a name alone (and pins
+  the newest in lix's file); haxelib's API is Haxe remoting, read by `hxUnserialize`.
 - `background.js`: the toolbar button opens the IDE's tab.
 - `runner.html`, `shim.js`: the app's runner. A sandboxed page of the extension's: its own
   process, no storage, none of the extension's powers, no access to the IDE. It can't have
