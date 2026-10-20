@@ -12,6 +12,8 @@ Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
                                              instead of fetched on demand from web/std
     python3 build.py --toolchain             only the toolchain below (the Dockerfile's
                                              first step, cached apart from the source)
+    python3 build.py --extension             only the all-in-one extension (experimental), in
+                                             build/extension-ide/, from web/ as it's built
 
 Self-contained: opam, OCaml 4.14, Haxe's OCaml dependencies and js_of_ocaml are
 installed under build/ the first time (about ten minutes). From the system it needs
@@ -232,6 +234,34 @@ def editor():
         print(f"  {out}: {os.path.getsize(out) / 1e3:.0f} KB")
 
 
+def extension_ide():
+    """build/extension-ide/: the all-in-one extension (extensions/ide/), assembled from web/ as
+    it's built: its files but the web runner's (runner.html, sw.js), the checks page and test
+    reports; extensions/ide/'s; and index.html's inline script moved to ide.js, since an
+    extension's pages can't have inline scripts"""
+    web, out = os.path.join(HERE, "web"), os.path.join(BUILD, "extension-ide")
+    if not os.path.exists(os.path.join(web, "haxe.js")):
+        sys.exit("web/ isn't built: run build.py (with --hotreload) first")
+    shutil.rmtree(out, ignore_errors=True)
+    skip = shutil.ignore_patterns("runner.html", "sw.js", "checks", "report*.json", "config.json")
+    shutil.copytree(web, out, ignore=skip)
+    page = open(os.path.join(out, "index.html"), encoding="utf-8").read()
+    scripts = re.findall(r"<script>\n(.*?)</script>", page, re.S)
+    if len(scripts) != 1:
+        sys.exit(f"index.html: expected one inline script, found {len(scripts)}")
+    with open(os.path.join(out, "ide.js"), "w", encoding="utf-8") as f:
+        f.write(scripts[0])
+    page = page.replace("<script>\n" + scripts[0] + "</script>", '<script src="ide.js"></script>')
+    with open(os.path.join(out, "index.html"), "w", encoding="utf-8") as f:
+        f.write(page)
+    ide = os.path.join(HERE, "extensions", "ide")
+    for name in os.listdir(ide):
+        if name != "README.md":
+            shutil.copy(os.path.join(ide, name), out)
+    size = sum(os.path.getsize(os.path.join(r, f)) for r, _, fs in os.walk(out) for f in fs)
+    print(f"  {out}: {size / 1e6:.1f} MB; load it unpacked (chrome://extensions, Developer mode)")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--haxe-src", help="a local Haxe checkout (of the 4.3-js_of_ocaml branch) to copy instead of cloning it")
@@ -239,7 +269,11 @@ def main():
     ap.add_argument("--hotreload", metavar="DIR", help="embed hotreload-hx from DIR at /lib/hotreload")
     ap.add_argument("--embed-std", action="store_true", help="embed the standard library in the bundle instead of serving it from web/std")
     ap.add_argument("--toolchain", action="store_true", help="only install the toolchain (opam, OCaml, Haxe's libraries, js_of_ocaml, mbedtls) under build/")
+    ap.add_argument("--extension", action="store_true", help="only assemble the all-in-one extension (experimental) in build/extension-ide/, from web/ as it's built")
     args = ap.parse_args()
+    if args.extension:
+        print("extension"); extension_ide()
+        return
     if args.toolchain:
         os.makedirs(BUILD, exist_ok=True)
         print("toolchain"); env = toolchain()

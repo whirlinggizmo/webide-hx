@@ -1,0 +1,13 @@
+{
+  "manifest_version": 3,
+  "name": "webide-hx (all-in-one)",
+  "version": "0.0.1",
+  "description": "A Haxe development environment in the browser: editor, compiler and the running app, with hot reload and a debugger. Everything inside the extension; nothing hosted.",
+  "minimum_chrome_version": "125",
+  "action": { "default_title": "Open webide-hx" },
+  "background": { "service_worker": "background.js" },
+  "permissions": ["debugger", "unlimitedStorage"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  }
+}

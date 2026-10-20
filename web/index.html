@@ -623,6 +623,10 @@ function compile(args, sources, output) {
 // the DevServer. Builds and assets go to every runner; the IDE keeps what a new one needs (the
 // latest build, the assets) and fills it in when it says it's ready, after a reload too
 let buildStatus = "", appTook = 0; // what the status said of the latest build; the build the app took last
+// where the IDE runs: a web page (the app on a runner site, with its service worker), or a
+// page of the all-in-one extension (extensions/ide/), where the app will run in a sandboxed
+// page of the extension's (not yet: there, for now, the IDE edits and builds only)
+const IN_EXTENSION = location.protocol === "chrome-extension:";
 let RUNNER = null; // runner.html's URL: config.json's "runner", else locally the other one of
                    // 127.0.0.1 and localhost (another site), else this page's own directory
 async function findRunner() {
@@ -733,6 +737,7 @@ function catchUp(w, r) {
 // after a stop logs straight away)
 setInterval(() => { for (const [w, r] of runners) catchUp(w, r); }, 1000);
 async function connectRunner() {
+  if (IN_EXTENSION) { status("the app doesn't run in the extension yet: the IDE edits and builds"); return; }
   await findRunner();
   $("run").src = RUNNER;
   if (!(await runnerUp($("run").contentWindow, 30000))) throw new Error(`the app's runner (${RUNNER}) didn't start`);
