@@ -2023,7 +2023,7 @@ $("build-item").onclick = () => save();
 $("build-file").onclick = () => attempt(async () => {
   const all = names().filter((n) => !n.includes("/") && n.endsWith(".hxml"));
   const choices = all.map((n) => { const e = parseHxml(n).error; return { value: n, label: e ? `${n}: ${e.message}` : n, disabled: !!e }; })
-    .concat([{ value: "", label: "None: src/ for code, Main for the main class" }]);
+    .concat([{ value: "", label: "No hxml file (src/ for code, Main as the main class)" }]);
   const now = buildConfig().file || "";
   const answer = await askPerson({ title: "Select hxml", text: "The hxml file used for builds (its class paths, --main, --js and options; hotreload-hx comes with the page).",
                                    choices, value: now, ok: "Select" });
