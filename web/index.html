@@ -93,11 +93,29 @@
      to the edge, a view folds away; double-clicked, the view beside folds away or comes back */
   .split { cursor: col-resize; background: var(--line); background-clip: content-box; padding: 0 2px; touch-action: none; }
   .split:hover, .split.dragging { background-color: var(--accent); }
+  /* on each divider, a fold button for each way it can go: ‹ moves it to the left (folds the
+     view on the left away, or brings back the one on the right), › to the right */
+  .split { position: relative; z-index: 2; }
+  .split .fold { position: absolute; top: 50%; left: -5px; width: 15px; height: 28px; padding: 0; display: flex; align-items: center; justify-content: center;
+                 border: 1px solid var(--line); border-radius: 4px; background: var(--panel); color: var(--muted); cursor: pointer; }
+  .split .fold:hover { color: var(--accent); border-color: var(--accent); }
+  .split .fold.left { margin-top: -30px; }
+  .split .fold.right { margin-top: 2px; }
+  #split-tree .fold { margin-top: -14px; }
+  body.tree-folded #fold-tree, body:not(.tree-folded) #unfold-tree, body.edit-folded #fold-left, body.app-folded #fold-right { display: none; }
+  /* a view folded away: its divider is a strip of its own at the edge, for the button */
+  @media (min-width: 761px) {
+    body.tree-folded .code { grid-template-columns: 0 16px minmax(0, 1fr); }
+    body.edit-folded:not(.program-out) main { grid-template-columns: 0 16px minmax(0, 1fr); }
+    body.app-folded:not(.program-out) main { grid-template-columns: minmax(0, 1fr) 16px 0; }
+    body.tree-folded #split-tree, body.edit-folded #split-app { padding: 0; background: var(--panel); border-right: 1px solid var(--line); }
+    body.app-folded #split-app { padding: 0; background: var(--panel); border-left: 1px solid var(--line); }
+    body.tree-folded #split-tree .fold, body.edit-folded #split-app .fold, body.app-folded #split-app .fold { left: 0; }
+  }
   body.edit-folded main > section:first-child, body.app-folded #program-pane { visibility: hidden; }
   body.tree-folded .files { visibility: hidden; overflow: hidden; } /* kept in the grid, so the divider and the editor keep their columns */
   section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .code { display: grid; grid-template-columns: var(--tree-w, 180px) 5px minmax(0, 1fr); min-height: 0; flex: 1; }
-  body.tree-folded .code { grid-template-columns: 0 5px minmax(0, 1fr); }
   .files { display: flex; flex-direction: column; min-height: 0; }
   #tree { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; font-size: 13px; }
   #tree .folder { color: var(--muted); }
@@ -169,7 +187,7 @@
     body.program-out main { grid-template-rows: 1fr; }
     .code { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
     .split { display: none; }
-    body.edit-folded main > section:first-child, body.app-folded #program-pane { visibility: visible; }
+    body.edit-folded main > section:first-child, body.app-folded #program-pane, body.tree-folded .files { visibility: visible; }
     .files { border-right: 0; border-bottom: 1px solid var(--line); max-height: 140px; }
   }
 </style>
@@ -311,7 +329,7 @@
       <div class="files">
         <ul id="tree"></ul>
       </div>
-      <div class="split" id="split-tree" role="separator" aria-orientation="vertical" aria-label="The file tree's width" title="Drag to resize; double-click to fold the files away or back"></div>
+      <div class="split" id="split-tree" role="separator" aria-orientation="vertical" aria-label="The file tree's width" title="Drag to resize; double-click to fold the files away or back"><button class="fold left" id="fold-tree"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><button class="fold right" id="unfold-tree"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></div>
       <div class="edit">
         <div id="viewing" hidden><span id="viewing-what"></span><button id="viewing-close" title="back to the project file">×</button></div>
         <div id="editor"></div>
@@ -319,7 +337,7 @@
       </div>
     </div>
   </section>
-  <div class="split" id="split-app" role="separator" aria-orientation="vertical" aria-label="The editor's and the app's widths" title="Drag to resize; double-click to fold the app away or back"></div>
+  <div class="split" id="split-app" role="separator" aria-orientation="vertical" aria-label="The editor's and the app's widths" title="Drag to resize; double-click to fold the app away or back"><button class="fold left" id="fold-left"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><button class="fold right" id="fold-right"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></div>
   <section id="program-pane">
     <iframe id="run" title="the running program"></iframe>
     <div id="debug" hidden>
@@ -2374,6 +2392,9 @@ function applyLayout() {
   document.body.classList.toggle("tree-folded", layout.treeFolded);
   document.body.classList.toggle("edit-folded", layout.editFolded);
   document.body.classList.toggle("app-folded", layout.appFolded);
+  const titled = (id, t) => { $(id).title = t; $(id).setAttribute("aria-label", t); };
+  titled("fold-left", layout.appFolded ? "Bring the app back" : "Fold the editor away");
+  titled("fold-right", layout.editFolded ? "Bring the editor back" : "Fold the app away");
   if (dbg.present && view) dbgShow(); // (not while the page starts: it shows the panel itself then)
 }
 const saveLayout = () => { try { localStorage.setItem(LAYOUT, JSON.stringify(layout)); } catch (e) {} };
@@ -2401,6 +2422,18 @@ splitDrag($("split-app"), (e) => {
   else { layout.editFolded = layout.appFolded = false; layout.app = Math.min(Math.max((main.width - x) / main.width, 0.1), 0.9); }
 });
 $("split-tree").ondblclick = () => { layout.treeFolded = !layout.treeFolded; applyLayout(); saveLayout(); };
+// the fold buttons: a click is theirs, not the divider's (no drag, no double-click)
+const foldButton = (id, title, act) => {
+  const b = $(id);
+  b.title = title; b.setAttribute("aria-label", title);
+  b.addEventListener("pointerdown", (e) => e.stopPropagation());
+  b.ondblclick = (e) => e.stopPropagation();
+  b.onclick = (e) => { e.stopPropagation(); act(); applyLayout(); saveLayout(); };
+};
+foldButton("fold-tree", "Fold the files away", () => { layout.treeFolded = true; });
+foldButton("unfold-tree", "Bring the files back", () => { layout.treeFolded = false; });
+foldButton("fold-left", "", () => { if (layout.appFolded) layout.appFolded = false; else layout.editFolded = true; });
+foldButton("fold-right", "", () => { if (layout.editFolded) layout.editFolded = false; else layout.appFolded = true; });
 $("split-app").ondblclick = () => { if (layout.editFolded) layout.editFolded = false; else layout.appFolded = !layout.appFolded; applyLayout(); saveLayout(); };
 applyLayout();
 $("dbg-state").onclick = () => { if (dbg.cancelled) { dbg.cancelled = false; dbgSync(); } };
@@ -3352,13 +3385,33 @@ async function test() {
   const appW0 = w("#program-pane"), editW0 = w("main > section"), treeW0 = w(".files");
   $("split-tree").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   const editBox = document.querySelector(".edit").getBoundingClientRect(), splitBox = $("split-tree").getBoundingClientRect();
-  const treeGone = w(".files") === 0 && w("main > section") === editW0 && splitBox.width === 5 && Math.abs(editBox.width - (editW0 - 5)) <= 2;
+  const treeGone = w(".files") === 0 && w("main > section") === editW0 && splitBox.width === 16 && Math.abs(editBox.width + splitBox.width - editW0) <= 2;
   $("split-tree").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   step("the file tree folds away on a double-click (the editor gets the room, the divider stays), and back", treeGone && w(".files") === treeW0, { treeW0, folded: { edit: Math.round(editBox.width), split: splitBox.width }, back: w(".files") });
   $("split-app").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   const appGone = w("#program-pane") < 2 && w("main > section") > editW0 + appW0 - 20;
   $("split-app").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   step("the app folds away on a double-click (the editor gets the room), and back", appGone && Math.abs(w("#program-pane") - appW0) <= 1, { appW0, back: w("#program-pane") });
+  // the fold buttons: each clicked where it is shown (what is on top there), so one covered,
+  // or off the page, fails
+  const press = (id) => {
+    const b = $(id), r = b.getBoundingClientRect();
+    if (!r.width || r.left < 0 || r.right > innerWidth) return false;
+    const at = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!at || !b.contains(at)) return false;
+    at.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, pointerId: 1, button: 0 }));
+    at.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    return true;
+  };
+  const folds = [
+    press("fold-tree") && layout.treeFolded && w(".files") === 0,
+    press("unfold-tree") && !layout.treeFolded && w(".files") === treeW0,
+    press("fold-right") && layout.appFolded,
+    press("fold-left") && !layout.appFolded && Math.abs(w("#program-pane") - appW0) <= 1,
+    press("fold-left") && layout.editFolded,
+    press("fold-right") && !layout.editFolded && Math.abs(w("#program-pane") - appW0) <= 1,
+  ];
+  step("the fold buttons fold the tree, the app and the editor away, and bring them back", folds.every((x) => x), folds);
   const drag = (id, x) => {
     const h = $(id), r = h.getBoundingClientRect(), at = { bubbles: true, pointerId: 1, button: 0, clientY: r.top + 50 };
     h.dispatchEvent(new PointerEvent("pointerdown", Object.assign({ clientX: r.left + 2 }, at)));
