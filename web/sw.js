@@ -151,19 +151,26 @@ self.addEventListener("fetch", (e) => {
   }
   if (rest === state.name) {
     e.respondWith(state.js === null ? respond("// no build yet", "text/javascript", 404) : respond(state.js, "text/javascript"));
+    if (state.js !== null) e.waitUntil(toRunners({ type: "took", version: state.version }));
     return;
   }
   e.respondWith(fileFor(rest).then((f) => f ? respond(f.body, f.type) : respond("not found: " + rest, "text/plain", 404)));
 });
 
-// a project file: kept, or asked of the IDE through a runner page (each runner page is
-// connected to the IDE that opened it)
+// the runner pages this worker serves (each connected to the IDE that opened it)
+async function runnerPages() {
+  return (await self.clients.matchAll({ type: "window", includeUncontrolled: true })).filter((c) => new URL(c.url).pathname.endsWith("/runner.html"));
+}
+// news for the IDE: the app took a build (so the IDE can say it reloaded)
+async function toRunners(m) {
+  for (const page of await runnerPages()) page.postMessage(m);
+}
+// a project file: kept, or asked of the IDE through a runner page
 const asking = new Map(); // path -> the answer on its way, for requests at once
 async function fileFor(path) {
   if (state.assets.has(path)) return state.assets.get(path);
   if (!asking.has(path)) asking.set(path, (async () => {
-    const pages = (await self.clients.matchAll({ type: "window", includeUncontrolled: true })).filter((c) => /\/runner\.html(\?|#|$)/.test(new URL(c.url).pathname + new URL(c.url).search));
-    for (const page of pages) {
+    for (const page of await runnerPages()) {
       const body = await new Promise((resolve) => {
         const ch = new MessageChannel();
         const t = setTimeout(() => resolve(undefined), 10000);

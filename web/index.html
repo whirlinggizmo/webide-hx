@@ -564,6 +564,7 @@ function compile(args, sources, output) {
 // frame, a window, a floating window, a tab) is a runner, with its own service worker playing
 // the DevServer. Builds and assets go to every runner; the IDE keeps what a new one needs (the
 // latest build, the assets) and fills it in when it says it's ready, after a reload too
+let buildStatus = "", appTook = 0; // what the status said of the latest build; the build the app took last
 let RUNNER = null; // runner.html's URL: config.json's "runner", else locally the other one of
                    // 127.0.0.1 and localhost (another site), else this page's own directory
 async function findRunner() {
@@ -594,6 +595,11 @@ addEventListener("message", (e) => {
   const r = runners.get(w);
   if (!r) return;
   if (m.type === "need") toRunner(w, { type: "file", id: m.id, body: servedFile(m.path) });
+  // the app took the latest build: the status says it reloaded (if it still says reloading)
+  else if (m.type === "took" && w === program.target()) {
+    appTook = m.version;
+    if (m.version === version && $("status").textContent === buildStatus + ", reloading") status(buildStatus + ", reloaded");
+  }
   else if (m.type === "log") r.log = m.text;
   else if (m.type === "themed") r.theme = m.theme;
   else if (m.type === "loaded") { r.url = m.url; toRunner(w, { type: "theme", theme: prefs.theme }); }
@@ -1319,7 +1325,8 @@ async function build() {
   await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
   // nothing running yet (the project's first build failed): this build starts it
   if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
-  status(`build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "") + (version > 1 ? ", reloading" : ""));
+  buildStatus = `build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "");
+  status(buildStatus + (version > 1 ? (appTook >= version ? ", reloaded" : ", reloading") : ""));
   out([r.stdout.trim()].concat(messages.rest).filter((x) => x).join("\n"));
   return { ok: true, r };
 }
@@ -1732,7 +1739,7 @@ function showView() {
 async function startProgram() {
   builtWith = null; // a build from scratch: whatever the build file was before doesn't matter
   await tell({ type: "reset" });
-  version = 0;
+  version = 0; appTook = 0;
   startingProgram = true;
   let first;
   try { first = await build(); } finally { startingProgram = false; }
@@ -2362,6 +2369,7 @@ async function test() {
   report.reloadMs = [Math.round(b2.r.ms)];
   const after = await until(() => lastTicks(frameLog(), "Hello again"), 15000);
   step("v2 runs the new code", after, after);
+  step("the status says it reloaded, once the app took the build", await until(() => /^build \d+: \d+ ms, reloaded$/.test($("status").textContent), 5000), $("status").textContent);
   step("ticks carried over (@:hot)", after && before && after.ticks > before.ticks, { before, after });
   step("since-reload started over (plain static)", after && before && after.since < after.ticks, { before, after });
   const log = frameLog();

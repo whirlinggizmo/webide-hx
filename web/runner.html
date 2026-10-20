@@ -81,6 +81,7 @@ $("app").addEventListener("load", () => { applyTheme(appDoc()); watchLog(); say(
     await new Promise((r) => sw.addEventListener("statechange", () => sw.state === "activated" && r()));
   // a file the app asked for that the service worker doesn't have: asked of the IDE
   navigator.serviceWorker.addEventListener("message", (e) => {
+    if (e.data && e.data.type === "took") { say(e.data); return; } // the app took a build
     if (!e.data || e.data.type !== "need" || !e.ports[0] || !ideOrigin) { if (e.ports[0]) e.ports[0].postMessage({}); return; }
     const id = ++needCount;
     needs.set(id, (body) => e.ports[0].postMessage({ body }));
