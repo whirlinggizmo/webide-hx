@@ -109,6 +109,9 @@
   #debug .bar { display: flex; align-items: center; gap: 4px; padding: 3px 6px; }
   #debug .bar span { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #debug .bar button { padding: 1px 8px; font-size: 12px; }
+  #debug .bar button.icon { padding: 2px 5px; border-color: transparent; background: transparent; display: flex; }
+  #debug .bar button.icon:hover:not([disabled]) { background: var(--hover); border-color: var(--line); }
+  #debug .bar #dbg-continue:not([disabled]) { color: #2e9e3e; }
   #debug .bar button[disabled] { opacity: 0.4; cursor: default; }
   #debug .body { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); max-height: 40vh; min-height: 0; }
   #debug .body[hidden] { display: none; }
@@ -275,11 +278,11 @@
     <div id="debug" hidden>
       <div class="bar">
         <span id="dbg-state">Debugger</span>
-        <button id="dbg-continue" title="Continue (F8)">Continue</button>
-        <button id="dbg-pause" title="Pause (F8)">Pause</button>
-        <button id="dbg-over" title="Step over (F10)">Step over</button>
-        <button id="dbg-into" title="Step into (F11)">Step into</button>
-        <button id="dbg-out" title="Step out (Shift+F11)">Step out</button>
+        <button id="dbg-continue" class="icon" title="Continue (F8)" aria-label="Continue"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3v10"/><path d="M6.5 3.2v9.6L13 8z" fill="currentColor" stroke="none"/></svg></button>
+        <button id="dbg-pause" class="icon" title="Pause (F8)" aria-label="Pause"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5v9M10.5 3.5v9" stroke-width="2.2"/></svg></button>
+        <button id="dbg-over" class="icon" title="Step over (F10)" aria-label="Step over"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 9a5.5 5.5 0 0 1 10.6-2"/><path d="M13.5 3.5v3.6H9.9"/><circle cx="8" cy="12.5" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+        <button id="dbg-into" class="icon" title="Step into (F11)" aria-label="Step into"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v7"/><path d="M5 5.8 8 8.8l3-3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+        <button id="dbg-out" class="icon" title="Step out (Shift+F11)" aria-label="Step out"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9V2"/><path d="M5 4.8 8 1.8l3 3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
       </div>
       <div class="body" hidden>
         <ol id="dbg-stack" aria-label="Call stack"></ol>
