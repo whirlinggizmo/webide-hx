@@ -18,8 +18,9 @@ import json, os, shutil, subprocess, sys, tempfile, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 SERVE = os.path.join(os.path.dirname(HERE), "tools", "serve.py")
 BROWSERS = {
-    "brave": lambda profile, url: ["/opt/brave.com/brave/brave", "--headless=new", "--disable-gpu", "--no-first-run", f"--user-data-dir={profile}", url],
-    "firefox": lambda profile, url: ["firefox", "--headless", "--new-instance", "--profile", profile, url],
+    # a desktop's window (narrower, the page stacks its views, as for a phone)
+    "brave": lambda profile, url: ["/opt/brave.com/brave/brave", "--headless=new", "--disable-gpu", "--no-first-run", "--window-size=1400,900", f"--user-data-dir={profile}", url],
+    "firefox": lambda profile, url: ["firefox", "--headless", "--new-instance", "--window-size=1400,900", "--profile", profile, url],
 }
 
 

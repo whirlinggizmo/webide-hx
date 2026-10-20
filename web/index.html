@@ -85,13 +85,20 @@
   button { font: inherit; padding: 4px 12px; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 4px; cursor: pointer; }
   button.primary { border-color: var(--accent); color: var(--accent); }
   #run { flex: 1; min-height: 0; }
-  main { display: grid; grid-template-columns: 3fr 2fr; gap: 1px; background: var(--line); height: calc(100vh - 46px); }
+  main { display: grid; grid-template-columns: minmax(0, var(--edit-fr, 3fr)) 5px minmax(0, var(--app-fr, 2fr)); background: var(--line); height: calc(100vh - 46px); }
   /* the program in a window of its own: the editor has the page */
   body.program-out main { grid-template-columns: 1fr; }
-  body.program-out #program-pane { display: none; }
+  body.program-out #program-pane, body.program-out #split-app { display: none; }
+  /* the dividers: the tree's (its width), and the editor's and the app's (their shares). Dragged
+     to the edge, a view folds away; double-clicked, the view beside folds away or comes back */
+  .split { cursor: col-resize; background: var(--line); background-clip: content-box; padding: 0 2px; touch-action: none; }
+  .split:hover, .split.dragging { background-color: var(--accent); }
+  body.edit-folded main > section:first-child, body.app-folded #program-pane { visibility: hidden; }
+  body.tree-folded .files { display: none; }
   section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
-  .code { display: grid; grid-template-columns: 180px 1fr; min-height: 0; flex: 1; }
-  .files { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--line); }
+  .code { display: grid; grid-template-columns: var(--tree-w, 180px) 5px minmax(0, 1fr); min-height: 0; flex: 1; }
+  body.tree-folded .code { grid-template-columns: 0 5px minmax(0, 1fr); }
+  .files { display: flex; flex-direction: column; min-height: 0; }
   #tree { list-style: none; margin: 0; padding: 4px 0; overflow: auto; flex: 1; font-size: 13px; }
   #tree .folder { color: var(--muted); }
   #tree .caret { width: 12px; flex: none; font-size: 10px; line-height: 19px; }
@@ -161,6 +168,8 @@
     main { grid-template-columns: 1fr; grid-template-rows: 3fr 2fr; }
     body.program-out main { grid-template-rows: 1fr; }
     .code { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .split { display: none; }
+    body.edit-folded main > section:first-child, body.app-folded #program-pane { visibility: visible; }
     .files { border-right: 0; border-bottom: 1px solid var(--line); max-height: 140px; }
   }
 </style>
@@ -302,6 +311,7 @@
       <div class="files">
         <ul id="tree"></ul>
       </div>
+      <div class="split" id="split-tree" role="separator" aria-orientation="vertical" aria-label="The file tree's width" title="Drag to resize; double-click to fold the files away or back"></div>
       <div class="edit">
         <div id="viewing" hidden><span id="viewing-what"></span><button id="viewing-close" title="back to the project file">×</button></div>
         <div id="editor"></div>
@@ -309,6 +319,7 @@
       </div>
     </div>
   </section>
+  <div class="split" id="split-app" role="separator" aria-orientation="vertical" aria-label="The editor's and the app's widths" title="Drag to resize; double-click to fold the app away or back"></div>
   <section id="program-pane">
     <iframe id="run" title="the running program"></iframe>
     <div id="debug" hidden>
@@ -2298,7 +2309,7 @@ function dbgShown() {
 // the panel: shown with the extension; its buttons by state
 function dbgShow() {
   $("debug").hidden = !dbg.present;
-  const home = program.kind ? document.querySelector(".edit") : $("program-pane");
+  const home = program.kind || layout.appFolded ? document.querySelector(".edit") : $("program-pane");
   if ($("debug").parentNode !== home) home.append($("debug"));
   $("debug").querySelector(".body").hidden = !dbg.paused || dbgLayout.collapsed;
   $("dbg-height").hidden = !dbg.paused || dbgLayout.collapsed;
@@ -2346,6 +2357,52 @@ dbgDrag($("dbg-split"), (e) => {
 });
 $("dbg-collapse").onclick = () => { dbgLayout.collapsed = !dbgLayout.collapsed; saveDbgLayout(); dbgShow(); };
 dbgApplyLayout();
+// ---- the page's layout: the file tree's width, the editor's and the app's shares, and which
+// are folded away; kept per browser. A divider is dragged (to the edge: that view folds away)
+// or double-clicked (the view beside folds away, or comes back). The app folded away is still
+// running; the debug panel comes under the editor then
+const LAYOUT = "webide-hx-layout" + (TESTING ? "-test" : "");
+const layout = (() => {
+  const d = { tree: 180, app: 0.4, treeFolded: false, editFolded: false, appFolded: false };
+  try { return Object.assign(d, JSON.parse(localStorage.getItem(LAYOUT))); } catch (e) { return d; }
+})();
+function applyLayout() {
+  const s = document.body.style;
+  s.setProperty("--tree-w", layout.tree + "px");
+  s.setProperty("--edit-fr", layout.editFolded ? "0fr" : layout.appFolded ? "1fr" : (1 - layout.app) + "fr");
+  s.setProperty("--app-fr", layout.appFolded ? "0fr" : layout.editFolded ? "1fr" : layout.app + "fr");
+  document.body.classList.toggle("tree-folded", layout.treeFolded);
+  document.body.classList.toggle("edit-folded", layout.editFolded);
+  document.body.classList.toggle("app-folded", layout.appFolded);
+  if (dbg.present && view) dbgShow(); // (not while the page starts: it shows the panel itself then)
+}
+const saveLayout = () => { try { localStorage.setItem(LAYOUT, JSON.stringify(layout)); } catch (e) {} };
+function splitDrag(handle, move) {
+  handle.addEventListener("pointerdown", (e) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    try { handle.setPointerCapture(e.pointerId); } catch (err) {} // (so the app's frame doesn't take the pointer)
+    handle.classList.add("dragging");
+    const onMove = (ev) => { move(ev); applyLayout(); };
+    const done = () => { handle.classList.remove("dragging"); handle.removeEventListener("pointermove", onMove); handle.removeEventListener("pointerup", done); saveLayout(); };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", done);
+  });
+}
+splitDrag($("split-tree"), (e) => {
+  const code = document.querySelector(".code").getBoundingClientRect(), w = e.clientX - code.left;
+  if (w < 60) layout.treeFolded = true;
+  else { layout.treeFolded = false; layout.tree = Math.round(Math.min(w, code.width * 0.5)); }
+});
+splitDrag($("split-app"), (e) => {
+  const main = document.querySelector("main").getBoundingClientRect(), x = e.clientX - main.left;
+  if (x < 120) { layout.editFolded = true; layout.appFolded = false; }
+  else if (main.width - x < 80) { layout.appFolded = true; layout.editFolded = false; }
+  else { layout.editFolded = layout.appFolded = false; layout.app = Math.min(Math.max((main.width - x) / main.width, 0.1), 0.9); }
+});
+$("split-tree").ondblclick = () => { layout.treeFolded = !layout.treeFolded; applyLayout(); saveLayout(); };
+$("split-app").ondblclick = () => { if (layout.editFolded) layout.editFolded = false; else layout.appFolded = !layout.appFolded; applyLayout(); saveLayout(); };
+applyLayout();
 $("dbg-state").onclick = () => { if (dbg.cancelled) { dbg.cancelled = false; dbgSync(); } };
 // Pause: every runner (the app, wherever it is); Continue: every one stopped; a step: the one shown
 const dbgDo = (method) => () => attempt(async () => {
@@ -3286,6 +3343,36 @@ async function test() {
   const t0 = performance.now();
   let before = await until(() => lastTicks(frameLog(), "Hello"), 15000);
   step("v1 runs", before, before);
+  // the layout: the dividers double-clicked fold a view away and back; dragged, they resize,
+  // and to the edge, fold
+  const w = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().width);
+  const appW0 = w("#program-pane"), editW0 = w("main > section"), treeW0 = w(".files");
+  $("split-tree").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  const treeGone = getComputedStyle(document.querySelector(".files")).display === "none" && w("main > section") === editW0;
+  $("split-tree").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  step("the file tree folds away on a double-click, and back", treeGone && w(".files") === treeW0, { treeW0, back: w(".files") });
+  $("split-app").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  const appGone = w("#program-pane") < 2 && w("main > section") > editW0 + appW0 - 20;
+  $("split-app").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
+  step("the app folds away on a double-click (the editor gets the room), and back", appGone && Math.abs(w("#program-pane") - appW0) <= 1, { appW0, back: w("#program-pane") });
+  const drag = (id, x) => {
+    const h = $(id), r = h.getBoundingClientRect(), at = { bubbles: true, pointerId: 1, button: 0, clientY: r.top + 50 };
+    h.dispatchEvent(new PointerEvent("pointerdown", Object.assign({ clientX: r.left + 2 }, at)));
+    h.dispatchEvent(new PointerEvent("pointermove", Object.assign({ clientX: x }, at)));
+    h.dispatchEvent(new PointerEvent("pointerup", Object.assign({ clientX: x }, at)));
+  };
+  const mainBox = document.querySelector("main").getBoundingClientRect();
+  drag("split-app", mainBox.left + mainBox.width * 0.5);
+  const half = Math.abs(w("#program-pane") - w("main > section")) < 12;
+  drag("split-tree", document.querySelector(".code").getBoundingClientRect().left + 260);
+  const wider = w(".files") === 260;
+  step("dragged: the editor and the app half and half; the tree 260 px; kept", half && wider && JSON.parse(localStorage.getItem(LAYOUT)).tree === 260, { app: w("#program-pane"), edit: w("main > section"), tree: w(".files") });
+  drag("split-app", mainBox.right - 20);
+  const folded = layout.appFolded && w("#program-pane") < 2;
+  drag("split-app", mainBox.left + mainBox.width * 0.6);
+  step("dragged to the edge, the app folds away; dragged back, it's there", folded && !layout.appFolded && w("#program-pane") > 100, w("#program-pane"));
+  Object.assign(layout, { tree: 180, app: 0.4, treeFolded: false, editFolded: false, appFolded: false }); applyLayout(); saveLayout();
+
   // the header says whether the browser keeps the project for good or may delete it
   storageKept = true; showWhere();
   const keptTip = $("where-project").title;

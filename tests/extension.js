@@ -16,7 +16,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 (async () => {
   const profile = fs.mkdtempSync(path.join(os.tmpdir(), "webide-ext-test-"));
-  const b = spawn(browser, ["--headless=new", "--disable-gpu", "--no-first-run", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
+  const b = spawn(browser, ["--headless=new", "--disable-gpu", "--no-first-run", "--window-size=1400,900", `--remote-debugging-port=${port}`, `--user-data-dir=${profile}`,
                             `--load-extension=${ext}`, `--disable-extensions-except=${ext}`, "about:blank"], { stdio: "ignore" });
   let code = 1;
   try {
