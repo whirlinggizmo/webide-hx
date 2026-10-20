@@ -2553,7 +2553,10 @@ const program = {
       pip.addEventListener("pagehide", () => { if (this.win === pip) this.back(); });
     }
     this.kind = kind;
-    toRunner($("run").contentWindow, { type: "start", url: "about:blank" });
+    // the pane's app stops (in the extension, its runner runs the app in its own page: a fresh
+    // one, given nothing to run)
+    if (IN_EXTENSION) $("run").src = RUNNER + "?r=" + ++runnerLoads;
+    else toRunner($("run").contentWindow, { type: "start", url: "about:blank" });
     document.body.classList.add("program-out");
     showView();
   },
