@@ -244,16 +244,33 @@ Two, for two kinds of use:
       the editor. Then: values on hover, watches, pause on exceptions, conditional
       breakpoints and logpoints, a console in the stopped app; the app in a window or tab
       of its own (another tab to attach to).
-- [ ] **An all-in-one extension**, an alternative to the web IDE for whoever wants it: the
-      IDE as an extension page, with the compiler and the standard library inside it
-      (offline, nothing to host; the bundle uses no eval), the library cache in the
-      extension's storage (never evicted), libraries straight from haxelib, GitHub and
-      GitLab (no mirror, and the newest version for an unpinned `-lib`), and the debugger.
-      The app runs in a sandboxed extension page (its own process in Chromium, no second
-      site needed), which has no service worker: builds, files and hot reload by
-      postMessage, so hotreload-hx's JS client needs a postMessage transport. Maybe later:
-      a locally installed Haxe through native messaging (every target, native speed), as an
-      option.
+- [ ] **An all-in-one extension**, an alternative to the web IDE: the IDE as an extension
+      page, with the compiler and the standard library inside it (offline, nothing hosted:
+      the bundle uses no eval), the library cache in the extension's storage (never
+      evicted), libraries straight from haxelib, GitHub and GitLab (no mirror; the newest
+      version for an unpinned `-lib`), and the debugger. Not decided: weighed against the
+      debugger extension plus the web IDE (updates without a store's review, narrower
+      install permissions, one runner, projects in one place, links). Measured 2026-10-20 in
+      Brave, with probe extensions:
+      - The app's runner as a sandboxed extension page: its own process (the IDE ticked on
+        while it spun), no storage at all (localStorage, IndexedDB refused), no extension
+        APIs, no access to its parent. No service worker: refused ("the context is
+        sandboxed"). The extension's own worker doesn't answer its requests either, even
+        for web-accessible paths. Web workers: from a blob, with a sandbox CSP that allows
+        it (`worker-src blob:`); not from a file URL (a shim can fetch it into a blob).
+      - The debugger: an extension page attaches `chrome.debugger` to its own tab; the
+        sandboxed frame is a session of its own; a breakpoint stops it, a variable is read,
+        the IDE page goes on.
+      - Plain URLs without a service worker: a shim in the runner page, before the app,
+        answers relative URLs from the IDE's files (fetch, XMLHttpRequest, an image's or a
+        sound's src) and /__hotreload and /__hotreload_assets as the DevServer does. hello,
+        as Haxe 4.3.7 builds it, with hotreload-hx unchanged: ran with its asset, hot
+        reloaded (the reloader's import() of a blob URL: it's given `blob:...#`, so its
+        `?v=N` lands in the fragment), @:hot state kept, hooks ran, a changed asset reached
+        it; XMLHttpRequest text and bytes, an image, a 404, an outside URL to the network.
+        Not covered by a shim: CSS url() and stylesheets, `<img>` written as HTML, fonts in
+        CSS, a dynamic import() of the app's own modules; such apps would want the web runner.
+      Probes: scratchpad sbx-probe, sbx-dbg, sbx-app (2026-10-20).
 
 ## 6. Language server (after a resident compiler)
 
