@@ -137,7 +137,9 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       stayed blank until the project was loaded again). 2026-10-19.
 - [ ] Place the program's window on a chosen screen (Window Management API, Chromium;
       a permission prompt).
-- [ ] A context menu on the tree's files (Rename, Delete).
+- [x] A context menu on the tree's files and folders: New file, New folder, Rename, Delete,
+      for the row right-clicked (the menu key and Shift+F10 too); New file and New folder on
+      the empty space, at the project's top.
 - [ ] Haxe highlighting from a real grammar (a Lezer one) instead of the legacy stream
       mode, if the stream mode's gaps show (string interpolation, metadata, regexes).
 - [x] The project's files through ZenFS (`@zenfs/core` and `@zenfs/dom`, a node-like `fs`

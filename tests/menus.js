@@ -2,7 +2,7 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), Project > Select hxml…, Project > Libraries… > Add library…, App (Separate window: it hot-reloads there, Restart starts it over there, and it comes back,
+// with files and an empty one), the tree's context menu (right-click, the menu key, Shift+F10), Project > Select hxml…, Project > Libraries… > Add library…, App (Separate window: it hot-reloads there, Restart starts it over there, and it comes back,
 // Embedded, when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
@@ -18,7 +18,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   function send(method, params) { return new Promise(function (r) { var i = ++id; wait.set(i, r); ws.send(JSON.stringify({ id: i, method: method, params: params || {} })); }); }
   async function ev(x) { var r = await send("Runtime.evaluate", { expression: x, returnByValue: true }); return r.result ? r.result.value : undefined; }
   var sleep = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
-  async function key(k, code) { await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: code || k, text: k === "Enter" ? "\r" : undefined, windowsVirtualKeyCode: { ArrowDown: 40, ArrowUp: 38, Escape: 27, End: 35, Enter: 13, Home: 36 }[k] }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: code || k }); await sleep(80); }
+  async function key(k, code) { await send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code: code || k, text: k === "Enter" ? "\r" : undefined, windowsVirtualKeyCode: { ArrowDown: 40, ArrowUp: 38, Escape: 27, End: 35, Enter: 13, Home: 36, ContextMenu: 93 }[k] }); await send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code: code || k }); await sleep(80); }
   var fails = 0;
   function step(name, ok, d) { if (!ok) fails++; console.log((ok ? "  ok   " : "  FAIL ") + name + (d !== undefined ? "  " + JSON.stringify(d) : "")); }
   var focused = "document.activeElement.id", openList = "[...document.querySelectorAll('.items')].filter(l => !l.hidden).map(l => l.id).join(',')";
@@ -126,6 +126,63 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#delete"));
   await sleep(300);
   step("an empty folder is deleted without asking", await ev("!$('dialog').open && !dirs.has('src/empty')"));
+
+  // ---- the tree's context menu: a right-click on a folder, a file or the empty space offers
+  // what File does there, without opening or selecting anything; the menu key opens it too
+  var rightClick = async function (p) { for (var ty of ["mousePressed", "mouseReleased"]) await send("Input.dispatchMouseEvent", { type: ty, x: p.x, y: p.y, button: "right", clickCount: 1 }); await sleep(120); };
+  var menuAt = "(() => { const m = $('tree-menu'); if (m.hidden) return null; const r = m.getBoundingClientRect(); return { x: Math.round(r.x), y: Math.round(r.y), items: [...m.querySelectorAll('[role=menuitem]')].filter(i => !i.hidden).map(i => i.id) }; })()";
+  await click(await box('#tree [data-name="src/Hello.hx"]'));
+  var srcRow = await box('#tree [data-dir="src"]');
+  await rightClick(srcRow);
+  var at = await ev(menuAt);
+  step("a right-click on a folder: its menu where the pointer is, the row outlined, nothing else changed", at && Math.abs(at.x - srcRow.x) <= 2 && Math.abs(at.y - srcRow.y) <= 2
+       && at.items.join() === "tm-new,tm-new-folder,tm-rename,tm-delete" && await ev("document.querySelector('#tree [data-dir=\"src\"]').classList.contains('context') && current === 'src/Hello.hx' && selectedDir === null"), at);
+  await shot("tree-menu");
+  await click(await box("#tm-new"));
+  step("New file… there starts inside the folder", await ev("$('dialog').open && $('dialog-input').value === 'src/' && $('tree-menu').hidden && !document.querySelector('#tree .context')"), await ev("$('dialog-input').value"));
+  await typeInto("src/Ctx.hx");
+  await key("Enter");
+  await sleep(1500);
+  await click(await box('#tree [data-name="src/Hello.hx"]'));
+  await rightClick(await box('#tree [data-name="src/Ctx.hx"]'));
+  await click(await box("#tm-delete"));
+  await sleep(200);
+  step("Delete… on a file asks about that file, not the one shown", await ev("$('dialog').open && $('dialog-title').textContent === 'Delete src/Ctx.hx?'"), await ev("$('dialog-title').textContent"));
+  await click(await box("#dialog-ok"));
+  await sleep(1500);
+  step("and deletes it; the file shown stays", await ev("!('src/Ctx.hx' in files) && current === 'src/Hello.hx'"));
+  await rightClick(await box('#tree [data-name="src/Main.hx"]'));
+  await click(await box("#tm-rename"));
+  step("Rename… on a file renames that file, its base name selected", await ev("$('dialog-title').textContent") === "Rename src/Main.hx"
+       && await ev("$('dialog-input').value.slice($('dialog-input').selectionStart, $('dialog-input').selectionEnd)") === "Main");
+  await key("Escape");
+  await rightClick(await box('#tree [data-name="src/Main.hx"]'));
+  await click(await box("#tm-new-folder"));
+  step("New folder… on a file starts beside it", await ev("$('dialog-input').value") === "src/", await ev("$('dialog-input').value"));
+  await key("Escape");
+  var empty = await ev("(() => { const r = $('tree').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.bottom - 12 }; })()");
+  await rightClick(empty);
+  at = await ev(menuAt);
+  step("on the tree's empty space: New file… and New folder… only", at && at.items.join() === "tm-new,tm-new-folder", at);
+  await click(await box("#tm-new"));
+  step("starting at the project's top", await ev("$('dialog').open && $('dialog-input').value === ''"), await ev("$('dialog-input').value"));
+  await key("Escape");
+  // (the browser's own keyboard context menu comes of a raw key-down)
+  var rawKey = async function (k, code, mods) { for (var ty of ["rawKeyDown", "keyUp"]) await send("Input.dispatchKeyEvent", { type: ty, key: k, code: k, windowsVirtualKeyCode: code, modifiers: mods || 0 }); await sleep(120); };
+  await ev("document.querySelector('#tree [data-name=\"src/Main.hx\"]').focus()");
+  await rawKey("ContextMenu", 93);
+  step("the menu key on a row: the menu, on its first item", await ev(menuAt) && await ev(focused) === "tm-new", [await ev(menuAt), await ev(focused)]);
+  await key("ArrowDown");
+  await key("End");
+  step("the arrows and End move through it", await ev(focused) === "tm-delete", await ev(focused));
+  await key("Escape");
+  step("Escape closes it, back on the row", await ev("$('tree-menu').hidden && document.activeElement.dataset.name === 'src/Main.hx'"));
+  await rawKey("F10", 121, 8);
+  step("Shift+F10 opens it too, under the row", await ev(focused) === "tm-new" && await ev("(() => { const m = $('tree-menu').getBoundingClientRect(), r = document.querySelector('#tree [data-name=\"src/Main.hx\"]').getBoundingClientRect(); return Math.abs(m.y - r.bottom) <= 2; })()"), await ev(menuAt));
+  await key("Escape");
+  await rightClick(srcRow);
+  await click(await box("#editor"));
+  step("a click elsewhere closes it", await ev("$('tree-menu').hidden && !document.querySelector('#tree .context')"));
 
   // ---- Project > Open folder (local)…: always there; where the browser can't (headless Brave,
   // without its flag), greyed, and saying how to have it

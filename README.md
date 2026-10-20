@@ -181,7 +181,7 @@ dragged to resize; dragged to the edge, the view beside folds away (the tree, th
 the app, which keeps running), and a double-click folds it away or brings it back; the sizes
 are kept per browser. In a narrow window the views stack instead.
 
-The header's **File** menu has New file, New folder, Rename and Delete. **Edit** has the editor's
+The header's **File** menu has New file, New folder, Rename and Delete; a right-click in the file tree (or the menu key, or Shift+F10, on a row) has them for that file or folder (a new one beside the file or inside the folder; on the empty space, at the project's top). **Edit** has the editor's
 commands with their shortcuts (Undo, Redo, Cut, Copy, Paste, Select all, Find, Replace,
 Go to line, Toggle comment, Indent, Outdent) and **Preferences**: the theme (the page's,
 the editor's and the program's frame), font size, tab width, tabs or spaces, wrapping,

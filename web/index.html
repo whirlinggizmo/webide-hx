@@ -126,6 +126,10 @@
   #tree button.on { background-color: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
   #tree .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
+  /* the tree's context menu: where it was asked for; the row it's for, outlined meanwhile */
+  #tree-menu { position: fixed; top: 0; left: 0; }
+  #tree-menu:focus { outline: none; }
+  #tree button.context { box-shadow: inset 0 0 0 1px var(--accent); }
   .edit { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   #editor { flex: 1; min-height: 0; overflow: hidden; }
   #viewing { display: flex; align-items: center; gap: 8px; padding: 3px 6px 3px 10px; border-bottom: 1px solid var(--line); background: var(--hover); font-size: 12px; color: var(--muted); }
@@ -309,6 +313,13 @@
     </div>
   </form>
 </dialog>
+<div class="items" id="tree-menu" role="menu" aria-label="File and folder actions" tabindex="-1" hidden>
+  <button role="menuitem" id="tm-new">New file…</button>
+  <button role="menuitem" id="tm-new-folder">New folder…</button>
+  <hr role="separator" id="tm-sep">
+  <button role="menuitem" id="tm-rename">Rename…</button>
+  <button role="menuitem" id="tm-delete">Delete…</button>
+</div>
 <dialog id="dialog">
   <form method="dialog">
     <h2 id="dialog-title"></h2>
@@ -2769,6 +2780,7 @@ function exportZip() {
 // its last with the up arrow); the arrows, Home and End move, Escape closes, and so does
 // a click anywhere else. Picking an item closes the menu, then runs the item's handler
 function closeMenus() {
+  closeTreeMenu();
   for (const m of document.querySelectorAll(".menu")) {
     m.querySelector(".items").hidden = true;
     m.querySelector(".menubutton").setAttribute("aria-expanded", "false");
@@ -2818,7 +2830,7 @@ for (const m of document.querySelectorAll(".menu")) {
     e.preventDefault();
   };
 }
-document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".menu")) closeMenus(); });
+document.addEventListener("pointerdown", (e) => { if (!e.target.closest(".menu, #tree-menu")) closeMenus(); });
 
 // ---- the page's dialog: a question (resolves to true, or null if cancelled) or, given a
 // `value`, a name to type (resolves to the text). `check(text)` returns why the text won't
@@ -2990,33 +3002,30 @@ function hereDir() {
   const d = selectedDir !== null ? selectedDir : current !== null ? parentOf(current) : "src";
   return d ? d + "/" : "";
 }
-$("new").onclick = () => attempt(async () => {
-  const dir = hereDir();
+// File's items, and the tree's context menu's: asked about a path. `dir` ("src/game/", or ""
+// for the project's top) is where a new file or folder starts out
+async function newFileAsked(dir) {
   const name = await askPerson({ title: "New file", text: "A path in the project: src/... for code, anything else is an asset.",
                                  value: dir, select: [dir.length, dir.length], ok: "Create", check: nameProblem });
   if (name) await newFile(name);
-});
-$("new-folder").onclick = () => attempt(async () => {
-  const dir = hereDir();
+}
+async function newFolderAsked(dir) {
   const name = await askPerson({ title: "New folder", text: "A path in the project; under src/, a folder is a package.",
                                  value: dir, select: [dir.length, dir.length], ok: "Create", check: (n) => nameProblem(n.replace(/\/$/, "")) });
   if (name) await newFolder(name.replace(/\/$/, ""));
-});
-// Rename and Delete: the selected folder, or else the shown file
-$("rename").onclick = () => attempt(async () => {
-  const from = selectedDir !== null ? selectedDir : current;
-  if (from === null) return;
-  const what = selectedDir !== null ? "folder" : "file";
+}
+async function renameAsked(from, folder) {
+  const what = folder ? "folder" : "file";
   const name = await askPerson({ title: `Rename ${from}`, value: from, select: what === "file" ? baseRange(from) : [parentOf(from) ? parentOf(from).length + 1 : 0, from.length],
                                  text: `A new name, or a new path to move it${what === "folder" ? " and everything in it" : ""}.` +
                                        (from.startsWith("src/") ? " A .hx file whose package changes gets its package line changed." : ""),
                                  ok: "Rename", check: (n) => n === from ? "That's its name already." : dirs.has(from) && inside(n, from) ? "A folder can't go inside itself." : nameProblem(n) });
   if (name) await movePath(from, name);
-});
-$("delete").onclick = () => attempt(async () => {
+}
+async function deleteAsked(path, folder) {
   const onDisk = project.folder ? " They're deleted from the folder on disk, not moved to the trash." : "";
-  if (selectedDir !== null) {
-    const dir = selectedDir;
+  if (folder) {
+    const dir = path;
     // an empty folder goes without asking; one with anything in it (shown or not) asks
     const all = await project.everything(dir);
     if (all.files.length) {
@@ -3029,11 +3038,81 @@ $("delete").onclick = () => attempt(async () => {
     }
     return deleteFolder(dir);
   }
-  if (current === null) return;
-  const name = current;
+  const name = path;
   const sure = await askPerson({ title: `Delete ${name}?`, ok: "Delete", danger: true, text: onDisk.replace("They're", "It's").trim() });
   if (sure) await deleteFile(name);
+}
+$("new").onclick = () => attempt(() => newFileAsked(hereDir()));
+$("new-folder").onclick = () => attempt(() => newFolderAsked(hereDir()));
+// Rename and Delete: the selected folder, or else the shown file
+$("rename").onclick = () => attempt(async () => {
+  if (selectedDir !== null) return renameAsked(selectedDir, true);
+  if (current !== null) return renameAsked(current, false);
 });
+$("delete").onclick = () => attempt(async () => {
+  if (selectedDir !== null) return deleteAsked(selectedDir, true);
+  if (current !== null) return deleteAsked(current, false);
+});
+// ---- the tree's context menu: a right-click (or the menu key, or Shift+F10) on a file or a
+// folder offers what File does, there: a new file or folder beside the file or inside the
+// folder, and renaming or deleting it; on the tree's empty space, a new file or folder at the
+// project's top. Nothing is opened or selected by it; the row is outlined while it's open
+let treeTarget = null; // {path, folder, row}; path "" for the project's top
+function closeTreeMenu() {
+  if ($("tree-menu").hidden) return;
+  $("tree-menu").hidden = true;
+  if (treeTarget && treeTarget.row) treeTarget.row.classList.remove("context");
+}
+function openTreeMenu(target, x, y, keyboard) {
+  closeMenus();
+  treeTarget = target;
+  const m = $("tree-menu"), top = target.path === "";
+  for (const id of ["tm-sep", "tm-rename", "tm-delete"]) $(id).hidden = top;
+  if (target.row) target.row.classList.add("context");
+  m.hidden = false;
+  // where it was asked for, kept on the page
+  const r = m.getBoundingClientRect();
+  m.style.left = Math.max(4, Math.min(x, innerWidth - r.width - 4)) + "px";
+  m.style.top = Math.max(4, Math.min(y, innerHeight - r.height - 4)) + "px";
+  if (keyboard) m.querySelector("[role=menuitem]").focus(); else m.focus();
+}
+document.querySelector(".files").addEventListener("contextmenu", (e) => {
+  e.preventDefault();
+  const row = e.target.closest("#tree button");
+  const target = !row ? { path: "", folder: true, row: null } : row.dataset.dir !== undefined ? { path: row.dataset.dir, folder: true, row } : { path: row.dataset.name, folder: false, row };
+  // from the keyboard (the menu key, Shift+F10: no button; a Mac's Ctrl+click is the mouse's),
+  // under the row (or the tree's top), on its first item
+  const keyboard = e.button !== 2 && !e.ctrlKey, at = (row || $("tree")).getBoundingClientRect();
+  openTreeMenu(target, keyboard ? at.left + 16 : e.clientX, keyboard ? at.top + (row ? at.height : 4) : e.clientY, keyboard);
+});
+{
+  const m = $("tree-menu");
+  const items = () => [...m.querySelectorAll("[role=menuitem]")].filter((i) => !i.hidden && !i.disabled);
+  const focusItem = (i) => { const all = items(); if (all.length) all[(i + all.length) % all.length].focus(); };
+  const back = () => { const row = treeTarget && treeTarget.row; closeTreeMenu(); if (row && row.isConnected) row.focus(); };
+  m.onkeydown = (e) => {
+    const all = items(), at = all.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") focusItem(at + 1);
+    else if (e.key === "ArrowUp") focusItem(at < 0 ? -1 : at - 1);
+    else if (e.key === "Home") focusItem(0);
+    else if (e.key === "End") focusItem(-1);
+    else if (e.key === "Escape") back();
+    else if (e.key === "Tab") { closeTreeMenu(); return; }
+    else return;
+    e.preventDefault();
+  };
+  // a new file or folder: inside the folder, beside the file, or at the top
+  const dirOf = (t) => { const d = t.folder ? t.path : parentOf(t.path); return d ? d + "/" : ""; };
+  const pick = (f) => () => { const t = treeTarget; closeTreeMenu(); attempt(() => f(t)); };
+  $("tm-new").onclick = pick((t) => newFileAsked(dirOf(t)));
+  $("tm-new-folder").onclick = pick((t) => newFolderAsked(dirOf(t)));
+  $("tm-rename").onclick = pick((t) => renameAsked(t.path, t.folder));
+  $("tm-delete").onclick = pick((t) => deleteAsked(t.path, t.folder));
+  document.addEventListener("pointerdown", (e) => { if (!e.target.closest("#tree-menu")) closeTreeMenu(); });
+  addEventListener("blur", closeTreeMenu);
+  addEventListener("resize", closeTreeMenu);
+  $("tree").addEventListener("scroll", closeTreeMenu);
+}
 $("reset").onclick = () => attempt(async () => {
   if (!await askPerson({ title: "Reset to the Example project?", text: "The project stored in this browser goes back to the Example project. Your changes to it are lost.",
                          ok: "Reset", danger: true })) return;
