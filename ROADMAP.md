@@ -244,7 +244,9 @@ Two, for two kinds of use:
       the editor. Then: values on hover, watches, pause on exceptions, conditional
       breakpoints and logpoints, a console in the stopped app; the app in a window or tab
       of its own (another tab to attach to).
-- [ ] **An all-in-one extension**, an alternative to the web IDE: the IDE as an extension
+- [~] **An all-in-one extension**, an alternative to the web IDE (`extensions/ide/`, `build.py
+      --extension`; under way 2026-10-20: the IDE builds there, the app runs, hot-reloads,
+      takes changed files and restarts, its runner sharing `web/devserver.js` with `sw.js`): the IDE as an extension
       page, with the compiler and the standard library inside it (offline, nothing hosted:
       the bundle uses no eval), the library cache in the extension's storage (never
       evicted), libraries straight from haxelib, GitHub and GitLab (no mirror; the newest

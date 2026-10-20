@@ -4,10 +4,23 @@
   "version": "0.0.1",
   "description": "A Haxe development environment in the browser: editor, compiler and the running app, with hot reload and a debugger. Everything inside the extension; nothing hosted.",
   "minimum_chrome_version": "125",
-  "action": { "default_title": "Open webide-hx" },
-  "background": { "service_worker": "background.js" },
-  "permissions": ["debugger", "unlimitedStorage"],
+  "action": {
+    "default_title": "Open webide-hx"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "debugger",
+    "unlimitedStorage"
+  ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src blob:; child-src blob:; default-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src 'self' blob: data:; connect-src 'self' blob: data: https: http:"
+  },
+  "sandbox": {
+    "pages": [
+      "runner.html"
+    ]
   }
 }

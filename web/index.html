@@ -624,12 +624,14 @@ function compile(args, sources, output) {
 // latest build, the assets) and fills it in when it says it's ready, after a reload too
 let buildStatus = "", appTook = 0; // what the status said of the latest build; the build the app took last
 // where the IDE runs: a web page (the app on a runner site, with its service worker), or a
-// page of the all-in-one extension (extensions/ide/), where the app will run in a sandboxed
-// page of the extension's (not yet: there, for now, the IDE edits and builds only)
+// page of the all-in-one extension (extensions/ide/), where the app runs in a sandboxed page
+// of the extension's (its runner.html and shim.js: no origin of its own, so its messages say
+// "null", and it's known by its window)
 const IN_EXTENSION = location.protocol === "chrome-extension:";
 let RUNNER = null; // runner.html's URL: config.json's "runner", else locally the other one of
                    // 127.0.0.1 and localhost (another site), else this page's own directory
 async function findRunner() {
+  if (IN_EXTENSION) { RUNNER = new URL("runner.html", location.href).href; return; }
   let cfg = {};
   try { const r = await fetch("config.json", { cache: "no-store" }); if (r.ok) cfg = await r.json(); } catch (e) {}
   const here = new URL(location.href);
@@ -641,17 +643,20 @@ async function findRunner() {
   if (new URL(RUNNER).origin !== location.origin && navigator.serviceWorker)
     for (const r of await navigator.serviceWorker.getRegistrations()) if (/\/run\/$/.test(r.scope)) r.unregister();
 }
-const runnerOrigin = () => new URL(RUNNER).origin;
+const runnerOrigin = () => IN_EXTENSION ? "null" : new URL(RUNNER).origin;
 const runners = new Map(); // a runner's window -> {ready, log, waiters}
 const replay = { build: null }; // what a runner that comes later is given (files it asks for)
 const runnerReplies = new Map();
 let runnerMsgs = 0;
-const toRunner = (w, m) => { try { w.postMessage(m, runnerOrigin()); } catch (e) {} };
+const toRunner = (w, m) => { try { w.postMessage(m, IN_EXTENSION ? "*" : runnerOrigin()); } catch (e) {} };
+// in the extension, a runner is one of the IDE's own frames or windows (any page could say "null")
+const ourRunner = (w) => !IN_EXTENSION || w === $("run").contentWindow || runners.has(w) || w === program.win
+  || (program.frame && w === program.frame.contentWindow) || program.tabs.has(w);
 function askRunner(w, m) {
   return new Promise((resolve) => { const id = ++runnerMsgs; runnerReplies.set(id, resolve); toRunner(w, Object.assign({}, m, { id })); });
 }
 addEventListener("message", (e) => {
-  if (!RUNNER || e.origin !== runnerOrigin() || !e.source) return;
+  if (!RUNNER || e.origin !== runnerOrigin() || !e.source || !ourRunner(e.source)) return;
   const m = e.data || {}, w = e.source;
   if (m.type === "ready") { runnerReady(w); return; }
   const r = runners.get(w);
@@ -737,7 +742,6 @@ function catchUp(w, r) {
 // after a stop logs straight away)
 setInterval(() => { for (const [w, r] of runners) catchUp(w, r); }, 1000);
 async function connectRunner() {
-  if (IN_EXTENSION) { status("the app doesn't run in the extension yet: the IDE edits and builds"); return; }
   await findRunner();
   $("run").src = RUNNER;
   if (!(await runnerUp($("run").contentWindow, 30000))) throw new Error(`the app's runner (${RUNNER}) didn't start`);
@@ -2163,6 +2167,7 @@ let starts = 0, startingProgram = false;
 // keeps the theme. A window is remembered where it was, and closing it brings the program
 // back into the page
 const PROGRAM_WINDOW = "webide-hx-program-window";
+let runnerLoads = 0;
 const program = {
   kind: null, win: null, frame: null, watch: null,
   url: "about:blank",
@@ -2180,7 +2185,16 @@ const program = {
   },
   start(url) {
     this.url = url;
+    // the extension's runner runs the app in its own page: a fresh page each time, which says
+    // it's ready and is given the build and this url then
+    if (IN_EXTENSION) { this.freshRunner(); return; }
     toRunner(this.target(), { type: "start", url });
+  },
+  freshRunner() {
+    const u = RUNNER + "?r=" + ++runnerLoads;
+    if (this.kind === "window") this.win.location.replace(u);
+    else if (this.kind === "pip") this.frame.src = u;
+    else $("run").src = u;
   },
   // a window's place, as its runner reports it (a page can't read another site's window)
   placed(w, at) {

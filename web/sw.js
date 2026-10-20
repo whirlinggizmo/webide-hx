@@ -1,175 +1,22 @@
-// The DevServer's part, in a service worker. It controls the frame the program runs in
-// (the run/ scope), so every request the program makes comes here:
-//   run/            the program's page: a log, and the bundle
-//   run/<bundle>    the latest build (any ?v=), stamped with its number as the DevServer does
-//                   (built with -D source-map=inline, it carries its source map inside)
-//   run/<file>      a project file, as a static server would serve it: asked of the IDE (through
-//                   the runner page) the first time the app asks for it, then kept; a 404 if
-//                   the project has no such file. Only what the app asks for leaves the IDE
-//   /__hotreload?since=N         held until there's a build newer than N (or 20 s), then
-//                                {version, url}: the JS reloader imports url next
-//   /__hotreload_assets?since=N  held until a file the app has changed since N, then {version, urls}
-// The runner page hands it builds, and the names of files that changed, by postMessage, each
-// with a MessageChannel port to answer on.
-
-const HOLD_MS = 20000;
-const state = {
-  name: "main.js",       // the bundle's file name, as the program's page loads it
-  version: 0,
-  js: null,
-  assets: new Map(),     // files the app has had: path under run/ -> {body, type}; body is text, or bytes
-  assetVersion: 0,
-  assetChanges: [],      // {version, urls}
-  waiting: [],           // held polls: {ready(), answer(), clientId, until}
-};
+// The DevServer's part, in a service worker (the web runner's): devserver.js, answering every
+// request of the frame the app runs in (the run/ scope) and the reloader's /__hotreload
+// polls. The runner page hands it builds, and the names of files that changed, by
+// postMessage, each with a MessageChannel port to answer on; a file the app asks for is
+// asked of the IDE through the runner page.
+importScripts("devserver.js");
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
-
-function wake() {
-  state.waiting = state.waiting.filter((w) => {
-    if (!w.ready()) return true;
-    w.answer();
-    return false;
-  });
-}
-
-self.addEventListener("message", (e) => {
-  const m = e.data, port = e.ports[0];
-  if (m.type === "build") {
-    state.name = m.name || state.name;
-    state.version = m.version;
-    state.js = "globalThis.__hotreload_built = " + m.version + "; " + m.js;
-    wake();
-  } else if (m.type === "assets") {
-    // files that changed (or went): the copies go, and the app hears of those it has had,
-    // so it asks again and gets the new ones
-    const urls = [];
-    for (const path of m.paths) if (state.assets.delete(path)) urls.push(scopePath() + path);
-    if (urls.length) {
-      state.assetVersion++;
-      state.assetChanges.push({ version: state.assetVersion, urls });
-      wake();
-    }
-  } else if (m.type === "cached") {
-    if (port) port.postMessage({ paths: [...state.assets.keys()].sort() });
-    return;
-  } else if (m.type === "reset") {
-    state.version = 0; state.js = null; state.assets.clear();
-    state.assetVersion = 0; state.assetChanges = [];
-  }
-  if (port) port.postMessage({ ok: true, version: state.version, assetVersion: state.assetVersion });
-});
-
-// the program's page: its output follows the end while you're at the end (new lines keep you
-// there); scrolled up to read, it leaves you where you are
-const FOLLOW = "<script>(function () {" +
-  "var page = document.scrollingElement, atEnd = true;" +
-  "addEventListener('scroll', function () { atEnd = page.scrollTop + page.clientHeight >= page.scrollHeight - 4; });" +
-  "new MutationObserver(function () { if (atEnd) page.scrollTop = page.scrollHeight; })" +
-  ".observe(document.body, { childList: true, characterData: true, subtree: true });" +
-  "})();</script>";
-
-function scopePath() { return new URL(self.registration.scope).pathname; } // "/run/"
-
-function typeOf(path) {
-  const ext = path.split(".").pop();
-  return { js: "text/javascript", json: "application/json", html: "text/html", css: "text/css", txt: "text/plain",
-           png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
-           wav: "audio/wav", ogg: "audio/ogg", mp3: "audio/mpeg", wasm: "application/wasm" }[ext] || "application/octet-stream";
-}
-
-function respond(body, type, status) {
-  // text is sent as UTF-8; bytes as they are
-  const text = typeof body === "string";
-  return new Response(body, { status: status || 200, headers: { "Content-Type": type + (text ? "; charset=utf-8" : ""), "Cache-Control": "no-store" } });
-}
-
-// a long poll, answered when ready() or after HOLD_MS; sooner when the frame that asked is
-// gone (the page reloaded) or a newer service worker is waiting to take over, since this
-// worker can't hand over while it still holds requests
-function hold(ready, answer, clientId) {
-  return new Promise((resolve) => {
-    if (ready()) { resolve(answer()); return; }
-    const entry = { ready, answer: () => resolve(answer()), clientId, until: Date.now() + HOLD_MS };
-    state.waiting.push(entry);
-    sweep();
-  });
-}
-let sweeping = null;
-function sweep() {
-  if (sweeping) return;
-  sweeping = setInterval(async () => {
-    const replaced = !!self.registration.waiting || !!self.registration.installing;
-    for (const entry of [...state.waiting]) {
-      const gone = entry.clientId && !(await self.clients.get(entry.clientId));
-      if (replaced || gone || Date.now() >= entry.until) {
-        const i = state.waiting.indexOf(entry);
-        if (i >= 0) { state.waiting.splice(i, 1); entry.answer(); }
-      }
-    }
-    if (state.waiting.length === 0) { clearInterval(sweeping); sweeping = null; }
-  }, 250);
-}
-
-function since(url) {
-  const s = parseInt(url.searchParams.get("since"), 10);
-  return isNaN(s) ? null : s;
-}
-
-self.addEventListener("fetch", (e) => {
-  const url = new URL(e.request.url);
-  if (url.origin !== self.location.origin) return;
-  const scope = scopePath();
-  const path = url.pathname;
-
-  if (path === "/__hotreload") {
-    const n = since(url);
-    const answer = () => respond(JSON.stringify({ version: state.version, url: scope + state.name, file: "", failed: false }), "application/json");
-    e.respondWith(hold(() => n === null || state.version > n, answer, e.clientId));
-    return;
-  }
-  if (path === "/__hotreload_assets") {
-    const n = since(url);
-    const answer = () => respond(JSON.stringify({
-      version: state.assetVersion,
-      urls: n === null || n < 0 ? [] : [...new Set(state.assetChanges.filter((c) => c.version > n).flatMap((c) => c.urls))],
-    }), "application/json");
-    e.respondWith(hold(() => n === null || n < 0 || state.assetVersion > n, answer, e.clientId));
-    return;
-  }
-  if (!path.startsWith(scope)) return;
-  const rest = path.slice(scope.length);
-  if (rest === "" || rest === "index.html") {
-    e.respondWith(respond(
-      '<!doctype html><html><head><meta charset="utf-8"><title>webide-hx app</title>' +
-      '<style>body{margin:0;font:13px/1.4 ui-monospace,monospace;background:#fff;color:#111}' +
-      '@media (prefers-color-scheme: dark){:root:not([data-theme=light]) body{background:#111;color:#ddd}}:root[data-theme=dark] body{background:#111;color:#ddd}' +
-      'pre{margin:8px;white-space:pre-wrap;overflow-wrap:anywhere}</style></head>' +
-      '<body><pre id="log"></pre>' + FOLLOW + '<script src="' + state.name + '"></script></body></html>', "text/html"));
-    return;
-  }
-  if (rest === state.name) {
-    e.respondWith(state.js === null ? respond("// no build yet", "text/javascript", 404) : respond(state.js, "text/javascript"));
-    if (state.js !== null) e.waitUntil(toRunners({ type: "took", version: state.version }));
-    return;
-  }
-  e.respondWith(fileFor(rest).then((f) => f ? respond(f.body, f.type) : respond("not found: " + rest, "text/plain", 404)));
-});
 
 // the runner pages this worker serves (each connected to the IDE that opened it)
 async function runnerPages() {
   return (await self.clients.matchAll({ type: "window", includeUncontrolled: true })).filter((c) => new URL(c.url).pathname.endsWith("/runner.html"));
 }
-// news for the IDE: the app took a build (so the IDE can say it reloaded)
-async function toRunners(m) {
-  for (const page of await runnerPages()) page.postMessage(m);
-}
-// a project file: kept, or asked of the IDE through a runner page
-const asking = new Map(); // path -> the answer on its way, for requests at once
-async function fileFor(path) {
-  if (state.assets.has(path)) return state.assets.get(path);
-  if (!asking.has(path)) asking.set(path, (async () => {
+
+const server = makeDevServer({
+  scope: () => new URL(self.registration.scope).pathname, // "/run/"
+  // a file, asked of the IDE through a runner page (another, if one doesn't answer)
+  async ask(path) {
     for (const page of await runnerPages()) {
       const body = await new Promise((resolve) => {
         const ch = new MessageChannel();
@@ -177,13 +24,31 @@ async function fileFor(path) {
         ch.port1.onmessage = (ev) => { clearTimeout(t); resolve(ev.data.body); };
         page.postMessage({ type: "need", path }, [ch.port2]);
       });
-      if (body === undefined) continue; // that page didn't answer: another
-      if (body === null) return null;
-      const f = { body, type: typeOf(path) };
-      state.assets.set(path, f);
-      return f;
+      if (body !== undefined) return body;
     }
-    return null;
-  })().finally(() => asking.delete(path)));
-  return asking.get(path);
-}
+    return undefined;
+  },
+  // news for the IDE: the app took a build (so the IDE can say it reloaded)
+  async took(version) {
+    for (const page of await runnerPages()) page.postMessage({ type: "took", version });
+  },
+  // a held poll goes sooner when the frame that asked is gone (the page reloaded) or a newer
+  // service worker is waiting to take over, since this worker can't hand over while it
+  // still holds requests
+  async early(entry) {
+    if (self.registration.waiting || self.registration.installing) return true;
+    return !!entry.clientId && !(await self.clients.get(entry.clientId));
+  },
+});
+
+self.addEventListener("message", (e) => {
+  const answer = server.message(e.data);
+  if (e.ports[0]) e.ports[0].postMessage(answer);
+});
+
+self.addEventListener("fetch", (e) => {
+  const url = new URL(e.request.url);
+  if (url.origin !== self.location.origin) return;
+  const r = server.handle(url, e.clientId);
+  if (r) e.respondWith(r);
+});
