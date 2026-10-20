@@ -17,7 +17,9 @@ opens the IDE.
   can read where a web page can't (no mirror needed). So `-lib name` without a version
   builds with haxelib's newest release (the output says which, and how to pin it), a
   dependency without one gets the newest too, and Add library… takes a name alone (and pins
-  the newest in lix's file); haxelib's API is Haxe remoting, read by `hxUnserialize`.
+  the newest in lix's file); haxelib's API is Haxe remoting, read by `hxUnserialize`. A
+  GitHub library comes as GitHub's zip of its commit, in one request (a web page gets it
+  from jsDelivr file by file).
 - `background.js`: the toolbar button opens the IDE's tab.
 - `runner.html`, `shim.js`: the app's runner. A sandboxed page of the extension's: its own
   process, no storage, none of the extension's powers, no access to the IDE. It can't have

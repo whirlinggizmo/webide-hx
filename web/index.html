@@ -987,17 +987,51 @@ async function downloadLibrary(lib) {
   }
   if ((m = /^gh:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?#(.+)$/.exec(src))) {
     const [, owner, repo, ref] = m;
-    const listing = await (await fetch(`https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${ref}?structure=flat`)).json().catch(() => null);
-    if (!listing || !listing.files) throw new LibraryError(`${lib.name}: jsDelivr has no ${owner}/${repo} at ${ref}`, lib.at);
-    const wanted = listing.files.filter((f) => f.size <= 4 << 20), files = {};
-    for (let i = 0; i < wanted.length; i += 8)
-      await Promise.all(wanted.slice(i, i + 8).map(async (f) => {
-        // jsDelivr won't serve some kinds of file (a .bat, say): fine, unless the compiler needs it
-        try { files[f.name.slice(1)] = await fetchBytes(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}${f.name}`); }
-        catch (e) { if (/\.(hx|hxml|json)$/.test(f.name)) throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); }
-      }));
+    // only the library, when Add library… asks (lib.part: true): its class path (haxelib.json's,
+    // within the subdirectory lib.sub; else the subdirectory; else src/ when there is one, or
+    // everything) and its haxelib.json and extraParams.hxml: a repository can be much more
+    // than its library (helix: 767 files, its library a fraction of them)
+    const partOf = (names, json) => {
+      const at = lib.sub ? lib.sub + "/" : "";
+      let meta = null;
+      try { meta = json === null ? null : JSON.parse(json); } catch (e) {}
+      const cp = meta && meta.classPath ? at + meta.classPath.replace(/^\.?\/?/, "").replace(/\/+$/, "") : lib.sub || (!meta && names.some((n) => n.startsWith("src/")) ? "src" : "");
+      const keep = (n) => !cp || n.startsWith(cp + "/") || n === at + "haxelib.json" || n === at + "extraParams.hxml";
+      return { cp: cp.replace(/\/$/, ""), keep, meta };
+    };
+    let files = {}, from, part = null;
+    if (IN_EXTENSION) {
+      // the extension can read GitHub's own zip of the commit: one request
+      const url = `https://codeload.github.com/${owner}/${repo}/zip/${ref}`;
+      const all = zipFiles(await fetchBytes(url).catch((e) => { throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); }), false);
+      if (lib.part) {
+        const at = lib.sub ? lib.sub + "/" : "";
+        part = partOf(Object.keys(all), all[at + "haxelib.json"] ? new TextDecoder().decode(all[at + "haxelib.json"]) : null);
+        for (const [n, b] of Object.entries(all)) if (part.keep(n)) files[n] = b;
+      } else files = all;
+      from = `GitHub (${owner}/${repo}@${ref})`;
+    } else {
+      // a web page: jsDelivr, file by file (GitHub's zips can't be read by a page)
+      const listing = await (await fetch(`https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${ref}?structure=flat`)).json().catch(() => null);
+      if (!listing || !listing.files) throw new LibraryError(`${lib.name}: jsDelivr has no ${owner}/${repo} at ${ref}`, lib.at);
+      const fetchOne = (name) => fetchBytes(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${name}`);
+      let wanted = listing.files.filter((f) => f.size <= 4 << 20);
+      if (lib.part) {
+        const at = lib.sub ? lib.sub + "/" : "", names = wanted.map((f) => f.name.slice(1));
+        const json = names.includes(at + "haxelib.json") ? new TextDecoder().decode(await fetchOne(at + "haxelib.json")) : null;
+        part = partOf(names, json);
+        wanted = wanted.filter((f) => part.keep(f.name.slice(1)));
+      }
+      for (let i = 0; i < wanted.length; i += 8)
+        await Promise.all(wanted.slice(i, i + 8).map(async (f) => {
+          // jsDelivr won't serve some kinds of file (a .bat, say): fine, unless the compiler needs it
+          try { files[f.name.slice(1)] = await fetchOne(f.name.slice(1)); }
+          catch (e) { if (/\.(hx|hxml|json)$/.test(f.name)) throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); }
+        }));
+      from = `jsDelivr (${owner}/${repo}@${ref})`;
+    }
     const names = Object.keys(files).sort();
-    return { files, hash: await sha256(names.flatMap((n) => [new TextEncoder().encode(n + "\0"), files[n]])), from: `jsDelivr (${owner}/${repo}@${ref})` };
+    return { files, hash: await sha256(names.flatMap((n) => [new TextEncoder().encode(n + "\0"), files[n]])), from, part: part && part.cp, guessed: !!part && !part.meta && !lib.sub && part.cp === "src" };
   }
   if ((m = /^gitlab:\/\/gitlab\.com\/([^#]+)#(.+)$/.exec(src))) {
     const url = `https://gitlab.com/api/v4/projects/${encodeURIComponent(m[1])}/repository/archive.zip?sha=${encodeURIComponent(m[2])}`;
@@ -1014,7 +1048,8 @@ async function downloadLibrary(lib) {
 async function storeLibrary(lib, got) {
   let hashes = {};
   try { hashes = JSON.parse(localStorage.getItem(libHashesKey)) || {}; } catch (e) {}
-  if (hashes[lib.source] && hashes[lib.source] !== got.hash)
+  const key = lib.source + (got.part !== undefined && got.part !== null ? " " + got.part : "");
+  if (hashes[key] && hashes[key] !== got.hash)
     throw new LibraryError(`${lib.name}: what was downloaded (${got.from}) isn't what was downloaded before for ${lib.source}; refused`, lib.at);
   for (const [rel, data] of Object.entries(got.files)) {
     const p = libPath(lib.dir, rel);
@@ -1022,7 +1057,7 @@ async function storeLibrary(lib, got) {
     await FS.fs.promises.writeFile(p, data);
   }
   await FS.fs.promises.writeFile(libPath(lib.dir, ".webide-hx.json"), JSON.stringify({ source: lib.source, from: got.from, sha256: got.hash, files: Object.keys(got.files).length }));
-  hashes[lib.source] = got.hash;
+  hashes[key] = got.hash;
   try { localStorage.setItem(libHashesKey, JSON.stringify(hashes)); } catch (e) {}
 }
 async function libText(dir, rel) {
@@ -2906,7 +2941,7 @@ async function cachedLibrary(lib) {
 // lix's file for a library
 function lixFile(lib, meta, extra) {
   // its class path: haxelib.json's, within the subdirectory if there's one
-  const cp = [lib.sub, (meta.classPath || "").replace(/^\.?\/?/, "").replace(/\/+$/, "")].filter((x) => x).join("/");
+  const cp = lib.cp !== undefined && lib.cp !== null ? lib.cp : [lib.sub, (meta.classPath || "").replace(/^\.?\/?/, "").replace(/\/+$/, "")].filter((x) => x).join("/");
   return [`-D ${lib.name}=${lib.version}`, `# @install: lix --silent download "${lib.source}" into ${lib.dir}`]
     .concat(Object.keys(meta.dependencies || {}).map((d) => `-lib ${d}`))
     .concat([`-cp \${HAXE_LIBCACHE}/${lib.dir}/${cp}`])
@@ -2948,14 +2983,14 @@ async function addLibrary(spec, replace) {
     status(`${owner}/${repo}: downloading (${source})`);
     // its name and version are in its haxelib.json (in the subdirectory, if one was given),
     // which the cache's folder is named by; a name given is the one it gets
-    const got = await downloadLibrary({ name: repo, source, at: null });
+    const got = await downloadLibrary({ name: repo, source, at: null, sub, part: true });
     const json = (sub ? sub + "/" : "") + "haxelib.json";
     let meta = null;
     try { meta = JSON.parse(new TextDecoder().decode(got.files[json])); } catch (e) {}
     const name = m.name || (meta && meta.name) || repo, version = (meta && meta.version) || "0.0.0";
-    lib = { name, version, source, dir: `${name}/${version}/github/${sha}`, at: null, sub };
-    // no haxelib.json: the class path is the subdirectory given, else src/ when there's one
-    if (!meta && !sub && Object.keys(got.files).some((f) => f.startsWith("src/"))) { lib.sub = "src"; lib.guessed = true; }
+    // its class path, as the download found it (no haxelib.json: the subdirectory given, else
+    // src/ when there's one)
+    lib = { name, version, source, dir: `${name}/${version}/github/${sha}`, at: null, sub, cp: got.part, guessed: got.guessed };
     if (!(await libHas(lib.dir))) await storeLibrary(lib, got);
   } else throw new Error(librarySpecProblem(spec));
   const file = `haxe_libraries/${lib.name}.hxml`;

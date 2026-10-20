@@ -29,6 +29,7 @@
     "https://api.github.com/*",
     "https://data.jsdelivr.com/*",
     "https://cdn.jsdelivr.net/*",
-    "https://gitlab.com/*"
+    "https://gitlab.com/*",
+    "https://codeload.github.com/*"
   ]
 }
