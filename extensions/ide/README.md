@@ -31,4 +31,7 @@ Done (Brave, 2026-10-20): the IDE opens, edits and builds; the app runs, hot-rel
 GitHub, jsDelivr and GitLab; the debugger is built in (the IDE drives `chrome.debugger`
 itself: the same gutter and panel as with the debugger extension). The IDE's own test
 passes in it: `node tests/extension.js` (after `python3 build.py --extension`), and
-`tests/debugger.js` against its page. To come: the app in a window or a tab of its own.
+`tests/debugger.js` against its page. The app in a window or a tab of its own works too
+(it hot-reloads and restarts there; closing the window brings it back); the floating window
+(picture-in-picture) is unchecked (it can't open in a headless browser). The debugger, as on
+the web, is for the app in the IDE's pane for now.
