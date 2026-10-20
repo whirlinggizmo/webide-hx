@@ -624,14 +624,17 @@ function runnerUp(w, ms = 20000) {
   });
 }
 // a message for the runners' service workers (a build, assets, a reset): kept for runners to
-// come, and sent to those there; answered with the first one's answer
+// come, and sent to those there. Waited for a moment at most: a runner whose app is busy (or
+// hung) answers only when it's free, and the IDE doesn't wait on it (each runner takes its
+// messages in order, so it catches up then)
+const TELL_WAIT_MS = 200;
 async function tell(msg) {
   if (msg.type === "reset") { replay.build = null; replay.assets = {}; }
   else if (msg.type === "build") replay.build = msg;
   else if (msg.type === "assets") for (const [p, b] of Object.entries(msg.files)) { if (b === null) delete replay.assets[p]; else replay.assets[p] = b; }
   for (const w of [...runners.keys()]) if (w.closed) runners.delete(w);
-  const answers = await Promise.all([...runners].filter(([, r]) => r.ready).map(([w]) => askRunner(w, { type: "sw", msg }).then((m) => m.data)));
-  return answers[0] || { ok: true, version: replay.build ? replay.build.version : 0 };
+  const sent = [...runners].filter(([, r]) => r.ready).map(([w]) => askRunner(w, { type: "sw", msg }));
+  await Promise.race([Promise.all(sent), new Promise((r) => setTimeout(r, TELL_WAIT_MS))]);
 }
 async function connectRunner() {
   await findRunner();
@@ -2329,6 +2332,18 @@ async function test() {
     await askRunner(program.target(), { type: "spin", ms: 1500 });
     clearInterval(tick);
     step("an app busy for 1.5 s doesn't stop the IDE (its own process)", ticks > 75, ticks);
+    // nor the compiler: a build while the app is busy for 3 s finishes long before it is
+    show("src/Hello.hx");
+    const busyFrom = performance.now();
+    const spun = askRunner(program.target(), { type: "spin", ms: 3000 }).then(() => performance.now() - busyFrom);
+    await new Promise((r) => setTimeout(r, 100));
+    files["src/Hello.hx"] = files["src/Hello.hx"].replace("ticks % 4", "ticks % 5");
+    const bb = await build();
+    const builtIn = performance.now() - busyFrom, busyFor = await spun;
+    files["src/Hello.hx"] = files["src/Hello.hx"].replace("ticks % 5", "ticks % 4");
+    await build();
+    step("a build while the app is busy finishes before it is (the compiler isn't held up)", bb.ok && builtIn < 2000 && busyFor >= 3000,
+         { built: Math.round(builtIn), busy: Math.round(busyFor), ms: bb.ok ? Math.round(bb.r.ms) : bb.r.stderr });
   }
 
   // an edit to the code: the message changes, the @:hot tick count carries on
