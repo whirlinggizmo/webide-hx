@@ -660,10 +660,11 @@ async function tell(msg) {
   }));
   await Promise.race([Promise.all(sent), new Promise((r) => setTimeout(r, TELL_WAIT_MS))]);
 }
-// a runner behind the latest build gets it again. A build sent to a runner whose app was
-// stopped in the debugger can be lost (seen in Brave: the runner page takes nothing while
-// stopped); so a runner that hasn't said it has the latest is asked which it has (a small
-// message, answered once it can), and sent the build if that's older
+// a runner behind the latest build gets it again. Messages sent to a runner while its app is
+// stopped in the debugger are dropped, whatever their size (Chromium: measured, a few bytes
+// or a 1 MB build alike; ones sent after it goes on arrive). So a runner that hasn't said it
+// has the latest is asked which it has (a small message), and sent the build if that's
+// older: the asking goes on until it answers, which it can once the app goes on
 function catchUp(w, r) {
   if (!replay.build || w.closed || !r.ready || r.asking || (r.has || 0) >= replay.build.version) return;
   r.asking = true;
