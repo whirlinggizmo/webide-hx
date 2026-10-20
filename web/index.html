@@ -2856,29 +2856,57 @@ $("zipfile").onchange = () => attempt(async () => {
 // version too; then -lib <name> in the build's hxml
 const LIB_SPEC = /^(?:haxelib:\/)?([A-Za-z0-9_.-]+)[:#]([0-9][^\s:#]*)$/;
 const NAME_SPEC = /^(?:haxelib:\/)?([A-Za-z0-9_.-]+)$/; // the extension only: haxelib's newest
-const GH_SPEC = /^(?:gh:\/\/|https:\/\/)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?#(\S+)$/;
-function librarySpecProblem(spec) {
-  if (LIB_SPEC.test(spec) || GH_SPEC.test(spec) || (IN_EXTENSION && NAME_SPEC.test(spec))) return null;
-  return IN_EXTENSION ? "not a library: a haxelib library as name (its newest) or name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref"
-    : "not a library: a haxelib release as name:version (format:3.7.0), or a GitHub repository as gh://github.com/owner/repo#ref";
+const GH_SPEC = /^(?:gh:\/\/|https:\/\/)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?(?:#(\S+))?$/;
+const LIB_NAME = /^[A-Za-z0-9_.-]+$/;
+// a GitHub library, as Add library… takes it: a repository's address (#ref: a branch, a tag
+// or a commit; none, its default branch), and a name to give it (else its haxelib.json's,
+// else the repository's) before or after; or a haxelib git command as it's typed, name
+// first: `haxelib git <name> <url> [branch] [subdirectory]` (the subdirectory: where the
+// library is in the repository). {owner, repo, ref, name, sub}, or null
+function gitSpec(spec) {
+  let words = spec.trim().split(/\s+/), haxelib = false;
+  if (words[0] === "haxelib" && words[1] === "git") { words = words.slice(2); haxelib = true; }
+  const at = words.findIndex((w) => GH_SPEC.test(w));
+  if (at < 0) return null;
+  const m = GH_SPEC.exec(words[at]);
+  const g = { owner: m[1], repo: m[2], ref: m[3] || null, name: null, sub: null };
+  const rest = words.filter((w, i) => i !== at);
+  if (haxelib) {
+    // name url [branch] [subdirectory]
+    if (at !== 1 || !LIB_NAME.test(words[0]) || words.length > 4) return null;
+    g.name = words[0];
+    if (words[2]) g.ref = g.ref || words[2];
+    if (words[3]) g.sub = words[3].replace(/^\.?\/+|\/+$/g, "");
+  } else {
+    if (rest.length > 1 || (rest.length && !LIB_NAME.test(rest[0]))) return null;
+    g.name = rest[0] || null;
+  }
+  return g;
 }
-// a ref (a branch, a tag, a commit) as its commit, from GitHub's API
+function librarySpecProblem(spec) {
+  if (LIB_SPEC.test(spec) || gitSpec(spec) || (IN_EXTENSION && NAME_SPEC.test(spec))) return null;
+  return (IN_EXTENSION ? "not a library: a haxelib library as name (its newest) or name:version (format:3.7.0)" : "not a library: a haxelib release as name:version (format:3.7.0)")
+    + ", or a GitHub repository (https://github.com/owner/repo, #ref for a branch, a tag or a commit; a name before or after to give it), or a haxelib git command";
+}
+// a ref (a branch, a tag, a commit; none: the default branch) as its commit, from GitHub's API
 async function githubCommit(owner, repo, ref) {
-  if (/^[0-9a-f]{40}$/.test(ref)) return ref;
-  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`, { headers: { Accept: "application/vnd.github.sha" } });
-  if (!r.ok) throw new Error(`${owner}/${repo}: GitHub has no ${ref} there (HTTP ${r.status})`);
+  if (ref && /^[0-9a-f]{40}$/.test(ref)) return ref;
+  const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref || "HEAD")}`, { headers: { Accept: "application/vnd.github.sha" } });
+  if (!r.ok) throw new Error(`${owner}/${repo}: GitHub has no ${ref || "such repository"} there (HTTP ${r.status})`);
   return (await r.text()).trim();
 }
 // a library in the cache: its haxelib.json and extraParams.hxml
 async function cachedLibrary(lib) {
   if (!(await libHas(lib.dir))) await storeLibrary(lib, await downloadLibrary(lib));
+  const at = lib.sub ? lib.sub + "/" : "";
   let meta = {};
-  try { meta = JSON.parse(await libText(lib.dir, "haxelib.json") || "{}"); } catch (e) {}
-  return { meta, extra: await libText(lib.dir, "extraParams.hxml") || "" };
+  try { meta = JSON.parse(await libText(lib.dir, at + "haxelib.json") || "{}"); } catch (e) {}
+  return { meta, extra: await libText(lib.dir, at + "extraParams.hxml") || "" };
 }
 // lix's file for a library
 function lixFile(lib, meta, extra) {
-  const cp = (meta.classPath || "").replace(/^\.?\/?/, "").replace(/\/+$/, "");
+  // its class path: haxelib.json's, within the subdirectory if there's one
+  const cp = [lib.sub, (meta.classPath || "").replace(/^\.?\/?/, "").replace(/\/+$/, "")].filter((x) => x).join("/");
   return [`-D ${lib.name}=${lib.version}`, `# @install: lix --silent download "${lib.source}" into ${lib.dir}`]
     .concat(Object.keys(meta.dependencies || {}).map((d) => `-lib ${d}`))
     .concat([`-cp \${HAXE_LIBCACHE}/${lib.dir}/${cp}`])
@@ -2912,18 +2940,22 @@ async function addLibrary(spec, replace) {
   if (IN_EXTENSION && (m = NAME_SPEC.exec(spec))) spec = `${m[1]}:${await haxelibNewest(m[1], null)}`;
   if ((m = LIB_SPEC.exec(spec))) {
     lib = { name: m[1], version: m[2], source: `haxelib:/${m[1]}#${m[2]}`, dir: `${m[1]}/${m[2]}/haxelib`, at: null };
-  } else if ((m = GH_SPEC.exec(spec))) {
-    const [, owner, repo, ref] = m;
-    status(`${owner}/${repo}: finding ${ref}`);
+  } else if ((m = gitSpec(spec))) {
+    const { owner, repo, ref, sub } = m;
+    status(`${owner}/${repo}: finding ${ref || "its default branch"}`);
     const sha = await githubCommit(owner, repo, ref);
     const source = `gh://github.com/${owner}/${repo}#${sha}`;
     status(`${owner}/${repo}: downloading (${source})`);
-    // its name and version are in its haxelib.json, which the cache's folder is named by
+    // its name and version are in its haxelib.json (in the subdirectory, if one was given),
+    // which the cache's folder is named by; a name given is the one it gets
     const got = await downloadLibrary({ name: repo, source, at: null });
-    let meta = {};
-    try { meta = JSON.parse(new TextDecoder().decode(got.files["haxelib.json"])); } catch (e) {}
-    const name = meta.name || repo, version = meta.version || "0.0.0";
-    lib = { name, version, source, dir: `${name}/${version}/github/${sha}`, at: null };
+    const json = (sub ? sub + "/" : "") + "haxelib.json";
+    let meta = null;
+    try { meta = JSON.parse(new TextDecoder().decode(got.files[json])); } catch (e) {}
+    const name = m.name || (meta && meta.name) || repo, version = (meta && meta.version) || "0.0.0";
+    lib = { name, version, source, dir: `${name}/${version}/github/${sha}`, at: null, sub };
+    // no haxelib.json: the class path is the subdirectory given, else src/ when there's one
+    if (!meta && !sub && Object.keys(got.files).some((f) => f.startsWith("src/"))) { lib.sub = "src"; lib.guessed = true; }
     if (!(await libHas(lib.dir))) await storeLibrary(lib, got);
   } else throw new Error(librarySpecProblem(spec));
   const file = `haxe_libraries/${lib.name}.hxml`;
@@ -2947,14 +2979,14 @@ async function addLibrary(spec, replace) {
 $("add-library").onclick = () => attempt(async () => {
   const cfg = buildConfig();
   const spec = await askPerson({ title: "Add library",
-    text: (IN_EXTENSION ? "A haxelib library as name (its newest release) or name:version (format:3.7.0)" : "A haxelib release as name:version (format:3.7.0)") + ", or a GitHub repository as gh://github.com/owner/repo#ref (a branch, a tag or a commit). Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
+    text: (IN_EXTENSION ? "A haxelib library as name (its newest release) or name:version (format:3.7.0)" : "A haxelib release as name:version (format:3.7.0)") + ", or a GitHub repository as https://github.com/owner/repo (#ref for a branch, a tag or a commit; none: its default branch). A name before or after the address gives the library that name, and a haxelib git command works as typed. Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
     value: "", ok: "Add", check: librarySpecProblem });
   if (!spec) return;
   const added = await addLibrary(spec, (file) => askPerson({ title: `Replace ${file}?`, text: "The project has this library already. Its file is written again for the version asked for.", ok: "Replace" }));
   if (!added) return;
   if (cfg.file) await putFile(cfg.file, withLib(files[cfg.file], added.lib.name));
   const r = await build();
-  status(`${added.lib.name} ${added.lib.version} added (${added.wrote.join(", ")})` + (added.needs.length ? `; it needs ${added.needs.join(", ")} too, with a version: Add library… for each` : "") + (r.ok ? "" : "; the build failed"));
+  status(`${added.lib.name} ${added.lib.version} added (${added.wrote.join(", ")})` + (added.lib.guessed ? `; it has no haxelib.json: its class path is taken to be src/` : "") + (added.needs.length ? `; it needs ${added.needs.join(", ")} too, with a version: Add library… for each` : "") + (r.ok ? "" : "; the build failed"));
   return r;
 });
 // a haxelib release's zip, added by hand to the library cache (as -lib name:version and
@@ -3414,6 +3446,18 @@ async function test() {
   const ghSha = gh && gh.lib ? gh.lib.source.split("#")[1] : "", ghDir = gh && gh.lib ? gh.lib.dir : "";
   step("Add library… from GitHub: the branch made a commit, lix's file for it", gh && gh.lib && /^[0-9a-f]{40}$/.test(ghSha) && ghDir === `format/${gh.lib.version}/github/${ghSha}` && await libHas(ghDir)
        && files["haxe_libraries/format.hxml"].includes(`download "gh://github.com/HaxeFoundation/format#${ghSha}" into ${ghDir}\n`), gh && gh.lib ? files["haxe_libraries/format.hxml"] : gh);
+  // GitHub, as haxelib git takes it: the default branch, a name given, the command itself
+  const forms = [["https://github.com/o/r", { owner: "o", repo: "r", ref: null, name: null, sub: null }],
+                 ["fooberry https://github.com/o/r#dev", { owner: "o", repo: "r", ref: "dev", name: "fooberry", sub: null }],
+                 ["https://github.com/o/r.git fooberry", { owner: "o", repo: "r", ref: null, name: "fooberry", sub: null }],
+                 ["haxelib git helix https://github.com/whirlinggizmo/helix main src", { owner: "whirlinggizmo", repo: "helix", ref: "main", name: "helix", sub: "src" }]];
+  const parsed = forms.map(([s]) => JSON.stringify(gitSpec(s)));
+  step("a GitHub library's forms: the default branch, a name before or after, a haxelib git command", forms.every(([, g], i) => parsed[i] === JSON.stringify(g)), parsed);
+  const named = await addLibrary("haxelib git fooberry https://github.com/HaxeFoundation/format", async () => true).catch((e) => e.message);
+  step("named as asked, its default branch pinned: haxe_libraries/fooberry.hxml", named && named.lib && named.lib.name === "fooberry"
+       && /^-D fooberry=\d/.test(files["haxe_libraries/fooberry.hxml"] || "") && /download "gh:\/\/github\.com\/HaxeFoundation\/format#[0-9a-f]{40}" into fooberry\//.test(files["haxe_libraries/fooberry.hxml"] || ""),
+       named && named.lib ? files["haxe_libraries/fooberry.hxml"].split("\n").slice(0, 2) : named);
+  await deleteFile("haxe_libraries/fooberry.hxml");
   step("what isn't a library is refused, saying what is", librarySpecProblem("not a library!") && (IN_EXTENSION || librarySpecProblem("format")) && !librarySpecProblem("format:3.7.0") && !librarySpecProblem("github.com/o/r#main"));
   // the extension only: haxelib's API (no CORS for a web page), for a library's newest release
   if (IN_EXTENSION) {
