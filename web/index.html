@@ -73,7 +73,7 @@
   #libs .lib-name { font-family: ui-monospace, monospace; }
   #libs .lib-about { flex: 1; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #libs ul.libs button { padding: 1px 8px; font-size: 12px; }
-  #libs ul.libs button[disabled] { opacity: 0.4; cursor: default; }
+  #libs button[disabled] { opacity: 0.4; cursor: default; }
   #prefs .grid { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; align-items: center; }
   #prefs select, #prefs input[type=number] { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); justify-self: start; }
   #prefs input[type=number] { width: 70px; }
@@ -227,7 +227,6 @@
         <button role="menuitem" id="libraries" title="The libraries this project uses, and those downloaded in this browser">Libraries…</button>
         <button role="menuitem" id="add-library" title="A haxelib release or a GitHub repository: its haxe_libraries file, as lix writes it, and -lib in the build's hxml">Add library…</button>
         <button role="menuitem" id="add-library-zip" title="A haxelib release's zip, from lib.haxe.org, for when the page cannot download it">Add library zip…</button>
-        <button role="menuitem" id="clear-libraries" title="Remove the libraries downloaded into this browser; the project's files are not touched">Clear library cache…</button>
         <hr role="separator">
         <button role="menuitem" id="reset" title="Back to the Example project, losing your changes">Reset to Example project…</button>
       </div>
@@ -3180,12 +3179,13 @@ async function showLibraries() {
       span("lib-about", [libFrom(c.source), sizeText(c.bytes), here ? "in this project" : ""].filter((x) => x).join(" · ")), use, remove);
   });
   $("libs-cached").replaceChildren(...(rows.length ? rows : [item("none", "None yet")]));
+  $("libs-clear").disabled = !cached.length;
   // Close first in focus (Enter closes; it never removes anything)
   if (!$("libs").open) { $("libs").showModal(); $("libs-close").focus(); }
 }
 $("libraries").onclick = () => attempt(showLibraries);
 $("libs-add").onclick = () => { $("libs").close(); $("add-library").click(); };
-$("libs-clear").onclick = () => { $("libs").close(); $("clear-libraries").click(); };
+$("libs-clear").onclick = () => attempt(async () => { await clearLibraryCacheAsked(); await showLibraries(); });
 // ---- Clear library cache…: the libraries downloaded into this browser, gone; they come
 // again at the next build that uses them. Only /libcache: the project (the browser's, or a
 // folder on this computer) is another store. The hashes stay, so a new download is still
@@ -3213,15 +3213,16 @@ async function clearLibraryCache() {
   libFiles.clear();
   if (libraryView) leaveLibraryFile();
 }
-$("clear-libraries").onclick = () => attempt(async () => {
+// (from Libraries…, whose Clear library cache… is greyed when there's nothing to clear)
+async function clearLibraryCacheAsked() {
   const use = await libraryCacheUsage();
-  if (!use.libraries) return askPerson({ title: "Clear library cache", ok: "OK", text: "No libraries are downloaded in this browser." });
+  if (!use.libraries) return;
   const size = use.bytes >= 1 << 20 ? `${(use.bytes / (1 << 20)).toFixed(1)} MB` : `${Math.ceil(use.bytes / 1024)} KB`;
   if (!await askPerson({ title: "Clear the library cache?", ok: "Clear", danger: true,
     text: `The ${use.libraries === 1 ? "library" : use.libraries + " libraries"} downloaded into this browser (${size}) are removed. The project's files are not touched, in this browser or in a local folder. A library is downloaded again by the next build that uses it.` })) return;
   await clearLibraryCache();
   status(`library cache cleared (${use.libraries === 1 ? "1 library" : use.libraries + " libraries"}, ${size})`);
-});
+}
 $("libfile").onchange = () => attempt(async () => {
   const file = $("libfile").files[0];
   $("libfile").value = "";
@@ -3682,12 +3683,18 @@ async function test() {
   files["web-build.hxml"] = base;
   const back2 = await save();
   step("and back without libraries", back2.ok, back2.ok ? null : back2.r.stderr);
-  // Clear library cache: the downloads go; the project's files stay, in the page and the store
+  // Clear library cache… (in Libraries…): the downloads go; the project's files stay, in the
+  // page and the store
   await flushWrites();
   const before0 = JSON.stringify((await project.load()).files), use0 = await libraryCacheUsage();
-  await clearLibraryCache();
+  await showLibraries();
+  $("libs-clear").click();
+  if (await until(() => $("dialog").open && /Clear the library cache/.test($("dialog-title").textContent), 5000)) $("dialog-ok").click();
+  await until(() => $("libs-clear").disabled && /None yet/.test($("libs-cached").textContent), 5000);
   const use1 = await libraryCacheUsage();
-  step("Clear library cache: the downloaded libraries go", use0.libraries >= 3 && use1.libraries === 0 && use1.bytes === 0 && !(await libHas("format/3.7.0/haxelib")), [use0, use1]);
+  step("Clear library cache… (in Libraries…): the downloaded libraries go, the list says so", use0.libraries >= 3 && use1.libraries === 0 && use1.bytes === 0 && !(await libHas("format/3.7.0/haxelib"))
+       && $("libs-clear").disabled && /None yet/.test($("libs-cached").textContent), [use0, use1]);
+  $("libs").close();
   step("and the project's files stay as they were", JSON.stringify((await project.load()).files) === before0);
   const again = await build();
   step("a build without libraries still works", again.ok, again.ok ? null : again.r.stderr);

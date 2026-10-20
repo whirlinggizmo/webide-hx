@@ -159,7 +159,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       have, is taken off) and Export zip. 2026-10-18.
 - [x] The browser's project kept: the page asks for persistent storage (Chromium decides by
       engagement, Firefox asks), and the header's tooltip says whether the browser keeps it
-      or may delete it when space runs low. Project > Clear library cache… empties the
+      or may delete it when space runs low. Clear library cache… (in Project > Libraries…) empties the
       library cache only. 2026-10-19.
 - [x] A folder changed outside the page (another editor, git): the page looks every 2 s
       (the files' modification times, from the directory handles) and takes what changed:

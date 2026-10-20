@@ -191,7 +191,7 @@ over when the project changes, and closing it makes it Embedded again. The edito
 has to stay open: it's the compiler.
 **Project** has Build (also the button, and Ctrl-S), Select hxml… (which of the project's
 hxml files the page builds from; see below), Open folder (local)…, Import zip…, Export zip,
-Add library…, Add library zip…, Clear library cache… and Reset to Example project… (menus that work by keyboard too:
+Libraries…, Add library…, Add library zip… and Reset to Example project… (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
 
@@ -284,7 +284,7 @@ files: version, where from, downloaded or not) and the cached ones, downloaded i
 (every project's: name, version, where from, size); each list scrolls when it's long. **Use** puts a downloaded one in the project
 (lix's file and `-lib`, nothing downloaded); **Remove** takes one out of the cache.
 
-**Project > Clear library cache…** removes the libraries downloaded into this browser
+**Clear library cache…**, in Libraries…, removes the libraries downloaded into this browser
 (they come again at the next build that uses them). It touches nothing of the project's,
 in the browser or in a local folder; the first download's hashes are kept, so a library
 downloaded again is still checked against them.
