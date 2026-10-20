@@ -44,11 +44,25 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   ws = new WebSocket(page.webSocketDebuggerUrl);
   ws.onmessage = function (e) { var m = JSON.parse(e.data); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m.result || m); waiting.delete(m.id); } };
   await new Promise(function (r) { ws.onopen = r; });
+  await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false }); // a desktop's window
   await until("typeof $ === 'function' && /^build 1/.test($('status').textContent)", 30000);
   await sleep(500);
 
   step("the extension is found: the gutter, the panel, the breakpoint items", await ev("dbg.present && !!document.querySelector('.cm-breakpoints') && !$('debug').hidden && !$('bp-toggle').hidden"));
   step("not attached while nothing needs it", !(await ev("dbg.attached")));
+  // the mouse over the breakpoint column: a faint dot on that line (as VS Code shows where a
+  // click would put one); gone when the mouse leaves
+  var spot = JSON.parse(await ev("(() => { const g = document.querySelector('.cm-gutter.cm-breakpoints').getBoundingClientRect(); const b = view.lineBlockAt(view.state.doc.line(5).from); return JSON.stringify({ x: g.x + g.width / 2, y: view.documentTop + b.top + b.height / 2 }); })()"));
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: spot.x, y: spot.y });
+  await sleep(200);
+  // (on the line the editor takes the mouse to be over: the hint's line, by where it is on the
+  // screen, is the hovered one; posAtDOM doesn't take a gutter's elements)
+  var hinted = await ev("(() => { const h = document.querySelector('.cm-breakpoints .bp-hint'), at = view.state.field(BP.hovered, false); if (!h || at === null) return false; const r = h.getBoundingClientRect(); return view.lineBlockAtHeight(r.top + r.height / 2 - view.documentTop).from === view.state.doc.lineAt(at).from; })()");
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: spot.x + 300, y: spot.y });
+  await sleep(200);
+  var gone = !(await ev("!!document.querySelector('.cm-breakpoints .bp-hint')"));
+  step("over the breakpoint column: a faint dot on that line, gone when the mouse leaves", hinted && gone,
+       { hinted: hinted, gone: gone, spot: spot, hovered: await ev("view.state.field(BP.hovered, false)"), hints: await ev("document.querySelectorAll('.bp-hint').length") });
 
   // a breakpoint on ticks++: the app stops there, with nothing of DevTools'
   var n = await ev(lineOf("ticks++;"));

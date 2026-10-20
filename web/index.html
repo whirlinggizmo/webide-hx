@@ -97,8 +97,11 @@
   #viewing button { border: 0; background: transparent; padding: 0 6px; font-size: 15px; line-height: 1; color: var(--muted); }
   #editor .cm-editor { height: 100%; }
   /* breakpoints: a red dot; hollow where no statement starts (the app can't stop there) */
-  .cm-breakpoints .cm-gutterElement { width: 14px; cursor: pointer; display: flex; align-items: center; justify-content: center; }
+  .cm-breakpoints .cm-gutterElement { width: 14px; display: flex; align-items: center; justify-content: center; }
   .bp { width: 9px; height: 9px; border-radius: 50%; box-sizing: border-box; }
+  /* as VS Code shows it: over the column, a faint dot on the line a click would put a
+     breakpoint on */
+  .bp-hint { background: #e5140050; }
   .bp-ok { background: #e51400; }
   .bp-checking { background: #e5140066; }
   .bp-bad { border: 1.5px solid #888; }
@@ -1832,13 +1835,23 @@ function breakpointSetup() {
     toDOM() {
       const d = document.createElement("div");
       d.className = "bp bp-" + this.kind;
-      d.title = this.kind === "bad" ? "No statement starts on this line, so the app cannot stop here (click to remove)"
+      d.title = this.kind === "hint" ? "Click to set a breakpoint"
+        : this.kind === "bad" ? "No statement starts on this line, so the app cannot stop here (click to remove)"
         : this.kind === "checking" ? "Checking the line" : "Breakpoint: the app pauses here when DevTools is open (F12). Click to remove";
       return d;
     }
   }
   const marker = (kind) => new BreakMarker(kind);
   const toggle = CM.StateEffect.define(), kind = CM.StateEffect.define(), all = CM.StateEffect.define();
+  // the line the mouse is over in the column (its start), or null: a faint dot there
+  const hover = CM.StateEffect.define();
+  const hovered = CM.StateField.define({
+    create: () => null,
+    update(at, tr) {
+      for (const e of tr.effects) if (e.is(hover)) at = e.value;
+      return at === null ? null : tr.changes.mapPos(at);
+    },
+  });
   const field = CM.StateField.define({
     create: () => CM.RangeSet.empty,
     update(set, tr) {
@@ -1862,13 +1875,26 @@ function breakpointSetup() {
       return set;
     },
   });
+  const hint = marker("hint");
   const gutter = CM.gutter({
     class: "cm-breakpoints",
-    markers: (v) => v.state.field(field),
+    // the breakpoints; and the hint, on the hovered line when it has none
+    markers: (v) => {
+      const set = v.state.field(field), at = v.state.field(hovered);
+      if (at === null) return set;
+      const line = v.state.doc.lineAt(at);
+      let has = false;
+      set.between(line.from, line.to, () => { has = true; });
+      return has ? set : set.update({ add: [hint.range(line.from)] });
+    },
     initialSpacer: () => marker("ok"),
-    domEventHandlers: { mousedown(v, line) { toggleBreakpoint(v, line.from); return true; } },
+    domEventHandlers: {
+      mousedown(v, line) { toggleBreakpoint(v, line.from); return true; },
+      mousemove(v, line) { if (v.state.field(hovered) !== line.from) v.dispatch({ effects: hover.of(line.from) }); return false; },
+      mouseleave(v) { if (v.state.field(hovered) !== null) v.dispatch({ effects: hover.of(null) }); return false; },
+    },
   });
-  BP = { field, toggle, kind, all, gutter };
+  BP = { field, toggle, kind, all, gutter, hovered };
 }
 // a state's breakpoints: line -> kind
 function breakLines(state) {
@@ -2328,7 +2354,7 @@ function makeState(name) {
     return CM.EditorState.create({ doc: `${name}: ${files[name].length} bytes, not text; it can't be edited here`,
                                    extensions: [CM.EditorState.readOnly.of(true), CM.EditorView.editable.of(false), prefExtensions(["theme", "fontSize"])] });
   const ext = [
-    isCode(name) && dbg.present ? [BP.field, BP.gutter, CM.keymap.of([{ key: "F9", preventDefault: true, run: (v) => { toggleBreakpoint(v, v.state.selection.main.head); return true; } }])] : [],
+    isCode(name) && dbg.present ? [BP.field, BP.hovered, BP.gutter, CM.keymap.of([{ key: "F9", preventDefault: true, run: (v) => { toggleBreakpoint(v, v.state.selection.main.head); return true; } }])] : [],
     pausedLine(),
     // CodeMirror's basicSetup, in parts; those a preference turns on and off are in prefExtensions
     CM.highlightSpecialChars(), CM.history(), CM.drawSelection(), CM.dropCursor(), CM.EditorState.allowMultipleSelections.of(true),
