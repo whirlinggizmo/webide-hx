@@ -284,7 +284,7 @@ files: version, where from, downloaded or not) and the cached ones, downloaded i
 (every project's: name, version, where from, size); each list scrolls when it's long. **Use** puts a downloaded one in the project
 (lix's file and `-lib`, nothing downloaded); **Remove** takes one out of the cache.
 
-**Clear library cache…**, in Libraries…, removes the libraries downloaded into this browser
+**Remove all**, beside Libraries…' cached list, removes the libraries downloaded into this browser
 (they come again at the next build that uses them). It touches nothing of the project's,
 in the browser or in a local folder; the first download's hashes are kept, so a library
 downloaded again is still checked against them.
