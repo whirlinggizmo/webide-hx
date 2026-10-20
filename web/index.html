@@ -108,6 +108,7 @@
   #debug[hidden] { display: none; }
   #debug .bar { display: flex; align-items: center; gap: 4px; padding: 3px 6px; }
   #debug .bar span { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #debug .bar span.resume { color: var(--accent); cursor: pointer; text-decoration: underline; }
   #debug .bar button { padding: 1px 8px; font-size: 12px; }
   #debug .bar button.icon { padding: 2px 5px; border-color: transparent; background: transparent; display: flex; }
   #debug .bar button.icon:hover:not([disabled]) { background: var(--hover); border-color: var(--line); }
@@ -1791,6 +1792,7 @@ function toggleBreakpoint(v, pos) {
   if (name === null || !isCode(name) || libraryView || !dbg.present) return;
   v.dispatch({ effects: BP.toggle.of(pos) });
   const n = v.state.doc.lineAt(pos).number, set = breakLines(v.state).has(n);
+  if (set) dbg.cancelled = false;
   status(`${name}:${n}: breakpoint ${set ? "set" : "removed"}`);
   return dbgSync();
 }
@@ -1810,6 +1812,9 @@ const dbg = {
   placed: [],           // breakpoint ids placed, for taking them all away
   paused: null,         // the Debugger.paused event's params while stopped
   frame: 0, pauseAsked: false,
+  // the person closed the browser's "started debugging" bar, which detaches the debugger: not
+  // attached again until they set a breakpoint, ask for a pause, or click the panel's line
+  cancelled: false,
   calls: new Map(), n: 0,
 };
 function dbgCall(cmd, extra) {
@@ -1866,7 +1871,7 @@ function dbgFound() {
   dbgSync();
 }
 function dbgWanted() {
-  return dbg.present && !program.kind && ([...breakpoints.values()].some((m) => m.size) || dbg.pauseAsked || !!dbg.paused);
+  return dbg.present && !program.kind && !dbg.cancelled && ([...breakpoints.values()].some((m) => m.size) || dbg.pauseAsked || !!dbg.paused);
 }
 // attached when wanted, detached when not; breakpoints placed
 async function dbgSync() {
@@ -1895,7 +1900,7 @@ async function dbgSync() {
   dbgShow();
 }
 function dbgEvent(method, p, sessionId) {
-  if (method === "detached") { dbg.attached = false; dbg.session = null; dbg.scripts.clear(); dbg.placed = []; dbgResumed(); dbgShow(); return; }
+  if (method === "detached") { if (p.reason === "canceled_by_user") dbg.cancelled = true; dbg.attached = false; dbg.session = null; dbg.scripts.clear(); dbg.placed = []; dbgResumed(); dbgShow(); return; }
   if (method === "Target.attachedToTarget") {
     // the pane's runner: the app's session
     if (p.targetInfo.type === "iframe" && RUNNER && p.targetInfo.url.startsWith(RUNNER) && !dbg.session) {
@@ -2075,7 +2080,10 @@ function dbgShow() {
   $("dbg-continue").disabled = !stopped;
   $("dbg-pause").disabled = stopped;
   for (const id of ["dbg-over", "dbg-into", "dbg-out"]) $(id).disabled = !stopped;
-  $("dbg-state").textContent = program.kind ? "Debugger: with the app embedded (App > Embedded)"
+  $("dbg-state").classList.toggle("resume", dbg.cancelled);
+  $("dbg-state").title = dbg.cancelled ? "Click to debug again" : "";
+  $("dbg-state").textContent = dbg.cancelled ? "Debugger stopped from the browser's bar: click here to debug again"
+    : program.kind ? "Debugger: with the app embedded (App > Embedded)"
     : stopped ? "Stopped" + (dbg.at ? " at " + dbg.at : "") : on ? "Debugging" : "Debugger: set a breakpoint (F9) or Pause";
   for (const id of ["bp-toggle", "bp-clear"]) $(id).hidden = !dbg.present;
 }
@@ -2110,8 +2118,9 @@ dbgDrag($("dbg-split"), (e) => {
 });
 $("dbg-collapse").onclick = () => { dbgLayout.collapsed = !dbgLayout.collapsed; saveDbgLayout(); dbgShow(); };
 dbgApplyLayout();
+$("dbg-state").onclick = () => { if (dbg.cancelled) { dbg.cancelled = false; dbgSync(); } };
 const dbgDo = (method) => () => attempt(async () => {
-  if (method === "Debugger.pause") { dbg.pauseAsked = true; await dbgSync(); }
+  if (method === "Debugger.pause") { dbg.pauseAsked = true; dbg.cancelled = false; await dbgSync(); }
   if (!dbg.session) return;
   await dbgSend(method);
 });

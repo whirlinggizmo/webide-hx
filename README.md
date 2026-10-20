@@ -374,7 +374,10 @@ is marked in the editor. The extension drives the browser's debugger on the app'
 only, so the IDE goes on while the app is stopped. Breakpoints are placed where the source
 map puts their lines, in every bundle the app has loaded, and again after each hot reload;
 a line with no code of its own shows a hollow dot. They move with the text and are kept
-per project. For now it debugs the app embedded in the IDE. `node tests/debugger.js PORT`
+per project. For now it debugs the app embedded in the IDE. While it's attached, Chrome shows
+a "started debugging this browser" bar; closing it stops the debugging until a click on the
+panel's line, a breakpoint or Pause (`--silent-debugger-extension-api` hides the bar, for a
+browser of your own). `node tests/debugger.js PORT`
 checks it against a browser started with the extension (`--load-extension=extensions/debugger`).
 
 Messages to a frame whose process is stopped in the debugger are dropped (Chromium:

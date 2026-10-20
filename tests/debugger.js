@@ -104,6 +104,19 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   await ev("$('dbg-continue').click()");
   await until("!dbg.attached", 3000);
 
+  // the browser's "started debugging" bar closed by the person (it detaches): not attached
+  // again by itself while breakpoints are there; a click on the panel's line debugs again
+  await toggle(n);
+  await until("dbg.attached && dbg.session", 5000);
+  await ev("(async () => { await dbgCall('detach'); dbgEvent('detached', { reason: 'canceled_by_user' }, null); })()");
+  await sleep(2500);
+  step("the bar closed: not attached again by itself", await ev("!dbg.attached && dbg.cancelled && /click here to debug again/.test($('dbg-state').textContent)"), await ev("$('dbg-state').textContent"));
+  await ev("$('dbg-state').click()");
+  step("a click on the panel's line: debugging again (and the app stops at the breakpoint)", await until("dbg.attached && !dbg.cancelled && dbg.paused && dbg.at", 10000), await ev("$('dbg-state').textContent"));
+  await toggle(n);
+  await ev("$('dbg-continue').click()");
+  await until("!dbg.attached && !dbg.paused", 5000);
+
   // Pause with no breakpoints: attaches, stops the app wherever it is, Continue lets it go
   await ev("$('dbg-pause').click()");
   step("Pause stops the app", await until("dbg.paused", 10000), await ev("$('status').textContent"));

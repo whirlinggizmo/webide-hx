@@ -11,6 +11,11 @@ a process of its own), so the IDE goes on while the app is stopped. It's attache
 there are breakpoints or a pause; Chrome shows a "started debugging this browser" bar then.
 It works on the IDE's pages only: `127.0.0.1`, `localhost` and `dev.whirlinggizmo.com`.
 
+Closing that bar stops the debugging (Chrome detaches the extension): the IDE doesn't attach
+again by itself; the panel says so, and a click on it, a new breakpoint or Pause starts
+again. The bar can't be avoided while an extension debugs; for a development browser of
+your own, starting it with `--silent-debugger-extension-api` hides it.
+
 To install it until it's in the Chrome Web Store: open `chrome://extensions` (or
 `brave://extensions`), turn on Developer mode, Load unpacked, and pick this directory. Then
 reload the IDE's page.
