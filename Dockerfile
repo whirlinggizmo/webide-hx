@@ -36,5 +36,8 @@ FROM nginx:stable
 COPY --from=build /home/builder/webide-hx/web /usr/share/nginx/webide-hx
 COPY hosting/nginx.conf.template /etc/nginx/templates/default.conf.template
 ENV WEBIDE_PATH=/
+# the app's runner on another site (hosting/nginx.conf.template); empty: the IDE's own origin
+ENV WEBIDE_RUNNER=
+ENV WEBIDE_IDE=
 # the haxelib mirror's cache: keep it in a volume to keep it between containers
 VOLUME /var/cache/nginx/haxelib

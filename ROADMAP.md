@@ -199,6 +199,17 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [x] The mirror on dev.whirlinggizmo.com, with the page: `hosting/` (one nginx container
       behind Apache). 2026-10-19.
 
+- [x] The app on a site of its own (runner.html): a separate process, so a busy, hung or
+      paused app doesn't stop the IDE, and the app can't reach the IDE's storage. Measured
+      first: only another registrable domain gets a separate process (another port, a
+      subdomain, Origin-Agent-Cluster don't; a sandboxed frame does only in Chromium); a
+      runner's service worker works in a cross-site iframe (partitioned) and a window, in
+      Brave and Firefox. The IDE hands each runner builds and assets by postMessage; sw.js
+      is unchanged. Locally 127.0.0.1 and localhost; on dev run.whirlinggizmos.com once its
+      site and certificate are there (hosting/README.md), the IDE's own origin until then.
+      Tests: page test (both browsers, both ways), menus, DevTools (the app's frame is its
+      own target now), reload. 2026-10-20.
+
 ## 5. Breakpoints in the IDE's own editor (research, only if DevTools isn't enough)
 
 - [ ] Breakpoints set in the IDE's gutter, paused in DevTools: a page can't open DevTools

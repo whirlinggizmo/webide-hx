@@ -54,3 +54,56 @@ through jsDelivr) and with releases added by hand (Project > Add library zip…)
    `Access-Control-Allow-Origin`.
 
 The IDE is then https://dev.whirlinggizmo.com/webide-hx/.
+
+## The app's own site (run.whirlinggizmos.com)
+
+The app runs best on another site than the IDE (its own process, and none of the IDE's
+storage: see the top README's "Where the app runs"). Another site means another
+registrable domain: a subdomain of whirlinggizmo.com would still be the IDE's site. It can
+be the same machine and the same container, under another name. Without it (both settings
+empty), the app runs on the IDE's own origin, as before.
+
+1. DNS: the name points at the server. whirlinggizmos.com's wildcard at no-ip already
+   sends `run.whirlinggizmos.com` there.
+
+2. Once, on the server: a site for the name that forwards `/webide-hx/` to the same
+   container, and a certificate of its own (a separate one, so a problem renewing it
+   can't hold up dev's). In `/etc/apache2/sites-available/run-whirlinggizmos.conf`:
+
+   ```
+   <VirtualHost *:80>
+   	ServerName run.whirlinggizmos.com
+   	RedirectMatch 301 ^/webide-hx$ /webide-hx/
+   	ProxyPass        /webide-hx/ http://127.0.0.1:10081/webide-hx/
+   	ProxyPassReverse /webide-hx/ http://127.0.0.1:10081/webide-hx/
+   </VirtualHost>
+   ```
+
+   then
+
+   ```
+   sudo a2ensite run-whirlinggizmos && sudo apachectl configtest && sudo systemctl reload apache2
+   sudo certbot --apache -d run.whirlinggizmos.com
+   ```
+
+   certbot makes the `*:443` copy of the site with the certificate (let it redirect http
+   to https).
+
+3. From here: in `hosting/docker-compose.yml`,
+
+   ```
+   - WEBIDE_RUNNER=https://run.whirlinggizmos.com/webide-hx/
+   - WEBIDE_IDE=https://dev.whirlinggizmo.com
+   ```
+
+   and `python3 hosting/deploy.py dev:services/webide-hx --up` (the environment changed).
+
+4. Check it:
+
+   ```
+   curl -s https://dev.whirlinggizmo.com/webide-hx/config.json
+   curl -sI https://run.whirlinggizmos.com/webide-hx/runner.html | head -1
+   ```
+
+   The settings, then `200`. In the IDE, the page test (`?test`) says "the app runs on
+   another site than the IDE".

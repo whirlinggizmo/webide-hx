@@ -257,7 +257,7 @@ const EXAMPLE = "example/";
 const HOTRELOAD = ["-cp", "/lib/hotreload/src", "/lib/hotreload/extraParams.hxml"];
 
 const files = {}, saved = {};
-let current = null, version = 0, reg = null;
+let current = null, version = 0;
 // the editor (CodeMirror, web/vendor/codemirror.js): one view, a state per file, so each
 // keeps its own undo history; the compiler's errors and warnings as each file's diagnostics
 let CM = null, view = null;
@@ -559,28 +559,89 @@ function compile(args, sources, output) {
   return ask({ type: "build", files: changed, args, output });
 }
 
-// a message to the service worker, answered on a port. Sent to the active one; if a newer
-// one takes over before that answers (sw.js changed), sent again to it
-function tell(msg) {
+// ---- the runner: where the app runs (runner.html, on a site of its own, so the app has its
+// own process and none of the IDE's storage; see there). Each place the app shows (the pane's
+// frame, a window, a floating window, a tab) is a runner, with its own service worker playing
+// the DevServer. Builds and assets go to every runner; the IDE keeps what a new one needs (the
+// latest build, the assets) and fills it in when it says it's ready, after a reload too
+let RUNNER = null; // runner.html's URL: config.json's "runner", else locally the other one of
+                   // 127.0.0.1 and localhost (another site), else this page's own directory
+async function findRunner() {
+  let cfg = {};
+  try { const r = await fetch("config.json", { cache: "no-store" }); if (r.ok) cfg = await r.json(); } catch (e) {}
+  const here = new URL(location.href);
+  let base = new URL(".", here);
+  if (cfg.runner) base = new URL(cfg.runner, here);
+  else if (here.hostname === "127.0.0.1" || here.hostname === "localhost") base.hostname = here.hostname === "127.0.0.1" ? "localhost" : "127.0.0.1";
+  RUNNER = new URL("runner.html", base).href;
+  // a runner elsewhere: the service worker this page had for run/ (before runners) goes
+  if (new URL(RUNNER).origin !== location.origin && navigator.serviceWorker)
+    for (const r of await navigator.serviceWorker.getRegistrations()) if (/\/run\/$/.test(r.scope)) r.unregister();
+}
+const runnerOrigin = () => new URL(RUNNER).origin;
+const runners = new Map(); // a runner's window -> {ready, log, waiters}
+const replay = { build: null, assets: {} };
+const runnerReplies = new Map();
+let runnerMsgs = 0;
+const toRunner = (w, m) => { try { w.postMessage(m, runnerOrigin()); } catch (e) {} };
+function askRunner(w, m) {
+  return new Promise((resolve) => { const id = ++runnerMsgs; runnerReplies.set(id, resolve); toRunner(w, Object.assign({}, m, { id })); });
+}
+addEventListener("message", (e) => {
+  if (!RUNNER || e.origin !== runnerOrigin() || !e.source) return;
+  const m = e.data || {}, w = e.source;
+  if (m.type === "ready") { runnerReady(w); return; }
+  const r = runners.get(w);
+  if (!r) return;
+  if (m.type === "log") r.log = m.text;
+  else if (m.type === "themed") r.theme = m.theme;
+  else if (m.type === "loaded") { r.url = m.url; toRunner(w, { type: "theme", theme: prefs.theme }); }
+  else if (m.type === "place") program.placed(w, m);
+  else if (m.id !== undefined && runnerReplies.has(m.id)) { runnerReplies.get(m.id)(m); runnerReplies.delete(m.id); }
+});
+// a runner (new, or reloaded): filled in, then shown the app if it's where the app shows
+async function runnerReady(w) {
+  const r = runners.get(w) || { log: "", waiters: [] };
+  runners.set(w, r);
+  r.ready = false; r.log = "";
+  toRunner(w, { type: "theme", theme: prefs.theme });
+  await askRunner(w, { type: "sw", msg: { type: "reset" } });
+  await askRunner(w, { type: "sw", msg: { type: "assets", files: replay.assets, changed: false } });
+  if (replay.build) await askRunner(w, { type: "sw", msg: replay.build });
+  r.ready = true;
+  const url = program.urlFor(w);
+  if (url) toRunner(w, { type: "start", url });
+  for (const f of r.waiters.splice(0)) f();
+}
+// the runner in a window, once it's ready
+function runnerUp(w, ms = 20000) {
   return new Promise((resolve) => {
-    let to = null;
-    const send = () => {
-      const ch = new MessageChannel();
-      to = reg.active;
-      ch.port1.onmessage = (ev) => { clearInterval(watch); resolve(ev.data); };
-      to.postMessage(msg, [ch.port2]);
-    };
-    const watch = setInterval(() => { if (reg.active && reg.active !== to) send(); }, 250);
-    send();
+    const r = runners.get(w);
+    if (r && r.ready) return resolve(true);
+    const t = setTimeout(() => resolve(false), ms);
+    const wait = () => { const x = runners.get(w); if (x && x.ready) { clearTimeout(t); resolve(true); } else setTimeout(wait, 50); };
+    wait();
   });
 }
-
-async function serviceWorker() {
-  reg = await navigator.serviceWorker.register("sw.js", { scope: "./run/" });
-  const sw = reg.installing || reg.waiting || reg.active;
-  if (sw.state !== "activated")
-    await new Promise((r) => sw.addEventListener("statechange", () => sw.state === "activated" && r()));
-  await tell({ type: "reset" });
+// a message for the runners' service workers (a build, assets, a reset): kept for runners to
+// come, and sent to those there; answered with the first one's answer
+async function tell(msg) {
+  if (msg.type === "reset") { replay.build = null; replay.assets = {}; }
+  else if (msg.type === "build") replay.build = msg;
+  else if (msg.type === "assets") for (const [p, b] of Object.entries(msg.files)) { if (b === null) delete replay.assets[p]; else replay.assets[p] = b; }
+  for (const w of [...runners.keys()]) if (w.closed) runners.delete(w);
+  const answers = await Promise.all([...runners].filter(([, r]) => r.ready).map(([w]) => askRunner(w, { type: "sw", msg }).then((m) => m.data)));
+  return answers[0] || { ok: true, version: replay.build ? replay.build.version : 0 };
+}
+async function connectRunner() {
+  await findRunner();
+  $("run").src = RUNNER;
+  if (!(await runnerUp($("run").contentWindow, 30000))) throw new Error(`the app's runner (${RUNNER}) didn't start`);
+}
+// for the test: a fetch by the app's page, and how its output follows the end
+async function runnerFetch(path) {
+  const m = await askRunner(program.target(), { type: "fetch", path });
+  return { ok: m.ok, status: m.status, contentType: m.contentType, body: m.body, text: () => new TextDecoder().decode(m.body) };
 }
 
 // ---- the build: from one of the project's hxml files (Project > Select hxml…), or else
@@ -1515,8 +1576,7 @@ function applyTheme(doc) {
 }
 function applyPrefs() {
   applyTheme(document);
-  const d = program.doc();
-  if (d) try { applyTheme(d); } catch (e) {}
+  for (const w of runners.keys()) toRunner(w, { type: "theme", theme: prefs.theme });
   if (!slots) return;
   const effects = (st) => Object.keys(prefParts).filter((k) => slots[k].get(st) !== undefined).map((k) => slots[k].reconfigure(prefParts[k]()));
   for (const [f, st] of states) if (f !== current) states.set(f, st.update({ effects: effects(st) }).state);
@@ -1526,7 +1586,6 @@ function savePrefs() {
   try { localStorage.setItem("webide-hx-prefs", JSON.stringify(prefs)); } catch (e) {}
 }
 dark.addEventListener("change", applyPrefs);
-$("run").addEventListener("load", () => { try { applyTheme($("run").contentDocument); } catch (e) {} });
 
 function makeState(name) {
   if (!isText(files[name]))
@@ -1586,47 +1645,52 @@ const PROGRAM_WINDOW = "webide-hx-program-window";
 const program = {
   kind: null, win: null, frame: null, watch: null,
   url: "about:blank",
+  tabs: new Set(), // runners in tabs of their own (Open in new tab): each runs the app too
+  // the runner that shows the app now
+  target() {
+    return this.kind === "window" ? this.win : this.kind === "pip" ? this.frame.contentWindow : $("run").contentWindow;
+  },
+  // what a runner should show when it's ready: the app, if it's where the app shows (or a tab)
+  urlFor(w) {
+    if (this.tabs.has(w)) return this.url === "about:blank" ? null : "run/?start=" + ++starts;
+    if (w === this.target()) return this.url;
+    if (w === $("run").contentWindow) return "about:blank"; // the pane's, while the app is out
+    return null;
+  },
   start(url) {
     this.url = url;
-    if (this.kind === "window") this.win.location.replace(url);
-    else if (this.kind === "pip") this.frame.src = url;
-    else $("run").src = url;
+    toRunner(this.target(), { type: "start", url });
   },
-  // the program's document, for the theme
-  doc() {
-    try { return this.kind === "window" ? this.win.document : this.kind === "pip" ? this.frame.contentDocument : $("run").contentDocument; } catch (e) { return null; }
+  // a window's place, as its runner reports it (a page can't read another site's window)
+  placed(w, at) {
+    if (this.kind === "window" && w === this.win) try { localStorage.setItem(PROGRAM_WINDOW, JSON.stringify(at)); } catch (e) {}
   },
   // must be called from a click (the browser opens windows only for one)
   async out(kind) {
     if (this.kind) this.back(true);
-    const url = this.url === "about:blank" ? this.url : "run/?start=" + ++starts;
+    if (this.url !== "about:blank") this.url = "run/?start=" + ++starts;
     if (kind === "window") {
       let at = {};
       try { at = JSON.parse(localStorage.getItem(PROGRAM_WINDOW)) || {}; } catch (e) {}
       const features = ["popup", `width=${at.w || 640}`, `height=${at.h || 480}`].concat(at.x !== undefined ? [`left=${at.x}`, `top=${at.y}`] : []);
-      const win = window.open(url, "haxe-program", features.join(","));
+      const win = window.open(RUNNER, "haxe-program", features.join(","));
       if (!win) throw new Error("the browser blocked the window: allow pop-ups for this page");
       this.win = win;
-      win.addEventListener("load", () => { const d = this.doc(); if (d) applyTheme(d); });
-      // closed by the person: back into the page; where it is, for next time
-      this.watch = setInterval(() => {
-        if (win.closed) { this.back(); return; }
-        try { localStorage.setItem(PROGRAM_WINDOW, JSON.stringify({ x: win.screenX, y: win.screenY, w: win.innerWidth, h: win.innerHeight })); } catch (e) {}
-      }, 500);
+      // closed by the person: back into the page
+      this.watch = setInterval(() => { if (win.closed) this.back(); }, 500);
     } else {
       const pip = await documentPictureInPicture.requestWindow({ width: 480, height: 360 });
       const f = pip.document.createElement("iframe");
       pip.document.title = "Haxe program";
       pip.document.body.style.cssText = "margin: 0; overflow: hidden;";
       f.style.cssText = "border: 0; width: 100vw; height: 100vh; display: block;";
-      f.addEventListener("load", () => { const d = this.doc(); if (d) applyTheme(d); });
       pip.document.body.append(f);
       this.win = pip; this.frame = f;
-      f.src = url;
+      f.src = RUNNER;
       pip.addEventListener("pagehide", () => { if (this.win === pip) this.back(); });
     }
     this.kind = kind;
-    $("run").src = "about:blank";
+    toRunner($("run").contentWindow, { type: "start", url: "about:blank" });
     document.body.classList.add("program-out");
     showView();
   },
@@ -1634,10 +1698,11 @@ const program = {
   back(quiet) {
     const win = this.win;
     clearInterval(this.watch);
+    if (win) runners.delete(this.kind === "pip" ? this.frame.contentWindow : win);
     this.kind = null; this.win = null; this.frame = null;
     if (win && !win.closed) win.close();
     document.body.classList.remove("program-out");
-    if (!quiet) { $("run").src = this.url === "about:blank" ? this.url : "run/?start=" + ++starts; showView(); }
+    if (!quiet) { this.start(this.url === "about:blank" ? this.url : "run/?start=" + ++starts); showView(); }
   },
 };
 // the App menu: where the app shows, checked; Floating window greyed where the browser
@@ -1936,7 +2001,7 @@ $("app-floating").onclick = () => attempt(async () => {
     return askPerson({ title: "Floating window", ok: "OK", text: "A floating window is not supported in this browser. Consider switching to a Chromium-based browser such as Chrome, Edge or Brave." });
   if (program.kind !== "pip") await program.out("pip");
 });
-$("app-tab").onclick = () => { window.open("run/", "_blank"); };
+$("app-tab").onclick = () => { const w = window.open(RUNNER, "_blank"); if (w) program.tabs.add(w); };
 // the app from its start, where it is: a fresh page on the latest build, so @:hot state
 // goes too
 $("app-restart").onclick = () => {
@@ -2208,7 +2273,8 @@ addEventListener("beforeunload", () => { flushWrites(); });
 
 // ---- the frame's log, for the test below
 function frameLog() {
-  try { return $("run").contentDocument.getElementById("log").textContent; } catch (e) { return ""; }
+  const r = runners.get(program.target());
+  return r ? r.log : "";
 }
 function until(test, ms) {
   return new Promise((resolve) => {
@@ -2251,16 +2317,19 @@ async function test() {
   storageKept = false; showWhere();
   step("the header says whether the browser keeps the project", /keeps it until the site's data is cleared/.test(keptTip) && /may delete it.*Export zip/.test($("where-project").title), [keptTip, $("where-project").title]);
   // the program's output follows the end while you're at the end; scrolled up, it stays put
-  const fdoc = $("run").contentDocument, fpage = fdoc.scrollingElement, flog = fdoc.getElementById("log");
-  const atEnd = () => fpage.scrollTop + fpage.clientHeight >= fpage.scrollHeight - 4;
-  const more = (n) => { for (let i = 0; i < n; i++) flog.append("a test line " + i + "\n"); };
-  const settle = () => new Promise((r) => setTimeout(r, 50));
-  more(200); await settle();
-  const followed = atEnd();
-  fpage.scrollTop = 0; await settle(); more(20); await settle();
-  const stayed = fpage.scrollTop === 0;
-  fpage.scrollTop = fpage.scrollHeight; await settle(); more(20); await settle();
-  step("the program's output follows the end, and stays put when scrolled up", followed && stayed && atEnd(), { followed, stayed, atEnd: atEnd() });
+  // (tried by the runner, whose page the app's is)
+  const fol = (await askRunner(program.target(), { type: "follow" })).result || {};
+  step("the program's output follows the end, and stays put when scrolled up", fol.followed && fol.stayed && fol.atEnd, fol);
+  // the app runs on another site: its own process, and none of the IDE's storage
+  if (runnerOrigin() === location.origin) step("the app runs on the IDE's own origin, as config.json says", true, RUNNER);
+  else {
+    step("the app runs on another site than the IDE", new URL(RUNNER).hostname !== location.hostname, RUNNER);
+    let ticks = 0;
+    const tick = setInterval(() => ticks++, 10);
+    await askRunner(program.target(), { type: "spin", ms: 1500 });
+    clearInterval(tick);
+    step("an app busy for 1.5 s doesn't stop the IDE (its own process)", ticks > 75, ticks);
+  }
 
   // an edit to the code: the message changes, the @:hot tick count carries on
   show("src/Hello.hx");
@@ -2410,10 +2479,10 @@ async function test() {
 
   // ---- assets: a new one is served; a removed one isn't
   await newFile("assets/notes.txt", "a note");
-  const served = await $("run").contentWindow.fetch("assets/notes.txt").then((r) => r.ok ? r.text() : null);
+  const served = await runnerFetch("assets/notes.txt").then((r) => r.ok ? r.text() : null);
   step("a new asset is served to the program", served === "a note", served);
   await deleteFile("assets/notes.txt");
-  const removed = await $("run").contentWindow.fetch("assets/notes.txt").then((r) => r.status);
+  const removed = await runnerFetch("assets/notes.txt").then((r) => r.status);
   step("a removed asset isn't", removed === 404, removed);
   const badName = await newFile("../x.hx").then(() => "made", (e) => e.message);
   step("a bad file name is refused", /not a file name/.test(badName), badName);
@@ -2610,9 +2679,9 @@ async function test() {
        JSON.stringify(names()) === JSON.stringify(["assets/dot.png", "assets/greeting.txt", "src/Hello.hx", "src/Main.hx"]), names());
   step("the zip's program runs", await until(() => lastTicks(frameLog(), "Ahoy from the zip"), 15000), frameLog().split("\n").slice(-2));
   step("a file that isn't text is kept as its bytes", files["assets/dot.png"] instanceof Uint8Array && same([...files["assets/dot.png"]], [...png]));
-  const pngRes = await $("run").contentWindow.fetch("assets/dot.png");
-  const pngServed = new Uint8Array(await pngRes.arrayBuffer());
-  step("and served as them, typed", same([...pngServed], [...png]) && pngRes.headers.get("Content-Type") === "image/png", pngRes.headers.get("Content-Type"));
+  const pngRes = await runnerFetch("assets/dot.png");
+  const pngServed = pngRes.body;
+  step("and served as them, typed", same([...pngServed], [...png]) && pngRes.contentType === "image/png", pngRes.contentType);
   show("assets/dot.png");
   step("the editor shows it and doesn't edit it", view.state.readOnly && /14 bytes/.test(view.state.doc.toString()));
   const keptBytes = (await project.load()).files["assets/dot.png"];
@@ -2767,8 +2836,9 @@ async function test() {
   // take a moment to take over)
   view = new CM.EditorView({ parent: $("editor") });
   showProject(loaded);
-  status("starting the service worker");
-  await serviceWorker();
+  status("starting the app's runner");
+  await connectRunner();
+  await tell({ type: "reset" });
   const first = await startProgram();
   if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
   // a step that throws ends the test: the report says what ran, and the error

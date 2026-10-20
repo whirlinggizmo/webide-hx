@@ -7,6 +7,9 @@ then stops the browser and the server (by PID).
     python3 tests/page.py brave [PORT]      Brave (/opt/brave.com/brave/brave, not the
                                             brave-browser wrapper, so the kill reaches it)
     python3 tests/page.py firefox [PORT]
+    ... --root DIR                          serve another copy of web/ (one with a config.json,
+                                            say: {"runner": "./"} runs the app on the IDE's own
+                                            origin, as a server without a runner site does)
 
 Exits 1 if a step fails, the test stopped on an error, or no report came.
 """
@@ -21,12 +24,18 @@ BROWSERS = {
 
 
 def main():
-    if len(sys.argv) < 2 or sys.argv[1] not in BROWSERS:
+    args = sys.argv[1:]
+    root = None
+    if "--root" in args:
+        i = args.index("--root")
+        root = args[i + 1]
+        del args[i:i + 2]
+    if not args or args[0] not in BROWSERS:
         sys.exit(__doc__)
-    browser, port = sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else "8790"
+    browser, port = args[0], args[1] if len(args) > 1 else "8790"
     work = tempfile.mkdtemp(prefix="haxe-page-test-")
     report = os.path.join(work, "report.json")
-    server = subprocess.Popen([sys.executable, SERVE, port, report], stdout=subprocess.DEVNULL)
+    server = subprocess.Popen([sys.executable, SERVE, port, report] + (["--root", root] if root else []), stdout=subprocess.DEVNULL)
     time.sleep(1)
     profile = os.path.join(work, "profile")
     os.makedirs(profile)

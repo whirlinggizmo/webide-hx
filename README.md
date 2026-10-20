@@ -49,8 +49,10 @@ hotreload build macro, printing each exit code, time and output size. Without a 
 
 runs the same bundle in node as a page would.
 
-For another device on the LAN, serve HTTPS: the IDE's service worker needs a secure
-page, and only `localhost` counts as one over plain HTTP.
+For another device on the LAN, serve HTTPS: the app's service worker needs a secure
+page, and only `localhost` and `127.0.0.1` count as one over plain HTTP. (On the LAN's
+address the app runs on the IDE's own origin, unless a `config.json` names another site
+for it: see "Where the app runs".)
 
     python3 tools/serve.py --tls cert.pem key.pem      # or TLS_CERT and TLS_KEY in the environment
 
@@ -297,6 +299,30 @@ that need native code or tools at build time won't work in the page.
 
 `?test` uses stores of its own, and a directory in the browser's private file system
 (OPFS) for the folder steps.
+
+## Where the app runs
+
+The app runs on a site of its own, not the IDE's: browsers give a separate process only
+to a separate site (a subdomain or another port is the same site, and runs on the IDE's
+thread; tried in Brave and Firefox). So a busy app, a loop that never ends, or one paused
+in DevTools doesn't stop the IDE; and the app's code, libraries included, can't reach the
+IDE's storage: the project, the library cache, a local folder's handle.
+
+The IDE opens `runner.html` on that site for each place the app shows (its pane, a separate
+or floating window, a new tab). The runner registers `sw.js`, the DevServer's part (it
+serves `run/`, the latest bundle and the assets, and answers hotreload-hx's `/__hotreload`
+polls, so the app works as it would with the desktop DevServer), and the IDE hands it each
+build and asset by `postMessage`. A runner that starts later, or reloads, says so and the
+IDE fills it in. The runner listens only to the IDE that opened it, from an origin it
+allows.
+
+Where it is comes from `config.json` next to the page: `{"runner": "<the same web/
+directory, on the other site>", "ide": "<the IDE's origin>"}`. Without one, locally, the
+IDE on `127.0.0.1` runs the app on `localhost` and the other way round (two sites, one
+server); anywhere else the app runs on the IDE's own origin, as before, without the
+isolation. On dev.whirlinggizmo.com, nginx writes it from the environment
+(`hosting/README.md`), and the app's site is run.whirlinggizmos.com: the same container
+under another name.
 
 ## What the compiler knows: completion, hover, definition
 

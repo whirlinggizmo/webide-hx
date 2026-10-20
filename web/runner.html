@@ -1,0 +1,132 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>webide-hx app</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #fff; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { background: #111; } }
+  :root[data-theme="dark"] body { background: #111; }
+  iframe { border: 0; width: 100%; height: 100%; display: block; }
+</style>
+</head>
+<body>
+<iframe id="app" title="the running app"></iframe>
+<script>
+// The runner: where the app runs, on a site of its own (run.whirlinggizmos.com, or localhost
+// beside 127.0.0.1 locally), so the app has its own process (a busy or paused app can't
+// freeze the IDE) and nothing of the IDE's (its project, its folder, its library cache).
+// The IDE opens it: as its pane's frame, a window, a floating window's frame or a tab. It
+// registers sw.js (the DevServer's part, as before) for run/, and passes on what the IDE
+// tells it: builds and assets for the service worker, which app page to show, the theme.
+// It tells the IDE when it's ready (again after a reload, so the IDE fills it in) and what
+// the app's log says. It listens only to the IDE that opened it, and only to an IDE origin
+// config.json allows (locally: the same port on 127.0.0.1 or localhost)
+const $ = (id) => document.getElementById(id);
+const ide = window.opener || (window.parent !== window ? window.parent : null);
+let ideOrigin = null, reg = null, theme = null;
+
+async function allowedIdes() {
+  let cfg = {};
+  try { const r = await fetch("config.json", { cache: "no-store" }); if (r.ok) cfg = await r.json(); } catch (e) {}
+  const here = new URL(location.href), allowed = new Set([location.origin].concat(cfg.ide ? [].concat(cfg.ide) : []));
+  for (const h of ["127.0.0.1", "localhost"]) allowed.add(`${here.protocol}//${h}${here.port ? ":" + here.port : ""}`);
+  return allowed;
+}
+// a message to the service worker, answered on a port; if a newer one takes over before it
+// answers (sw.js changed), sent again to that one
+function tell(msg) {
+  return new Promise((resolve) => {
+    let to = null;
+    const send = () => {
+      const ch = new MessageChannel();
+      to = reg.active;
+      ch.port1.onmessage = (ev) => { clearInterval(watch); resolve(ev.data); };
+      to.postMessage(msg, [ch.port2]);
+    };
+    const watch = setInterval(() => { if (reg.active && reg.active !== to) send(); }, 250);
+    send();
+  });
+}
+function applyTheme(doc) {
+  if (!doc) return;
+  if (!theme || theme === "system") delete doc.documentElement.dataset.theme;
+  else doc.documentElement.dataset.theme = theme;
+  if (doc !== document) say({ type: "themed", theme: doc.documentElement.dataset.theme || "system" });
+}
+const appDoc = () => { try { return $("app").contentDocument; } catch (e) { return null; } };
+// the app's log, as the IDE shows it and its test reads it: sent as it changes
+let logObserver = null, logTimer = null;
+function watchLog() {
+  if (logObserver) logObserver.disconnect();
+  const doc = appDoc(), log = doc && doc.getElementById("log");
+  const send = () => { logTimer = null; say({ type: "log", text: log ? log.textContent.slice(-65536) : "" }); };
+  send();
+  if (!log) return;
+  logObserver = new MutationObserver(() => { if (!logTimer) logTimer = setTimeout(send, 50); });
+  logObserver.observe(log, { childList: true, characterData: true, subtree: true });
+}
+function say(m) { if (ide && ideOrigin) ide.postMessage(m, ideOrigin); }
+
+$("app").addEventListener("load", () => { applyTheme(appDoc()); watchLog(); say({ type: "loaded", url: $("app").src }); });
+
+(async () => {
+  if (!ide) { document.body.textContent = "The app runs in webide-hx: open it from there."; return; }
+  const allowed = await allowedIdes();
+  reg = await navigator.serviceWorker.register("sw.js", { scope: "./run/" });
+  const sw = reg.installing || reg.waiting || reg.active;
+  if (sw.state !== "activated")
+    await new Promise((r) => sw.addEventListener("statechange", () => sw.state === "activated" && r()));
+  addEventListener("message", async (e) => {
+    if (e.source !== ide || !allowed.has(e.origin)) return;
+    ideOrigin = e.origin;
+    const m = e.data || {};
+    if (m.type === "hello") say({ type: "ready" });
+    else if (m.type === "sw") say({ type: "sw", id: m.id, data: await tell(m.msg) });
+    else if (m.type === "start") $("app").src = m.url;
+    else if (m.type === "theme") { theme = m.theme; applyTheme(document); applyTheme(appDoc()); }
+    // for the IDE's test: what the app's page fetches, and how its output follows the end
+    else if (m.type === "fetch") {
+      try {
+        const r = await $("app").contentWindow.fetch(m.path);
+        say({ type: "fetched", id: m.id, status: r.status, ok: r.ok, contentType: r.headers.get("Content-Type"), body: new Uint8Array(await r.arrayBuffer()) });
+      } catch (err) { say({ type: "fetched", id: m.id, status: 0, ok: false, error: String(err) }); }
+    }
+    else if (m.type === "follow") say({ type: "followed", id: m.id, result: await followTest() });
+    // the app's page busy for a while (as a hung app is): the IDE's test counts its own ticks meanwhile
+    else if (m.type === "spin") {
+      const end = performance.now() + m.ms;
+      while (performance.now() < end) {}
+      say({ type: "spun", id: m.id });
+    }
+  });
+  // ready: said to each origin the IDE may have (a page can't ask another site's); after a
+  // reload too, so the IDE fills this in again
+  for (const o of allowed) try { ide.postMessage({ type: "ready" }, o); } catch (e) {}
+  // a window of its own: where it is, for the IDE to open the next one there
+  if (window.opener && window.top === window) {
+    let last = "";
+    setInterval(() => {
+      const at = { x: screenX, y: screenY, w: innerWidth, h: innerHeight }, s = JSON.stringify(at);
+      if (s !== last) { last = s; say(Object.assign({ type: "place" }, at)); }
+    }, 500);
+  }
+})();
+
+async function followTest() {
+  const doc = appDoc(), page = doc && doc.scrollingElement, log = doc && doc.getElementById("log");
+  if (!log) return null;
+  const atEnd = () => page.scrollTop + page.clientHeight >= page.scrollHeight - 4;
+  const more = (n) => { for (let i = 0; i < n; i++) log.append("a test line " + i + "\n"); };
+  const settle = () => new Promise((r) => setTimeout(r, 50));
+  more(200); await settle();
+  const followed = atEnd();
+  page.scrollTop = 0; await settle(); more(20); await settle();
+  const stayed = page.scrollTop === 0;
+  page.scrollTop = page.scrollHeight; await settle(); more(20); await settle();
+  return { followed, stayed, atEnd: atEnd() };
+}
+</script>
+</body>
+</html>

@@ -3,7 +3,9 @@
 // gets the bundle's source map as DevTools does (inline, or over the network past the
 // page's service worker), sets a breakpoint where
 // the map puts a line of Hello.hx, waits for it to hit, and checks the pause maps back to
-// that line, with the program's state readable there.
+// that line, with the program's state readable there. The app runs on another site than the
+// IDE (runner.html), so in a frame of its own process: reached, as DevTools reaches it, by
+// attaching to that frame's target (each with a session of its own).
 //     brave-browser --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/
 //     node tests/devtools.js 9333
 // Prints each step; exits 1 if one fails.
@@ -38,18 +40,18 @@ function decode(map) {
 }
 
 var ws, nextId = 1, waiting = new Map(), listeners = [];
-function send(method, params) {
+function send(method, params, sessionId) {
   return new Promise(function (resolve, reject) {
     var id = nextId++;
     waiting.set(id, { resolve: resolve, reject: reject });
-    ws.send(JSON.stringify({ id: id, method: method, params: params || {} }));
+    ws.send(JSON.stringify(Object.assign({ id: id, method: method, params: params || {} }, sessionId ? { sessionId: sessionId } : {})));
   });
 }
 function on(method, f) { listeners.push({ method: method, f: f }); }
 function next(method, test, ms) {
   return new Promise(function (resolve) {
     var done = false;
-    var l = { method: method, f: function (p) { if (!done && (!test || test(p))) { done = true; resolve(p); } } };
+    var l = { method: method, f: function (p, s) { if (!done && (!test || test(p, s))) { done = true; resolve(p); } } };
     listeners.push(l);
     setTimeout(function () { if (!done) { done = true; resolve(null); } }, ms || 15000);
   });
@@ -66,7 +68,7 @@ function step(name, ok, detail) {
   console.log((ok ? "  ok   " : "  FAIL ") + name + (detail !== undefined ? "  " + JSON.stringify(detail) : ""));
 }
 
-var scripts = new Map(); // scriptId -> {url, sourceMapURL}
+var scripts = new Map(); // scriptId -> {url, sourceMapURL, session}
 
 async function checkBundle(label) {
   // the newest bundle the frame loaded, and its map, fetched where the service worker answers
@@ -103,19 +105,20 @@ async function checkBundle(label) {
   var target = mappings.find(function (m) { return m.src === srcIndex && m.sl === hxLine; });
   step(label + ": Hello.hx:" + (hxLine + 1) + " (" + LINE_TEXT + ") has generated code", !!target, target && { line: target.gl + 1, column: target.gc });
   if (!target) return;
-  var bp = await send("Debugger.setBreakpoint", { location: { scriptId: bundle[0], lineNumber: target.gl, columnNumber: target.gc } });
-  var paused = await next("Debugger.paused", null, 10000);
+  var sid = bundle[1].session;
+  var bp = await send("Debugger.setBreakpoint", { location: { scriptId: bundle[0], lineNumber: target.gl, columnNumber: target.gc } }, sid);
+  var paused = await next("Debugger.paused", function (p, s) { return s === sid; }, 10000);
   step(label + ": the breakpoint hits", !!paused);
   if (paused) {
     var loc = paused.callFrames[0].location;
     var back = mappings.filter(function (m) { return m.gl === loc.lineNumber && m.gc <= loc.columnNumber; }).pop();
     step(label + ": the pause is at Hello.hx:" + (hxLine + 1), back && back.src === srcIndex && back.sl === hxLine,
          back && { source: map.sources[back.src], line: back.sl + 1, fn: paused.callFrames[0].functionName });
-    var v = await send("Debugger.evaluateOnCallFrame", { callFrameId: paused.callFrames[0].callFrameId, expression: "Hello.ticks", returnByValue: true });
+    var v = await send("Debugger.evaluateOnCallFrame", { callFrameId: paused.callFrames[0].callFrameId, expression: "Hello.ticks", returnByValue: true }, sid);
     step(label + ": state is readable there (Hello.ticks)", v.result && typeof v.result.value === "number", v.result && v.result.value);
   }
-  await send("Debugger.removeBreakpoint", { breakpointId: bp.breakpointId });
-  if (paused) await send("Debugger.resume");
+  await send("Debugger.removeBreakpoint", { breakpointId: bp.breakpointId }, sid);
+  if (paused) await send("Debugger.resume", {}, sid);
 }
 
 (async function () {
@@ -129,14 +132,21 @@ async function checkBundle(label) {
       var w = waiting.get(m.id); waiting.delete(m.id);
       if (m.error) w.reject(new Error(m.error.message)); else w.resolve(m.result);
     } else if (m.method) {
-      listeners.forEach(function (l) { if (l.method === m.method) l.f(m.params); });
+      listeners.forEach(function (l) { if (l.method === m.method) l.f(m.params, m.sessionId); });
     }
   };
   await new Promise(function (r) { ws.onopen = r; });
-  on("Debugger.scriptParsed", function (p) { scripts.set(p.scriptId, { url: p.url, sourceMapURL: p.sourceMapURL }); });
+  on("Debugger.scriptParsed", function (p, s) { scripts.set(p.scriptId, { url: p.url, sourceMapURL: p.sourceMapURL, session: s }); });
+  // frames in other processes (the runner, and the app inside it), as they come
+  var autoAttach = { autoAttach: true, waitForDebuggerOnStart: false, flatten: true };
+  on("Target.attachedToTarget", function (p) {
+    var s = p.sessionId;
+    send("Runtime.enable", {}, s); send("Debugger.enable", {}, s); send("Target.setAutoAttach", autoAttach, s);
+  });
   await send("Runtime.enable");
   await send("Page.enable");
   await send("Debugger.enable");
+  await send("Target.setAutoAttach", autoAttach);
   // the program running: its first bundle loaded
   for (var i = 0; i < 100 && ![...scripts.values()].some(function (s) { return /\/run\/hello\.js/.test(s.url); }); i++)
     await new Promise(function (r) { setTimeout(r, 200); });
