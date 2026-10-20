@@ -325,7 +325,10 @@ polls, so the app works as it would with the desktop DevServer), and the IDE han
 build by `postMessage`. Files are served as a static server (or a CDN) would serve them:
 the first time the app asks for one, the runner's service worker asks the IDE for it and
 keeps it; one the project doesn't have is a 404, and code isn't served (it's in the
-bundle). So only what the app asks for leaves the IDE. When a file changes, the IDE sends
+bundle). So only what the app asks for leaves the IDE. (A floating window's runner is a
+frame of that window, not of the IDE's page: it speaks to that window, which hands its
+messages on, and hears the IDE, which opened it; `node tests/floating.js PORT` checks the
+app runs and hot-reloads there, against a browser with the IDE open.) When a file changes, the IDE sends
 just its name: the runner drops its copy and tells the app, which asks again. The app sees
 plain URLs and plain responses, as it will from wherever it's hosted. A runner that starts
 later, or reloads, says so and the IDE gives it the latest build. The runner listens only

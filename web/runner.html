@@ -25,6 +25,9 @@
 // config.json allows (locally: the same port on 127.0.0.1 or localhost)
 const $ = (id) => document.getElementById(id);
 const ide = window.opener || (window.parent !== window ? window.parent : null);
+// the IDE's messages come from it; a floating window's runner says its own to that window (its
+// parent), which hands them on, and hears the IDE, which opened that window
+const fromIde = (w) => !!w && (w === ide || (window.parent !== window && w === window.parent.opener));
 let ideOrigin = null, reg = null, theme = null, needCount = 0;
 const needs = new Map(); // a file asked of the IDE -> what answers the service worker
 
@@ -88,7 +91,7 @@ $("app").addEventListener("load", () => { applyTheme(appDoc()); watchLog(); say(
     say({ type: "need", id, path: e.data.path });
   });
   addEventListener("message", async (e) => {
-    if (e.source !== ide || !allowed.has(e.origin)) return;
+    if (!fromIde(e.source) || !allowed.has(e.origin)) return;
     ideOrigin = e.origin;
     const m = e.data || {};
     if (m.type === "hello") say({ type: "ready" });

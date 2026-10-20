@@ -9,6 +9,8 @@
 // (runner.html) does: ready, builds and files for devserver.js ("sw"), which app to show
 // ("start"), the theme, the app's log; and the test's fetch, follow and spin.
 const ide = window.opener || (window.parent !== window ? window.parent : null);
+// as in runner.html: a floating window's runner hears the IDE, which opened that window
+const fromIde = (w) => !!w && (w === ide || (window.parent !== window && w === window.parent.opener));
 const base = new URL(location.href);
 const say = (m) => { if (ide) ide.postMessage(m, "*"); };
 let started = false, blob = null, blobVersion = -1, theme = null, asks = 0;
@@ -150,7 +152,7 @@ function applyTheme() {
 }
 // the IDE's messages
 addEventListener("message", async (e) => {
-  if (e.source !== ide || !e.data) return;
+  if (!fromIde(e.source) || !e.data) return;
   const m = e.data;
   if (m.type === "file" && asked.has(m.id)) { asked.get(m.id)(m.body); asked.delete(m.id); }
   else if (m.type === "sw") say({ type: "sw", id: m.id, data: server.message(m.msg) });

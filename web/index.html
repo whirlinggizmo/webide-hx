@@ -713,7 +713,9 @@ const ourRunner = (w) => !IN_EXTENSION || w === $("run").contentWindow || runner
 function askRunner(w, m) {
   return new Promise((resolve) => { const id = ++runnerMsgs; runnerReplies.set(id, resolve); toRunner(w, Object.assign({}, m, { id })); });
 }
-addEventListener("message", (e) => {
+// what a runner says (to its parent, or its opener: the floating window's runner says it to
+// that window, which hands it on)
+function fromRunner(e) {
   if (!RUNNER || e.origin !== runnerOrigin() || !e.source || !ourRunner(e.source)) return;
   const m = e.data || {}, w = e.source;
   if (m.type === "ready") { runnerReady(w); return; }
@@ -733,7 +735,8 @@ addEventListener("message", (e) => {
   else if (m.type === "loaded") { r.url = m.url; toRunner(w, { type: "theme", theme: prefs.theme }); }
   else if (m.type === "place") program.placed(w, m);
   else if (m.id !== undefined && runnerReplies.has(m.id)) { runnerReplies.get(m.id)(m); runnerReplies.delete(m.id); }
-});
+}
+addEventListener("message", fromRunner);
 // a runner (new, or reloaded): filled in, then shown the app if it's where the app shows
 async function runnerReady(w) {
   const r = runners.get(w) || { log: "", waiters: [] };
@@ -2584,6 +2587,7 @@ const program = {
       this.win = pip; this.frame = f;
       f.src = RUNNER;
       pip.addEventListener("pagehide", () => { if (this.win === pip) this.back(); });
+      pip.addEventListener("message", fromRunner); // (its runner's parent is this window, not the page)
     }
     this.kind = kind;
     // the pane's app stops (in the extension, its runner runs the app in its own page: a fresh
