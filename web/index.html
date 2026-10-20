@@ -94,7 +94,7 @@
   .split { cursor: col-resize; background: var(--line); background-clip: content-box; padding: 0 2px; touch-action: none; }
   .split:hover, .split.dragging { background-color: var(--accent); }
   body.edit-folded main > section:first-child, body.app-folded #program-pane { visibility: hidden; }
-  body.tree-folded .files { display: none; }
+  body.tree-folded .files { visibility: hidden; overflow: hidden; } /* kept in the grid, so the divider and the editor keep their columns */
   section { background: var(--panel); display: flex; flex-direction: column; min-height: 0; min-width: 0; }
   .code { display: grid; grid-template-columns: var(--tree-w, 180px) 5px minmax(0, 1fr); min-height: 0; flex: 1; }
   body.tree-folded .code { grid-template-columns: 0 5px minmax(0, 1fr); }
@@ -3351,9 +3351,10 @@ async function test() {
   const w = (sel) => Math.round(document.querySelector(sel).getBoundingClientRect().width);
   const appW0 = w("#program-pane"), editW0 = w("main > section"), treeW0 = w(".files");
   $("split-tree").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-  const treeGone = getComputedStyle(document.querySelector(".files")).display === "none" && w("main > section") === editW0;
+  const editBox = document.querySelector(".edit").getBoundingClientRect(), splitBox = $("split-tree").getBoundingClientRect();
+  const treeGone = w(".files") === 0 && w("main > section") === editW0 && splitBox.width === 5 && Math.abs(editBox.width - (editW0 - 5)) <= 2;
   $("split-tree").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
-  step("the file tree folds away on a double-click, and back", treeGone && w(".files") === treeW0, { treeW0, back: w(".files") });
+  step("the file tree folds away on a double-click (the editor gets the room, the divider stays), and back", treeGone && w(".files") === treeW0, { treeW0, folded: { edit: Math.round(editBox.width), split: splitBox.width }, back: w(".files") });
   $("split-app").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
   const appGone = w("#program-pane") < 2 && w("main > section") > editW0 + appW0 - 20;
   $("split-app").dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));
