@@ -7,7 +7,9 @@ app is stopped at marked in the editor. Without it, debugging is DevTools' (F12)
 `.hx` lines.
 
 It uses `chrome.debugger` on the app's own frame only (the app runs on a site of its own, in
-a process of its own), so the IDE goes on while the app is stopped. It's attached only while
+a process of its own), so the IDE goes on while the app is stopped; and on a window or a tab
+of the app's own, which it attaches to only if it's the runner's page and the IDE's tab
+opened it. It's attached only while
 there are breakpoints or a pause; Chrome shows a "started debugging this browser" bar then.
 It works on the IDE's pages only: `127.0.0.1`, `localhost` and `dev.whirlinggizmo.com`.
 

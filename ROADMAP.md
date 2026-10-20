@@ -242,8 +242,9 @@ Two, for two kinds of use:
       rebuild; re-placed after each hot reload from the new map), a Run and Debug panel
       (continue, step over/into/out, the call stack, variables), the stopped line marked in
       the editor. Then: values on hover, watches, pause on exceptions, conditional
-      breakpoints and logpoints, a console in the stopped app; the app in a window or tab
-      of its own (another tab to attach to).
+      breakpoints and logpoints, a console in the stopped app. The app in a window or a
+      tab of its own is debugged too (2026-10-20: the runner tabs the IDE opened are attached;
+      the panel comes under the editor); the floating window isn't yet.
 - [~] **An all-in-one extension**, an alternative to the web IDE (`extensions/ide/`, `build.py
       --extension`; usable 2026-10-20: the IDE builds there, the app runs (in its pane, a
       window or a tab), hot-reloads, takes changed files and restarts, its runner sharing

@@ -5,7 +5,8 @@
 //     node tests/debugger.js 9333
 // or the all-in-one extension's IDE, whose debugger is built in: a browser started with
 // --load-extension=build/extension-ide, its chrome-extension://<id>/index.html open
-// Breakpoints from the gutter stop the app (no DevTools): the stop's call stack, variables
+// Breakpoints from the gutter stop the app (no DevTools), embedded, in a window of its own
+// and in a tab of its own: the stop's call stack, variables
 // and line in the editor; the IDE going on meanwhile; step over; a breakpoint removed while
 // stopped there (no stop after); a hollow dot where a line has no code; a breakpoint that
 // moves with an edit stops at its new line after the hot reload; Pause; and detached
@@ -16,7 +17,7 @@ function send(method, params) {
   return new Promise(function (resolve) { var id = nextId++; waiting.set(id, resolve); ws.send(JSON.stringify({ id: id, method: method, params: params || {} })); });
 }
 async function ev(expr) {
-  var r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true });
+  var r = await send("Runtime.evaluate", { expression: expr, awaitPromise: true, returnByValue: true, userGesture: true });
   if (r.exceptionDetails) throw new Error(r.exceptionDetails.exception ? r.exceptionDetails.exception.description : r.exceptionDetails.text);
   return r.result.value;
 }
@@ -61,7 +62,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   step("variables: the frame's scopes", await until("$('dbg-vars').children.length > 0 && $('dbg-vars').textContent", 3000), await ev("$('dbg-vars').textContent.slice(0, 80)"));
   var statics = await ev("(async () => { const cl = [...document.querySelectorAll('#dbg-vars li.scope')].find((x) => x.textContent.startsWith('Closure')); if (!cl.classList.contains('expanded')) cl.click(); await new Promise((r) => setTimeout(r, 400)); const h = [...cl.querySelectorAll(':scope > ul > li')].find((li) => li.textContent.startsWith('Hello:')); h.click(); await new Promise((r) => setTimeout(r, 400)); return [...h.querySelectorAll(':scope > ul > li')].map((li) => li.textContent).filter((t) => /^ticks: \\d+$/.test(t)); })()");
   step("a class's statics in the variables (Closure > Hello > ticks)", statics.length === 1, statics);
-  var ticks = await ev("(async () => (await dbgSend('Debugger.evaluateOnCallFrame', { callFrameId: dbg.paused.callFrames[0].callFrameId, expression: 'Hello.ticks', returnByValue: true })).result.value)()");
+  var ticks = await ev("(async () => (await dbgSend('Debugger.evaluateOnCallFrame', { callFrameId: dbg.paused.params.callFrames[0].callFrameId, expression: 'Hello.ticks', returnByValue: true })).result.value)()");
   step("an expression in the stopped frame (Hello.ticks)", typeof ticks === "number", ticks);
   step("the lists have headers", await ev("$('dbg-stack-h').textContent === 'Call stack' && $('dbg-vars-h').textContent === 'Variables' && !$('dbg-body').hidden"));
   var folded = await ev("(() => { $('dbg-collapse').click(); const hid = $('dbg-body').hidden; $('dbg-collapse').click(); return hid && !$('dbg-body').hidden && JSON.parse(localStorage.getItem('webide-hx-debug-layout')).collapsed === false; })()");
@@ -98,7 +99,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   var moved = await ev("[...breakLines(view.state)].map(([l]) => l)");
   step("the breakpoint moved with the edit", moved.length === 1 && moved[0] === n + 1, moved);
   // (a stop in the old bundle, before the new one is in, is gone on from, as a person would)
-  var after = await until("(dbg.paused && dbg.scripts.size <= 1 ? ($('dbg-continue').click(), false) : dbg.paused && dbg.scripts.size > 1 && " + stoppedAt + ")", 15000);
+  var after = await until("(dbg.paused && dbg.targets.get(dbg.paused.key).scripts.size <= 1 ? ($('dbg-continue').click(), false) : dbg.paused && dbg.targets.get(dbg.paused.key).scripts.size > 1 && " + stoppedAt + ")", 15000);
   step("after the hot reload, it stops at the new line", after === "src/Hello.hx:" + (n + 1), after);
   await toggle(n + 1);
   await ev("$('dbg-continue').click()");
@@ -107,7 +108,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   // the browser's "started debugging" bar closed by the person (it detaches): not attached
   // again by itself while breakpoints are there; a click on the panel's line debugs again
   await toggle(n);
-  await until("dbg.attached && dbg.session", 5000);
+  await until("dbg.attached && dbg.targets.size > 0", 5000);
   await ev("(async () => { await dbgCall('detach'); dbgEvent('detached', { reason: 'canceled_by_user' }, null); })()");
   await sleep(2500);
   step("the bar closed: not attached again by itself", await ev("!dbg.attached && dbg.cancelled && /click here to debug again/.test($('dbg-state').textContent)"), await ev("$('dbg-state').textContent"));
@@ -116,6 +117,33 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   await toggle(n);
   await ev("$('dbg-continue').click()");
   await until("!dbg.attached && !dbg.paused", 5000);
+
+  // the app in a window of its own: a breakpoint stops it there (that window's tab, attached
+  // because the IDE opened it), and the panel comes under the editor
+  var w = await ev(lineOf("ticks++;"));
+  await ev("(async () => { await program.out('window'); })()");
+  await until("program.kind === 'window' && (runners.get(program.win) || {}).ready", 15000);
+  await toggle(w);
+  var inWindow = await until("dbg.paused && dbg.paused.key.startsWith('t:') && dbg.at", 15000);
+  step("the app in a window of its own: a breakpoint stops it there", inWindow === "src/Hello.hx:" + w, inWindow);
+  step("the panel comes under the editor, with the stack", await ev("$('debug').parentNode === document.querySelector('.edit') && !$('debug').hidden && /onTick/.test($('dbg-stack').textContent)"));
+  await toggle(w);
+  await ev("$('dbg-continue').click()");
+  await until("!dbg.paused && !dbg.attached", 5000);
+  await ev("program.win.close()");
+  await until("program.kind === null && (runners.get($('run').contentWindow) || {}).ready", 15000);
+  step("back in the pane: the panel too", await ev("$('debug').parentNode === $('program-pane')"));
+  // a tab of its own (Open in new tab): stopped there too
+  await ev("$('app-tab').click()");
+  await until("[...program.tabs].some((t) => runners.get(t) && runners.get(t).ready)", 15000);
+  await toggle(w);
+  // (a tab opened in the background has its timers slowed: the app's next tick can take a while)
+  var inTab = await until("[...dbg.stopped.keys()].some((k) => k.startsWith('t:')) && 'yes'", 30000);
+  step("the app in a tab of its own: a breakpoint stops it there", inTab === "yes", await ev("[...dbg.stopped.keys()]"));
+  await toggle(w);
+  await ev("$('dbg-continue').click()");
+  await until("!dbg.paused && !dbg.attached", 5000);
+  await ev("[...program.tabs].forEach((t) => t.close())");
 
   // Pause with no breakpoints: attaches, stops the app wherever it is, Continue lets it go
   await ev("$('dbg-pause').click()");

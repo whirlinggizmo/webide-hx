@@ -690,6 +690,7 @@ async function runnerReady(w) {
   const url = program.urlFor(w);
   if (url) toRunner(w, { type: "start", url });
   for (const f of r.waiters.splice(0)) f();
+  if (dbg.attached) dbgSync();
 }
 // a file the app asked for, as a static server would have it: the project's file, or null
 // (a 404). Code isn't served (it's in the bundle); a path that isn't a project file isn't either
@@ -1805,12 +1806,15 @@ function toggleBreakpoint(v, pos) {
 // variables in the panel under the app, and the line in the editor. For now with the app
 // embedded (a window or a tab of its own is another tab to attach to)
 const dbg = {
-  present: false, attached: false, attaching: null, session: null,
-  enabled: null,        // the debugger switched on for the app's session
+  present: false, attached: false, attaching: null,
+  // the runners being debugged: key ("c:<session>": a frame in the IDE's tab, the pane's;
+  // "t:<tab>": a window or a tab of its own) -> {key, tabId (null: the IDE's tab), sessionId
+  // (null: that tab's page), scripts (scriptId -> {url, mapUrl, map, context}), placed (the
+  // breakpoint ids placed there), enabled (the debugger switched on there)}
+  targets: new Map(),
   at: null,             // where the shown frame is stopped: "file:line"
-  scripts: new Map(),   // scriptId -> {url, mapUrl, map (decoded when needed), context}
-  placed: [],           // breakpoint ids placed, for taking them all away
-  paused: null,         // the Debugger.paused event's params while stopped
+  stopped: new Map(),   // the runners stopped now: key -> the Debugger.paused event's params
+  paused: null,         // the one shown: {key, params}
   frame: 0, pauseAsked: false,
   // the person closed the browser's "started debugging" bar, which detaches the debugger: not
   // attached again until they set a breakpoint, ask for a pause, or click the panel's line
@@ -1825,39 +1829,62 @@ function dbgCall(cmd, extra) {
     window.postMessage(Object.assign({ webideDebugger: "cmd", id, cmd }, extra), location.origin);
   });
 }
-const dbgSend = (method, params) => dbgCall("send", { sessionId: dbg.session, method, params });
+// a command to a runner; to the one stopped and shown
+const dbgTo = (t, method, params) => dbgCall("send", { tabId: t.tabId, sessionId: t.sessionId, method, params });
+const dbgSend = (method, params) => dbg.paused && dbg.targets.has(dbg.paused.key) ? dbgTo(dbg.targets.get(dbg.paused.key), method, params) : Promise.reject(new Error("not stopped"));
 addEventListener("message", (e) => {
   if (e.source !== window || e.origin !== location.origin || !e.data || typeof e.data.webideDebugger !== "string") return;
   const m = e.data;
   if (m.webideDebugger === "here" && !dbg.present) dbgFound();
   else if (m.webideDebugger === "reply" && dbg.calls.has(m.id)) { dbg.calls.get(m.id)(m); dbg.calls.delete(m.id); }
-  else if (m.webideDebugger === "event") dbgEvent(m.event, m.params || {}, m.sessionId);
+  else if (m.webideDebugger === "event") dbgEvent(m.event, m.params || {}, m.sessionId || null, m.tabId || null);
 });
 window.postMessage({ webideDebugger: "hello" }, location.origin);
 // in the all-in-one extension, the IDE is an extension page with the debugger permission: it
-// drives chrome.debugger itself, as the debugger extension's worker does (background.js):
-// its own tab, the app's runner a child session, events to dbgEvent
+// drives chrome.debugger itself, as the debugger extension's worker does (background.js): its
+// own tab (the pane's runner a child session), and the runner tabs it opened
 let dbgTab = null;
+const dbgOthers = new Set();
 async function dbgLocal(cmd, extra) {
   if (!dbgTab) {
     dbgTab = { tabId: (await chrome.tabs.getCurrent()).id };
     chrome.debugger.onEvent.addListener((source, method, params) => {
-      if (source.tabId !== dbgTab.tabId) return;
+      if (source.tabId !== dbgTab.tabId && !dbgOthers.has(source.tabId)) return;
       if (method === "Target.attachedToTarget") {
-        const child = { tabId: dbgTab.tabId, sessionId: params.sessionId };
+        const child = { tabId: source.tabId, sessionId: params.sessionId };
         chrome.debugger.sendCommand(child, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }).catch(() => {});
         chrome.debugger.sendCommand(child, "Runtime.runIfWaitingForDebugger").catch(() => {});
       }
-      dbgEvent(method, params, source.sessionId || null);
+      dbgEvent(method, params, source.sessionId || null, source.tabId === dbgTab.tabId ? null : source.tabId);
     });
-    chrome.debugger.onDetach.addListener((source, reason) => { if (source.tabId === dbgTab.tabId) dbgEvent("detached", { reason }, null); });
+    chrome.debugger.onDetach.addListener((source, reason) => {
+      if (source.tabId === dbgTab.tabId) dbgEvent("detached", { reason }, null, null);
+      else if (dbgOthers.delete(source.tabId)) dbgEvent("tabDetached", { tabId: source.tabId, reason }, null, null);
+    });
   }
   if (cmd === "attach") {
     try { await chrome.debugger.attach(dbgTab, "1.3"); } catch (e) { if (!/already attached/i.test(e.message)) throw e; }
     return chrome.debugger.sendCommand(dbgTab, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true });
   }
-  if (cmd === "detach") return chrome.debugger.detach(dbgTab).catch(() => {});
-  if (cmd === "send") return chrome.debugger.sendCommand({ tabId: dbgTab.tabId, sessionId: extra.sessionId }, extra.method, extra.params || {});
+  if (cmd === "attachTabs") {
+    const found = [];
+    for (const t of await chrome.debugger.getTargets()) {
+      if (t.type !== "page" || !t.tabId || t.tabId === dbgTab.tabId || !t.url.startsWith(extra.prefix)) continue;
+      if (!(await chrome.tabs.get(t.tabId).then((x) => x.openerTabId === dbgTab.tabId, () => false))) continue;
+      if (!dbgOthers.has(t.tabId)) { await chrome.debugger.attach({ tabId: t.tabId }, "1.3"); dbgOthers.add(t.tabId); }
+      found.push({ tabId: t.tabId, url: t.url });
+    }
+    return found;
+  }
+  if (cmd === "detach") {
+    for (const id of [...dbgOthers]) { dbgOthers.delete(id); await chrome.debugger.detach({ tabId: id }).catch(() => {}); }
+    return chrome.debugger.detach(dbgTab).catch(() => {});
+  }
+  if (cmd === "send") {
+    if (extra.tabId && !dbgOthers.has(extra.tabId)) throw new Error("not a runner tab of the IDE's");
+    const to = extra.tabId ? (extra.sessionId ? { tabId: extra.tabId, sessionId: extra.sessionId } : { tabId: extra.tabId }) : { tabId: dbgTab.tabId, sessionId: extra.sessionId };
+    return chrome.debugger.sendCommand(to, extra.method, extra.params || {});
+  }
   throw new Error("unknown command " + cmd);
 }
 if (IN_EXTENSION && typeof chrome !== "undefined" && chrome.debugger) dbg.present = true;
@@ -1871,57 +1898,84 @@ function dbgFound() {
   dbgSync();
 }
 function dbgWanted() {
-  return dbg.present && !program.kind && !dbg.cancelled && ([...breakpoints.values()].some((m) => m.size) || dbg.pauseAsked || !!dbg.paused);
+  return dbg.present && !dbg.cancelled && ([...breakpoints.values()].some((m) => m.size) || dbg.pauseAsked || dbg.stopped.size > 0);
 }
-// attached when wanted, detached when not; breakpoints placed
+function dbgForget() {
+  dbg.attached = false;
+  dbg.targets.clear(); dbg.stopped.clear();
+  dbgShown();
+}
+// a runner to debug: the debugger switched on there, and the breakpoints placed
+function dbgAdd(key, tabId, sessionId) {
+  if (dbg.targets.has(key)) return;
+  const t = { key, tabId, sessionId, scripts: new Map(), placed: [] };
+  dbg.targets.set(key, t);
+  t.enabled = dbgTo(t, "Runtime.enable").then(() => dbgTo(t, "Debugger.enable")).catch(() => {});
+}
+// attached when wanted, detached when not; every runner found (the pane's, and the windows
+// and tabs the IDE opened); breakpoints placed
 async function dbgSync() {
   if (!dbg.present) return;
   if (!dbgWanted()) {
-    if (dbg.attached) { dbg.attached = false; dbg.session = null; dbg.scripts.clear(); dbg.placed = []; await dbgCall("detach").catch(() => {}); }
+    if (dbg.attached) { dbgForget(); await dbgCall("detach").catch(() => {}); }
     dbgMarkAll("checking");
     dbgShow();
     return;
   }
-  if (!dbg.attached) {
-    if (!dbg.attaching) dbg.attaching = (async () => {
-      try {
-        await dbgCall("attach");
-        dbg.attached = true;
-        for (let i = 0; i < 50 && !dbg.session; i++) await new Promise((r) => setTimeout(r, 40));
-        if (!dbg.session) throw new Error("the app's runner wasn't found (it needs the app on a site of its own)");
-        await dbg.enabled;
-      } catch (e) { dbg.attached = false; status("debugger: " + e.message); }
-      finally { dbg.attaching = null; }
-    })();
-    await dbg.attaching;
-    if (!dbg.attached) return;
-  }
+  if (!dbg.attaching) dbg.attaching = (async () => {
+    try {
+      if (!dbg.attached) { await dbgCall("attach"); dbg.attached = true; }
+      for (const t of await dbgCall("attachTabs", { prefix: RUNNER })) dbgAdd("t:" + t.tabId, t.tabId, null);
+      for (let i = 0; i < 50 && !dbg.targets.size; i++) await new Promise((r) => setTimeout(r, 40));
+      if (!dbg.targets.size) throw new Error("the app's runner wasn't found (it needs the app on a site of its own)");
+      await Promise.all([...dbg.targets.values()].map((t) => t.enabled));
+    } catch (e) { status("debugger: " + e.message); }
+    finally { dbg.attaching = null; }
+  })();
+  await dbg.attaching;
+  if (!dbg.attached) return;
   await dbgPlace();
   dbgShow();
 }
-function dbgEvent(method, p, sessionId) {
-  if (method === "detached") { if (p.reason === "canceled_by_user") dbg.cancelled = true; dbg.attached = false; dbg.session = null; dbg.scripts.clear(); dbg.placed = []; dbgResumed(); dbgShow(); return; }
-  if (method === "Target.attachedToTarget") {
-    // the pane's runner: the app's session
-    if (p.targetInfo.type === "iframe" && RUNNER && p.targetInfo.url.startsWith(RUNNER) && !dbg.session) {
-      dbg.session = p.sessionId;
-      dbg.enabled = dbgSend("Runtime.enable").then(() => dbgSend("Debugger.enable")).catch(() => {});
-    }
+function dbgEvent(method, p, sessionId, tabId) {
+  if (method === "detached") { if (p.reason === "canceled_by_user") dbg.cancelled = true; dbgForget(); dbgShow(); return; }
+  if (method === "tabDetached") { dbgDrop("t:" + p.tabId); return; }
+  if (!tabId && method === "Target.attachedToTarget") {
+    // the pane's runner (a frame of the IDE's tab, in a process of its own)
+    if (p.targetInfo.type === "iframe" && RUNNER && p.targetInfo.url.startsWith(RUNNER)) dbgAdd("c:" + p.sessionId, null, p.sessionId);
     return;
   }
-  if (method === "Target.detachedFromTarget" && p.sessionId === dbg.session) { dbg.session = null; dbg.scripts.clear(); dbg.placed = []; dbgResumed(); return; }
-  if (sessionId !== dbg.session) return;
+  if (!tabId && method === "Target.detachedFromTarget") { dbgDrop("c:" + p.sessionId); return; }
+  const key = tabId ? (sessionId ? null : "t:" + tabId) : "c:" + sessionId, t = key && dbg.targets.get(key);
+  if (!t) return;
   if (method === "Debugger.scriptParsed") {
     // a bundle of the app's (its map inline; in the extension, a blob URL): its breakpoints placed
     if ((/\/run\//.test(p.url) || (IN_EXTENSION && p.url.startsWith("blob:"))) && p.sourceMapURL && p.sourceMapURL.startsWith("data:")) {
-      dbg.scripts.set(p.scriptId, { url: p.url, mapUrl: p.sourceMapURL, map: null, context: p.executionContextId });
+      t.scripts.set(p.scriptId, { url: p.url, mapUrl: p.sourceMapURL, map: null, context: p.executionContextId });
       clearTimeout(dbg.placeSoon);
       dbg.placeSoon = setTimeout(dbgPlace, 30);
     }
   } else if (method === "Runtime.executionContextDestroyed" || method === "Runtime.executionContextsCleared") {
-    for (const [id, s] of [...dbg.scripts]) if (method === "Runtime.executionContextsCleared" || s.context === p.executionContextId) dbg.scripts.delete(id);
-  } else if (method === "Debugger.paused") { dbg.paused = p; dbg.frame = 0; dbg.pauseAsked = false; dbgShowPause(); }
-  else if (method === "Debugger.resumed") dbgResumed();
+    for (const [id, s] of [...t.scripts]) if (method === "Runtime.executionContextsCleared" || s.context === p.executionContextId) t.scripts.delete(id);
+  } else if (method === "Debugger.paused") {
+    dbg.stopped.set(key, p); dbg.pauseAsked = false;
+    if (!dbg.paused) { dbg.paused = { key, params: p }; dbg.frame = 0; dbgShowPause(); }
+  } else if (method === "Debugger.resumed") dbgGoneOn(key);
+}
+function dbgDrop(key) {
+  if (!dbg.targets.delete(key)) return;
+  dbgGoneOn(key);
+}
+// a runner went on (or went): the next one stopped is shown, or none
+function dbgGoneOn(key) {
+  dbg.stopped.delete(key);
+  if (dbg.paused && dbg.paused.key === key) {
+    dbg.paused = null;
+    const [k, p] = [...dbg.stopped][0] || [];
+    if (k) { dbg.paused = { key: k, params: p }; dbg.frame = 0; dbgShowPause(); return; }
+    dbgShown();
+    dbgSync();
+  }
 }
 // a bundle's map, decoded: its sources and each mapping (generated line and column, source,
 // source line)
@@ -1939,41 +1993,46 @@ function dbgMap(script) {
   const paths = map.sources.map((s) => s.replace(/^file:\/*/, "/"));
   return (script.map = { segs, paths, contents: map.sourcesContent || [] });
 }
-// where a generated position comes from: {path, line} (line from 1), or null
+// where a generated position of the stopped runner's comes from: {path, line, text} (line from 1), or null
 function dbgBack(scriptId, line, col) {
-  const s = dbg.scripts.get(scriptId);
+  const t = dbg.paused && dbg.targets.get(dbg.paused.key), s = t && t.scripts.get(scriptId);
   if (!s) return null;
   const m = dbgMap(s);
   let best = null;
   for (const x of m.segs) { if (x.gl === line && x.gc <= col) best = x; else if (x.gl > line) break; }
   return best ? { path: m.paths[best.src], line: best.sl + 1, text: m.contents[best.src] } : null;
 }
-// every breakpoint, in every bundle of the app's: each at its line's first code (none: hollow)
+// every breakpoint, in every bundle of every runner's: each at its line's first code (no code
+// on the line anywhere: a hollow dot)
 async function dbgPlace() {
-  if (!dbg.attached || !dbg.session) return;
-  const old = dbg.placed;
-  dbg.placed = [];
-  await Promise.all(old.map((id) => dbgSend("Debugger.removeBreakpoint", { breakpointId: id }).catch(() => {})));
+  if (!dbg.attached) return;
   const kinds = new Map();
   for (const [f, lines] of breakpoints) for (const n of lines.keys()) kinds.set(f + "\n" + n, "bad");
-  for (const [scriptId, s] of dbg.scripts) {
-    const m = dbgMap(s);
-    for (const [f, lines] of breakpoints) {
-      const src = m.paths.indexOf("/static/" + f);
-      if (src < 0) continue;
-      for (const n of lines.keys()) {
-        const at = m.segs.find((x) => x.src === src && x.sl === n - 1);
-        if (!at) continue;
-        try {
-          const r = await dbgSend("Debugger.setBreakpoint", { location: { scriptId, lineNumber: at.gl, columnNumber: at.gc } });
-          dbg.placed.push(r.breakpointId);
-          kinds.set(f + "\n" + n, "ok");
-        } catch (e) {}
+  let any = false;
+  for (const t of [...dbg.targets.values()]) {
+    await t.enabled;
+    const old = t.placed;
+    t.placed = [];
+    await Promise.all(old.map((id) => dbgTo(t, "Debugger.removeBreakpoint", { breakpointId: id }).catch(() => {})));
+    for (const [scriptId, s] of t.scripts) {
+      any = true;
+      const m = dbgMap(s);
+      for (const [f, lines] of breakpoints) {
+        const src = m.paths.indexOf("/static/" + f);
+        if (src < 0) continue;
+        for (const n of lines.keys()) {
+          const at = m.segs.find((x) => x.src === src && x.sl === n - 1);
+          if (!at) continue;
+          try {
+            const r = await dbgTo(t, "Debugger.setBreakpoint", { location: { scriptId, lineNumber: at.gl, columnNumber: at.gc } });
+            t.placed.push(r.breakpointId);
+            kinds.set(f + "\n" + n, "ok");
+          } catch (e) {}
+        }
       }
     }
   }
-  // the dots say which have code: hollow where none of the app's code is on the line
-  for (const [key, k] of kinds) { const [f, n] = key.split("\n"); dbgMark(f, +n, dbg.scripts.size ? k : "checking"); }
+  for (const [key, k] of kinds) { const [f, n] = key.split("\n"); dbgMark(f, +n, any ? k : "checking"); }
 }
 function dbgMark(f, n, k) {
   if (f === current && view.state.field(BP.field, false)) view.dispatch({ effects: BP.kind.of({ line: n, kind: k }) });
@@ -1982,7 +2041,7 @@ function dbgMark(f, n, k) {
 function dbgMarkAll(k) { for (const [f, lines] of breakpoints) for (const n of [...lines.keys()]) dbgMark(f, n, k); }
 // stopped: the panel, the stack's top frame shown
 function dbgShowPause() {
-  const p = dbg.paused;
+  const p = dbg.paused.params;
   $("dbg-stack").replaceChildren(...p.callFrames.map((f, i) => {
     const li = document.createElement("li"), at = dbgBack(f.location.scriptId, f.location.lineNumber, f.location.columnNumber);
     li.textContent = f.functionName || "(anonymous)";
@@ -1997,8 +2056,8 @@ function dbgShowPause() {
   dbgShow();
 }
 async function dbgFrame(i) {
-  const p = dbg.paused;
-  if (!p) return;
+  if (!dbg.paused) return;
+  const p = dbg.paused.params;
   dbg.frame = i;
   [...$("dbg-stack").children].forEach((li, j) => li.classList.toggle("on", j === i));
   const f = p.callFrames[i], at = dbgBack(f.location.scriptId, f.location.lineNumber, f.location.columnNumber);
@@ -2060,30 +2119,30 @@ async function dbgProps(objectId) {
   } catch (e) { ul.append(e.message); }
   return ul;
 }
-function dbgResumed() {
-  if (!dbg.paused) return;
+// nothing stopped shown: the panel's lists and the editor's mark cleared
+function dbgShown() {
   dbg.paused = null; dbg.at = null;
   $("dbg-stack").replaceChildren(); $("dbg-vars").replaceChildren();
   if (view && setPaused) view.dispatch({ effects: setPaused.of(null) });
   dbgShow();
-  dbgSync();
 }
 // the panel: shown with the extension; its buttons by state
 function dbgShow() {
   $("debug").hidden = !dbg.present;
+  const home = program.kind ? document.querySelector(".edit") : $("program-pane");
+  if ($("debug").parentNode !== home) home.append($("debug"));
   $("debug").querySelector(".body").hidden = !dbg.paused || dbgLayout.collapsed;
   $("dbg-height").hidden = !dbg.paused || dbgLayout.collapsed;
   $("dbg-collapse").textContent = dbgLayout.collapsed ? "▸" : "▾";
   $("dbg-collapse").setAttribute("aria-expanded", String(!dbgLayout.collapsed));
   $("dbg-collapse").title = dbgLayout.collapsed ? "Show the call stack and variables" : "Hide the call stack and variables";
-  const stopped = !!dbg.paused, on = dbg.attached && !!dbg.session;
+  const stopped = !!dbg.paused, on = dbg.attached && dbg.targets.size > 0;
   $("dbg-continue").disabled = !stopped;
   $("dbg-pause").disabled = stopped;
   for (const id of ["dbg-over", "dbg-into", "dbg-out"]) $(id).disabled = !stopped;
   $("dbg-state").classList.toggle("resume", dbg.cancelled);
   $("dbg-state").title = dbg.cancelled ? "Click to debug again" : "";
   $("dbg-state").textContent = dbg.cancelled ? "Debugger stopped from the browser's bar: click here to debug again"
-    : program.kind ? "Debugger: with the app embedded (App > Embedded)"
     : stopped ? "Stopped" + (dbg.at ? " at " + dbg.at : "") : on ? "Debugging" : "Debugger: set a breakpoint (F9) or Pause";
   for (const id of ["bp-toggle", "bp-clear"]) $(id).hidden = !dbg.present;
 }
@@ -2119,10 +2178,15 @@ dbgDrag($("dbg-split"), (e) => {
 $("dbg-collapse").onclick = () => { dbgLayout.collapsed = !dbgLayout.collapsed; saveDbgLayout(); dbgShow(); };
 dbgApplyLayout();
 $("dbg-state").onclick = () => { if (dbg.cancelled) { dbg.cancelled = false; dbgSync(); } };
+// Pause: every runner (the app, wherever it is); Continue: every one stopped; a step: the one shown
 const dbgDo = (method) => () => attempt(async () => {
-  if (method === "Debugger.pause") { dbg.pauseAsked = true; dbg.cancelled = false; await dbgSync(); }
-  if (!dbg.session) return;
-  await dbgSend(method);
+  if (method === "Debugger.pause") {
+    dbg.pauseAsked = true; dbg.cancelled = false;
+    await dbgSync();
+    await Promise.all([...dbg.targets.values()].map((t) => dbgTo(t, method).catch(() => {})));
+  } else if (method === "Debugger.resume") {
+    await Promise.all([...dbg.stopped.keys()].map((k) => dbg.targets.has(k) ? dbgTo(dbg.targets.get(k), method).catch(() => {}) : null));
+  } else await dbgSend(method);
 });
 // the line the app is stopped at, marked in whichever editor shows it
 let setPaused = null, pausedField = null;

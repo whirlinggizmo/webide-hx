@@ -33,5 +33,5 @@ itself: the same gutter and panel as with the debugger extension). The IDE's own
 passes in it: `node tests/extension.js` (after `python3 build.py --extension`), and
 `tests/debugger.js` against its page. The app in a window or a tab of its own works too
 (it hot-reloads and restarts there; closing the window brings it back); the floating window
-(picture-in-picture) is unchecked (it can't open in a headless browser). The debugger, as on
-the web, is for the app in the IDE's pane for now.
+(picture-in-picture) is unchecked (it can't open in a headless browser). The debugger works
+on the app in its pane, a window or a tab, as on the web.

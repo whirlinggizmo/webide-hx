@@ -15,7 +15,7 @@ window.addEventListener("message", (e) => {
   if (m.webideDebugger === "hello") window.postMessage({ webideDebugger: "here", version: chrome.runtime.getManifest().version }, location.origin);
   else if (m.webideDebugger === "cmd") {
     if (!port) connect();
-    port.postMessage({ id: m.id, cmd: m.cmd, sessionId: m.sessionId, method: m.method, params: m.params });
+    port.postMessage({ id: m.id, cmd: m.cmd, sessionId: m.sessionId, tabId: m.tabId, prefix: m.prefix, method: m.method, params: m.params });
   }
 });
 // said at once too, for a page that asked before this script was there
