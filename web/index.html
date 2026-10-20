@@ -2916,7 +2916,8 @@ async function test() {
   // the app runs on another site: its own process, and none of the IDE's storage
   if (runnerOrigin() === location.origin) step("the app runs on the IDE's own origin, as config.json says", true, RUNNER);
   else {
-    step("the app runs on another site than the IDE", new URL(RUNNER).hostname !== location.hostname, RUNNER);
+    if (IN_EXTENSION) step("the app runs in a sandboxed page of the extension's (no origin of its own)", runnerOrigin() === "null" && RUNNER.startsWith(location.origin + "/runner.html"), RUNNER);
+    else step("the app runs on another site than the IDE", new URL(RUNNER).hostname !== location.hostname, RUNNER);
     let ticks = 0;
     const tick = setInterval(() => ticks++, 10);
     await askRunner(program.target(), { type: "spin", ms: 1500 });
@@ -3178,9 +3179,10 @@ async function test() {
   show("src/Hello.hx");
   files["src/Hello.hx"] = hello0.replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); say("adler " + UsesFormat.check());');
   const lb = await save();
-  step("-lib format:3.7.0: downloaded (haxelib, through this site's relay) and built with", lb.ok && await until(() => frameLog().includes("adler true"), 15000),
+  step("-lib format:3.7.0: downloaded (haxelib, through this site's relay; in the extension, from haxelib itself) and built with", lb.ok && await until(() => frameLog().includes("adler true"), 15000),
        lb.ok ? frameLog().split("\n").slice(-2) : lb.r.stderr);
-  const relayed = () => performance.getEntriesByType("resource").filter((e) => e.name.includes("/haxelib/files/3.0/format-3,7,0.zip")).length;
+  // where it came from: this site's relay, or (in the extension) haxelib itself
+  const relayed = () => performance.getEntriesByType("resource").filter((e) => e.name.includes((IN_EXTENSION ? "haxelib-files.haxe.org" : "/haxelib") + "/files/3.0/format-3,7,0.zip")).length;
   await build();
   step("once: the next build has it from the library cache", relayed() === 1 && await libHas("format/3.7.0/haxelib"), relayed());
   // lix: the same library, pinned to a commit, from GitHub through jsDelivr
@@ -3209,13 +3211,13 @@ async function test() {
   step("-lib without a version, nor a lix file: asked to pin one, on its line", !nv.ok && nvd.length === 1 && /which version/.test(nvd[0].message), nvd);
   files["web-build.hxml"] = base + "-lib nosuchlib:9.9.9\n";
   const nd = await save();
-  step("a release that can't be downloaded: said, with what to do", !nd.ok && /couldn't download it.*Add library zip/.test((diagnostics.get("web-build.hxml") || [{}])[0].message || ""),
+  step("a release that can't be downloaded: said, with what to do", !nd.ok && (IN_EXTENSION ? /haxelib has no such release/ : /couldn't download it.*Add library zip/).test((diagnostics.get("web-build.hxml") || [{}])[0].message || ""),
        (diagnostics.get("web-build.hxml") || [{}])[0].message);
   // the hash: a different download for the same source is refused
   const pinned = await storeLibrary({ name: "x", source: "haxelib:/format#3.7.0", dir: "x/0/test", at: null }, { files: {}, hash: "something else", from: "a test" }).then(() => "stored", (e) => e.message);
   step("a download that isn't what was had before is refused", /refused/.test(pinned), pinned);
   // a release added by hand, as when the page can't download it
-  const zip = new Uint8Array(await (await fetch("haxelib/files/3.0/format-3,7,0.zip")).arrayBuffer());
+  const zip = new Uint8Array(await (await fetch(IN_EXTENSION ? HAXELIB_FILES + "format-3,7,0.zip" : "haxelib/files/3.0/format-3,7,0.zip")).arrayBuffer());
   const added = await addLibraryZip(zip);
   step("Add library zip: a haxelib release, into the library cache", added.dir === "format/3.7.0/haxelib" && await libHas(added.dir), added.dir);
   // Add library…: lix's files written, as lix writes them; -lib in the build's hxml
@@ -3427,7 +3429,7 @@ async function test() {
   report.ms = Math.round(performance.now() - t0);
   report.log = frameLog().split("\n").slice(-12);
   report.ok = report.steps.every((s) => s.ok);
-  await fetch("/report", { method: "POST", body: JSON.stringify(report) });
+  if (!IN_EXTENSION) await fetch("/report", { method: "POST", body: JSON.stringify(report) });
 }
 
 (async function () {
@@ -3469,7 +3471,7 @@ async function test() {
     testReport.ok = false;
     testReport.error = String(e && e.stack || e);
     testReport.log = frameLog().split("\n").slice(-12);
-    fetch("/report", { method: "POST", body: JSON.stringify(testReport) });
+    if (!IN_EXTENSION) fetch("/report", { method: "POST", body: JSON.stringify(testReport) });
   });
 })();
 </script>

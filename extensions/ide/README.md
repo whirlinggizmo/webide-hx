@@ -26,6 +26,9 @@ opens the IDE.
   Not covered: CSS url() and stylesheets, `<img>` written as HTML, fonts in CSS, a dynamic
   import() of the app's own modules.
 
-Done: the IDE opens, edits and builds; the app runs, hot-reloads (its @:hot state kept),
-takes changed files, restarts (Brave, 2026-10-20). To come: libraries straight from their
-sites, the debugger built in, the app in a window or a tab, the page test in the extension.
+Done (Brave, 2026-10-20): the IDE opens, edits and builds; the app runs, hot-reloads (its
+@:hot state kept), takes changed files, restarts; libraries come straight from haxelib,
+GitHub, jsDelivr and GitLab; the debugger is built in (the IDE drives `chrome.debugger`
+itself: the same gutter and panel as with the debugger extension). The IDE's own test
+passes in it: `node tests/extension.js` (after `python3 build.py --extension`), and
+`tests/debugger.js` against its page. To come: the app in a window or a tab of its own.
