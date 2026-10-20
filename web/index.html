@@ -104,7 +104,7 @@
   .bp-bad { border: 1.5px solid #888; }
   /* the debugger: the line the app is stopped at, and the panel under the app */
   .cm-paused { background: #ffd70040; }
-  #debug { border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; display: flex; flex-direction: column; min-height: 0; }
+  #debug { border-top: 1px solid var(--line); background: var(--panel); font-size: 12px; display: flex; flex-direction: column; flex: none; }
   #debug[hidden] { display: none; }
   #debug .bar { display: flex; align-items: center; gap: 4px; padding: 3px 6px; }
   #debug .bar span { flex: 1; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -113,9 +113,16 @@
   #debug .bar button.icon:hover:not([disabled]) { background: var(--hover); border-color: var(--line); }
   #debug .bar #dbg-continue:not([disabled]) { color: #2e9e3e; }
   #debug .bar button[disabled] { opacity: 0.4; cursor: default; }
-  #debug .body { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--line); max-height: 40vh; min-height: 0; }
+  #debug .body { display: grid; grid-template-columns: var(--dbg-split, 50%) 5px 1fr; height: var(--dbg-height, 30vh); min-height: 0; }
   #debug .body[hidden] { display: none; }
-  #debug ol, #debug ul { margin: 0; padding: 4px 0; list-style: none; overflow: auto; background: var(--panel); font-family: ui-monospace, monospace; }
+  #debug .dpart { display: flex; flex-direction: column; min-height: 0; min-width: 0; background: var(--panel); }
+  #debug h3 { margin: 0; padding: 3px 8px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); border-bottom: 1px solid var(--line); }
+  #debug ol, #debug ul { margin: 0; padding: 4px 0; list-style: none; overflow: auto; flex: 1; background: var(--panel); font-family: ui-monospace, monospace; }
+  /* the panel's height (its top edge) and the lists' widths (the line between), dragged */
+  #debug .hsplit { height: 4px; margin-top: -2px; cursor: row-resize; }
+  #debug .vsplit { cursor: col-resize; background: var(--line); background-clip: content-box; padding: 0 2px; }
+  #debug .hsplit:hover, #debug .vsplit:hover { background-color: var(--accent); }
+  #debug .bar button.caret { font-size: 11px; width: 20px; justify-content: center; color: var(--muted); }
   #dbg-stack li { padding: 1px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #dbg-stack li.on { background: var(--hover); box-shadow: inset 2px 0 0 var(--accent); }
   #dbg-stack li .where { color: var(--muted); margin-left: 6px; }
@@ -276,7 +283,9 @@
   <section id="program-pane">
     <iframe id="run" title="the running program"></iframe>
     <div id="debug" hidden>
+      <div class="hsplit" id="dbg-height" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
       <div class="bar">
+        <button id="dbg-collapse" class="icon caret" title="Hide the call stack and variables" aria-expanded="true" aria-controls="dbg-body">▾</button>
         <span id="dbg-state">Debugger</span>
         <button id="dbg-continue" class="icon" title="Continue (F8)" aria-label="Continue"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3v10"/><path d="M6.5 3.2v9.6L13 8z" fill="currentColor" stroke="none"/></svg></button>
         <button id="dbg-pause" class="icon" title="Pause (F8)" aria-label="Pause"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5v9M10.5 3.5v9" stroke-width="2.2"/></svg></button>
@@ -284,9 +293,10 @@
         <button id="dbg-into" class="icon" title="Step into (F11)" aria-label="Step into"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v7"/><path d="M5 5.8 8 8.8l3-3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
         <button id="dbg-out" class="icon" title="Step out (Shift+F11)" aria-label="Step out"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9V2"/><path d="M5 4.8 8 1.8l3 3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
       </div>
-      <div class="body" hidden>
-        <ol id="dbg-stack" aria-label="Call stack"></ol>
-        <ul id="dbg-vars" aria-label="Variables"></ul>
+      <div class="body" id="dbg-body" hidden>
+        <div class="dpart"><h3 id="dbg-stack-h">Call stack</h3><ol id="dbg-stack" aria-labelledby="dbg-stack-h"></ol></div>
+        <div class="vsplit" id="dbg-split" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
+        <div class="dpart"><h3 id="dbg-vars-h">Variables</h3><ul id="dbg-vars" aria-labelledby="dbg-vars-h"></ul></div>
       </div>
     </div>
   </section>
@@ -2018,7 +2028,11 @@ function dbgResumed() {
 // the panel: shown with the extension; its buttons by state
 function dbgShow() {
   $("debug").hidden = !dbg.present;
-  $("debug").querySelector(".body").hidden = !dbg.paused;
+  $("debug").querySelector(".body").hidden = !dbg.paused || dbgLayout.collapsed;
+  $("dbg-height").hidden = !dbg.paused || dbgLayout.collapsed;
+  $("dbg-collapse").textContent = dbgLayout.collapsed ? "▸" : "▾";
+  $("dbg-collapse").setAttribute("aria-expanded", String(!dbgLayout.collapsed));
+  $("dbg-collapse").title = dbgLayout.collapsed ? "Show the call stack and variables" : "Hide the call stack and variables";
   const stopped = !!dbg.paused, on = dbg.attached && !!dbg.session;
   $("dbg-continue").disabled = !stopped;
   $("dbg-pause").disabled = stopped;
@@ -2027,6 +2041,37 @@ function dbgShow() {
     : stopped ? "Stopped" + (dbg.at ? " at " + dbg.at : "") : on ? "Debugging" : "Debugger: set a breakpoint (F9) or Pause";
   for (const id of ["bp-toggle", "bp-clear"]) $(id).hidden = !dbg.present;
 }
+// the panel's layout, kept per browser: its lists' height, the stack's share of the width,
+// and whether the lists are folded away
+const DBG_LAYOUT = "webide-hx-debug-layout";
+const dbgLayout = (() => { try { return Object.assign({ height: null, split: null, collapsed: false }, JSON.parse(localStorage.getItem(DBG_LAYOUT))); } catch (e) { return { height: null, split: null, collapsed: false }; } })();
+function dbgApplyLayout() {
+  const d = $("debug");
+  if (dbgLayout.height) d.style.setProperty("--dbg-height", dbgLayout.height + "px"); else d.style.removeProperty("--dbg-height");
+  if (dbgLayout.split) d.style.setProperty("--dbg-split", dbgLayout.split + "%"); else d.style.removeProperty("--dbg-split");
+}
+const saveDbgLayout = () => { try { localStorage.setItem(DBG_LAYOUT, JSON.stringify(dbgLayout)); } catch (e) {} };
+// a drag on a separator: the pointer captured (so the app's frame doesn't take it)
+function dbgDrag(handle, move) {
+  handle.addEventListener("pointerdown", (e) => {
+    e.preventDefault();
+    handle.setPointerCapture(e.pointerId);
+    const onMove = (ev) => { move(ev); dbgApplyLayout(); };
+    const done = () => { handle.removeEventListener("pointermove", onMove); handle.removeEventListener("pointerup", done); saveDbgLayout(); };
+    handle.addEventListener("pointermove", onMove);
+    handle.addEventListener("pointerup", done);
+  });
+}
+dbgDrag($("dbg-height"), (e) => {
+  const body = $("dbg-body").getBoundingClientRect(), pane = $("program-pane").getBoundingClientRect();
+  dbgLayout.height = Math.round(Math.min(Math.max(body.bottom - e.clientY, 60), pane.height - 80));
+});
+dbgDrag($("dbg-split"), (e) => {
+  const body = $("dbg-body").getBoundingClientRect();
+  dbgLayout.split = Math.round(Math.min(Math.max((e.clientX - body.left) / body.width * 100, 15), 85));
+});
+$("dbg-collapse").onclick = () => { dbgLayout.collapsed = !dbgLayout.collapsed; saveDbgLayout(); dbgShow(); };
+dbgApplyLayout();
 const dbgDo = (method) => () => attempt(async () => {
   if (method === "Debugger.pause") { dbg.pauseAsked = true; await dbgSync(); }
   if (!dbg.session) return;

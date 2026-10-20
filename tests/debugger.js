@@ -60,6 +60,11 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   step("a class's statics in the variables (Closure > Hello > ticks)", statics.length === 1, statics);
   var ticks = await ev("(async () => (await dbgSend('Debugger.evaluateOnCallFrame', { callFrameId: dbg.paused.callFrames[0].callFrameId, expression: 'Hello.ticks', returnByValue: true })).result.value)()");
   step("an expression in the stopped frame (Hello.ticks)", typeof ticks === "number", ticks);
+  step("the lists have headers", await ev("$('dbg-stack-h').textContent === 'Call stack' && $('dbg-vars-h').textContent === 'Variables' && !$('dbg-body').hidden"));
+  var folded = await ev("(() => { $('dbg-collapse').click(); const hid = $('dbg-body').hidden; $('dbg-collapse').click(); return hid && !$('dbg-body').hidden && JSON.parse(localStorage.getItem('webide-hx-debug-layout')).collapsed === false; })()");
+  step("the caret folds the lists away, and back", folded);
+  var sized = await ev("(() => { dbgLayout.height = 150; dbgLayout.split = 30; dbgApplyLayout(); const b = $('dbg-body').getBoundingClientRect(), s = $('dbg-stack').parentNode.getBoundingClientRect(); const got = { height: Math.round(b.height), share: Math.round(s.width / b.width * 100) }; dbgLayout.height = null; dbgLayout.split = null; dbgApplyLayout(); return got; })()");
+  step("their height and widths can be set (the dragged separators)", sized.height === 150 && Math.abs(sized.share - 30) <= 2, sized);
   var t = await ev("(async () => { const t0 = performance.now(); await new Promise((r) => setTimeout(r, 50)); return Math.round(performance.now() - t0); })()");
   step("the IDE goes on while the app is stopped", t < 500, t + " ms for a 50 ms timer");
 
