@@ -1266,10 +1266,12 @@ function typeText(t) {
       return t.kind;
   }
 }
-// an item of a completion or a hover: its name, kind (CodeMirror's), type and documentation
+// an item of a completion or a hover: its name, kind (CodeMirror's), type and documentation.
+// A path's name: a type's, a module's (import haxe.Json), or a package's last part (import haxe.ds)
+const pathName = (p) => p.typeName || p.moduleName || (p.pack && p.pack[p.pack.length - 1]);
 function itemParts(item) {
   const a = item.args || {}, field = a.field;
-  const name = typeof a === "string" ? a : field ? field.name : a.name !== undefined ? (typeof a.name === "string" ? a.name : a.name.name) : a.path ? a.path.typeName : item.kind;
+  const name = typeof a === "string" ? a : field ? field.name : a.name !== undefined ? (typeof a.name === "string" ? a.name : a.name.name) : a.path ? pathName(a.path) : item.kind;
   const type = field ? field.type : a.type;
   const kinds = { ClassField: "property", EnumField: "enum", EnumAbstractField: "enum", Type: "class", Package: "namespace", Module: "namespace",
                   Local: "variable", Keyword: "keyword", Literal: "constant", Metadata: "keyword", TypeParameter: "type", StaticExtension: "method" };
@@ -3660,6 +3662,12 @@ async function test() {
   const offered = await until(() => { const c = CM.currentCompletions(view.state); return c.length ? c.map((o) => o.label) : null; }, 10000);
   step("completion after Std. offers its fields, from the compiler", offered && offered.includes("parseInt") && offered.includes("string"), offered && offered.slice(0, 8));
   view.dispatch({ changes: { from: at0, to: at0 + 5, insert: "" } });
+  // after import haxe.: its packages and modules (a library's are found the same way, by its class path)
+  view.dispatch({ changes: { from: 0, insert: "import haxe.\n" }, selection: { anchor: "import haxe.".length } });
+  CM.startCompletion(view);
+  const imports = await until(() => { const c = CM.currentCompletions(view.state); return c.length ? c.map((o) => o.label) : null; }, 10000);
+  step("completion after import haxe. offers its packages and modules", imports && imports.includes("ds") && imports.includes("Json"), imports && imports.slice(0, 8));
+  view.dispatch({ changes: { from: 0, to: "import haxe.\n".length, insert: "" } });
   const ticksAt = view.state.doc.toString().indexOf("ticks++;") + 2;
   const hover = await askCompiler("display/hover", { file: "/static/src/Hello.hx", offset: codeOffset(view.state.doc, ticksAt) });
   const hp = hover && hover.item ? itemParts(hover.item) : null;
