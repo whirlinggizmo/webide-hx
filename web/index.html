@@ -1857,7 +1857,7 @@ function busy(label, kind) {
     const ms = performance.now() - a.t0;
     if (ms < BUSY_AFTER) return;
     document.body.classList.add("busy");
-    status(`${label}… ${(ms / 1000).toFixed(1)} s` + (a.files ? ` · ${a.files} library files read` : ""));
+    status(`${label}… ${(ms / 1000).toFixed(1)} s` + (a.files ? ` · library files: ${a.files}` : ""));
     const last = lastBuilds[kind];
     $("progress").classList.toggle("guess", !last);
     if (last) $("progress").firstChild.style.width = 100 * Math.min(0.95, Math.max(ms / last.ms, last.files ? a.files / last.files : 0)) + "%";
@@ -1911,13 +1911,13 @@ async function build() {
   if (cfg.error || libError) {
     const e = cfg.error || libError;
     showDiagnostics(new Map([[e.file, [{ line: e.line, from: null, to: null, lastLine: null, severity: "error", message: e.message }]]]));
-    status(`Build failed: ${e.file} not supported here`);
+    status(`Build failed · ${e.file}:${e.line} · running app unchanged`);
     out(`${e.file}:${e.line}: ${e.message}`);
     return { ok: false, r: { code: 1, stderr: `${e.file}:${e.line}: ${e.message}`, stdout: "", ms: 0 } };
   }
   const args = buildArgs(version > 0);
   // a first build starts the compiler and reads the library; after it, a whole build or a reload's
-  const done = busy(compilerUp ? "Building" : "Starting compiler and building", !compilerUp ? "first" : version > 0 ? "reload" : "whole");
+  const done = busy(compilerUp ? "Building" : "Starting compiler · building", !compilerUp ? "first" : version > 0 ? "reload" : "whole");
   status("Building…");
   const r = await compile(args, sources, outPath(cfg));
   done();
@@ -1925,7 +1925,7 @@ async function build() {
   const messages = parseMessages(r.stderr);
   showDiagnostics(messages.byFile);
   if (r.code !== 0 || !r.output) {
-    status("Build failed · app keeps the last build");
+    status("Build failed · running app unchanged");
     out((r.stderr || r.stdout || "no output").trim());
     return { ok: false, r };
   }
@@ -1958,7 +1958,7 @@ async function save() {
   if (isCode(current)) return build();
   await tellAssets({ [current]: files[current] }, true);
   if (builds(current)) return build();
-  status(`${current} saved · reloaded by the app`);
+  status(`${current} saved · app reloaded`);
   return { ok: true };
 }
 
@@ -2981,10 +2981,10 @@ async function startProgram() {
   showView();
   if (!first.ok) return first;
   // a reload's build has its own defines, so its own cache: make it now, not at the first save
-  const done = busy("Build 1 running · warming compiler for reloads", "warm");
+  const done = busy("Build 1 running · preparing reloads", "warm");
   const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
   done();
-  status(`Build 1 running · compiler warm (${Math.round(warm.ms)} ms)`);
+  status(`Build 1 running · reloads ready (${Math.round(warm.ms)} ms)`);
   return first;
 }
 // the page's files become `loaded` (project.load()'s): the tree and the editor
@@ -4569,8 +4569,8 @@ async function test() {
 }
 
 (async function () {
-  if (!("serviceWorker" in navigator)) { status("this page needs service workers (and http://localhost or https)"); return; }
-  if (!("indexedDB" in window)) { status("this page needs IndexedDB"); return; }
+  if (!("serviceWorker" in navigator)) { status("Service workers unavailable (require https or http://localhost)"); return; }
+  if (!("indexedDB" in window)) { status("IndexedDB unavailable"); return; }
   applyPrefs(); // the page's theme, before anything shows
   [CM, FS] = await Promise.all([import("./vendor/codemirror.js"), import("./vendor/fs.js")]);
   breakpointSetup();
@@ -4596,12 +4596,12 @@ async function test() {
   // take a moment to take over)
   view = new CM.EditorView({ parent: $("editor") });
   showProject(loaded);
-  status("starting the app's runner");
+  status("Starting app runner…");
   await connectRunner();
   await tell({ type: "reset" });
   const first = await startProgram();
   if (dbg.present) { dbgShow(); dbgSync(); }
-  if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
+  if (loaded.skipped.length) out(`Excluded (over ${MAX_BYTES >> 20} MB): ${loaded.skipped.join(", ")}`);
   // a step that throws ends the test: the report says what ran, and the error
   if (TESTING && first.ok) test().catch((e) => {
     testReport.ok = false;

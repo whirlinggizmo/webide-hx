@@ -183,11 +183,11 @@ async function handle(msg) {
     r = request(msg.args);
     r.output = null;
     if (msg.type === "build" && r.code === 0 && msg.output) {
-      try { r.output = fromBytes(globalThis.hx_read_file(msg.output)); } catch (e) { r.code = 1; r.stderr += "\nno output: " + e.message; }
+      try { r.output = fromBytes(globalThis.hx_read_file(msg.output)); } catch (e) { r.code = 1; r.stderr += "\nNo output: " + e.message; }
     }
     if (startMs) { r.startMs = startMs; startMs = 0; }
   } catch (e) {
-    r = { code: -1, ms: 0, stdout: "", stderr: "exception: " + (e && e.message ? e.message : String(e)), output: null };
+    r = { code: -1, ms: 0, stdout: "", stderr: "Compiler exception: " + (e && e.message ? e.message : String(e)), output: null };
   }
   r.id = msg.id;
   postMessage(r);
