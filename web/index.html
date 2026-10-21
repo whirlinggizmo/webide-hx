@@ -127,6 +127,18 @@
   #tree .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
   /* the tree's context menu: where it was asked for; the row it's for, outlined meanwhile */
+  /* a list to pick from, over the editor: Go to symbol, Find references */
+  #picker { position: fixed; z-index: 20; display: flex; flex-direction: column; width: min(600px, calc(100vw - 32px)); max-height: 60vh;
+            background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); }
+  #picker[hidden] { display: none; }
+  #picker-title { padding: 6px 10px 0; font-size: 12px; color: var(--muted); }
+  #picker-filter { margin: 6px 8px; }
+  #picker-list { list-style: none; margin: 0; padding: 0 0 4px; overflow: auto; }
+  #picker-list li { display: flex; gap: 12px; align-items: baseline; padding: 3px 10px; cursor: pointer; white-space: nowrap; font-size: 13px; }
+  #picker-list li[aria-selected="true"] { background: var(--hover); }
+  #picker-list li code { overflow: hidden; text-overflow: ellipsis; }
+  #picker-list li .what { margin-left: auto; flex: none; color: var(--muted); font-size: 12px; }
+  #picker-list li.none { color: var(--muted); cursor: default; }
   #tree-menu { position: fixed; top: 0; left: 0; }
   #tree-menu:focus { outline: none; }
   #tree button.context { box-shadow: inset 0 0 0 1px var(--accent); }
@@ -225,6 +237,9 @@
         <button role="menuitem" id="replace">Replace…</button>
         <button role="menuitem" id="goto-line">Go to line…<kbd class="ctrlalt">Ctrl+Alt+G</kbd></button>
         <button role="menuitem" id="goto-definition">Go to definition<kbd class="ctrlalt">Ctrl+Alt+J</kbd></button>
+        <button role="menuitem" id="goto-symbol" title="The types and fields of this file, to pick one">Go to symbol…<kbd class="ctrlalt">Ctrl+Alt+O</kbd></button>
+        <button role="menuitem" id="find-references" title="Every use of what is at the cursor, in every file">Find references<kbd class="ctrlalt">Ctrl+Alt+R</kbd></button>
+        <button role="menuitem" id="rename-symbol" title="What is at the cursor, renamed everywhere it is used">Rename symbol…<kbd>F2</kbd></button>
         <hr role="separator">
         <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
         <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
@@ -313,6 +328,11 @@
     </div>
   </form>
 </dialog>
+<div id="picker" role="dialog" aria-labelledby="picker-title" hidden>
+  <div id="picker-title"></div>
+  <input id="picker-filter" autocomplete="off" spellcheck="false" placeholder="Filter" role="combobox" aria-expanded="true" aria-controls="picker-list" aria-labelledby="picker-title">
+  <ul id="picker-list" role="listbox" aria-labelledby="picker-title"></ul>
+</div>
 <div class="items" id="tree-menu" role="menu" aria-label="File and folder actions" tabindex="-1" hidden>
   <button role="menuitem" id="tm-new">New file…</button>
   <button role="menuitem" id="tm-new-folder">New folder…</button>
@@ -1325,6 +1345,10 @@ async function goToDefinition(fileName, view, pos) {
   const res = await askCompiler("display/definition", { file: compilerPath(fileName), offset: codeOffset(view.state.doc, pos) });
   const at = res && res[0];
   if (!at) { status("no definition found there"); return false; }
+  return goToPlace(at);
+}
+// a place of the compiler's ({file, range}): its file shown, the range selected
+async function goToPlace(at) {
   const line = at.range.start.line + 1;
   if (at.file.startsWith("/static/") && at.file.slice(8) in files) {
     const target = at.file.slice(8);
@@ -1399,6 +1423,236 @@ function leaveLibraryFile() {
   libraryView = null;
   $("viewing").hidden = true;
 }
+
+// ---- a list to pick from, over the editor (Go to symbol, Find references): typing filters
+// it, the arrows move in it, Enter or a click goes to the one picked, Escape goes back
+let picker = { items: [], shown: [], at: 0, go: null };
+function openPicker(title, items, go) {
+  picker = { items, shown: [], at: 0, go };
+  $("picker-title").textContent = title;
+  $("picker-filter").value = "";
+  const p = $("picker"), r = $("editor").getBoundingClientRect();
+  p.hidden = false;
+  p.style.top = Math.max(8, r.top + 8) + "px";
+  p.style.left = Math.max(8, r.left + (r.width - p.offsetWidth) / 2) + "px";
+  filterPicker();
+  $("picker-filter").focus();
+}
+function closePicker(back) {
+  if ($("picker").hidden) return;
+  $("picker").hidden = true;
+  picker.go = null;
+  if (back && view) view.focus();
+}
+function filterPicker() {
+  const q = $("picker-filter").value.trim().toLowerCase();
+  picker.shown = picker.items.filter((it) => !q || it.label.toLowerCase().includes(q) || (it.detail || "").toLowerCase().includes(q));
+  picker.at = 0;
+  $("picker-list").replaceChildren(...picker.shown.map((it, i) => {
+    const li = document.createElement("li"), name = document.createElement("code"), what = document.createElement("span");
+    li.setAttribute("role", "option");
+    li.id = "picker-" + i;
+    li.style.paddingLeft = 10 + 16 * (it.depth || 0) + "px";
+    name.textContent = it.label;
+    what.className = "what";
+    what.textContent = it.detail || "";
+    li.append(name, what);
+    li.onpointerdown = (e) => e.preventDefault(); // the filter keeps the focus
+    li.onclick = () => pickFromPicker(i);
+    return li;
+  }));
+  if (!picker.shown.length) {
+    const li = document.createElement("li");
+    li.className = "none";
+    li.textContent = "Nothing matches";
+    $("picker-list").append(li);
+  }
+  markPicker();
+}
+function markPicker() {
+  for (const li of $("picker-list").children) li.setAttribute("aria-selected", li.id === "picker-" + picker.at);
+  const li = $("picker-" + picker.at);
+  $("picker-filter").setAttribute("aria-activedescendant", li ? li.id : "");
+  if (li) li.scrollIntoView({ block: "nearest" });
+}
+function pickFromPicker(i) {
+  const it = picker.shown[i], go = picker.go;
+  if (!it || !go) return;
+  closePicker(false);
+  attempt(() => go(it));
+}
+$("picker-filter").oninput = filterPicker;
+$("picker-filter").onblur = () => closePicker(false);
+$("picker-filter").onkeydown = (e) => {
+  const last = picker.shown.length - 1;
+  if (e.key === "ArrowDown") picker.at = Math.min(last, picker.at + 1);
+  else if (e.key === "ArrowUp") picker.at = Math.max(0, picker.at - 1);
+  else if (e.key === "PageDown") picker.at = Math.min(last, picker.at + 10);
+  else if (e.key === "PageUp") picker.at = Math.max(0, picker.at - 10);
+  else if (e.key === "Enter") { e.preventDefault(); pickFromPicker(picker.at); return; }
+  else if (e.key === "Escape") { e.preventDefault(); closePicker(true); return; }
+  else return;
+  e.preventDefault();
+  markPicker();
+};
+
+// ---- Go to symbol: the file's types and fields (the compiler's module symbols, a legacy
+// --display mode: file@0@module-symbols), in the picker; locals are left out
+const SYMBOL_KINDS = [null, "class", "interface", "enum", "typedef", "abstract", "var", "property", "function", "constructor",
+                      "function", "var", "structure", "enum abstract", "operator", "enum value", "inline var", "module"];
+const TYPE_SYMBOLS = new Set([1, 2, 3, 4, 5, 12, 13]);
+async function fileSymbols(fileName) {
+  const cfg = buildConfig();
+  if (!compilerUp || cfg.error || (cfg.libs.length && !cfg.libDirs)) return null;
+  const file = compilerPath(fileName);
+  const r = await compile(buildArgs(true).concat(["--no-output", "--display", file + "@0@module-symbols"]), await codeSources(cfg), null);
+  const line = (r.stderr || "").split("\n").find((l) => l.startsWith("["));
+  try { const f = JSON.parse(line).find((x) => x.file === file); return f ? f.symbols : []; } catch (e) { return null; }
+}
+async function goToSymbol(fileName, v) {
+  const symbols = await fileSymbols(fileName);
+  if (!symbols) { status("the compiler could not list this file's symbols (after a first build, it can)"); return; }
+  const items = symbols.filter((s) => SYMBOL_KINDS[s.kind] && s.kind !== 10 && s.kind !== 11 && s.kind !== 17)
+    .map((s) => ({ label: s.name, detail: SYMBOL_KINDS[s.kind], depth: TYPE_SYMBOLS.has(s.kind) ? 0 : 1, range: s.range }));
+  if (!items.length) { status("no symbols in this file"); return; }
+  openPicker(`Symbols in ${baseOf(fileName)}`, items, (it) => {
+    // the declaration's range starts at its keyword (or its metadata): the name in it is selected
+    const doc = v.state.doc, from = docPos(doc, it.range.start), to = docPos(doc, it.range.end);
+    const m = new RegExp(`\\b${it.label}\\b`).exec(doc.sliceString(from, to));
+    const a = m ? from + m.index : from;
+    v.dispatch({ selection: { anchor: a, head: m ? a + it.label.length : a }, effects: CM.EditorView.scrollIntoView(a, { y: "center" }) });
+    v.focus();
+  });
+}
+
+// ---- Find references: the definition and every use of what's at the cursor, in the
+// picker, each with its line; the compiler finds them (display/references, all of the
+// class paths, typed where the name appears)
+// a {line, character} of the compiler's in a text (code points, as it counts): the index
+function textPos(text, at) {
+  let i = 0;
+  for (let l = 0; l < at.line; l++) { const n = text.indexOf("\n", i); if (n < 0) return text.length; i = n + 1; }
+  for (let c = 0; c < at.character && i < text.length && text[i] !== "\n"; c++) i += text.codePointAt(i) > 0xffff ? 2 : 1;
+  return i;
+}
+const placeName = (file) => file.startsWith("/static/") ? file.slice(8) : libraryLabel(file).replace(" · ", ": ");
+async function symbolPlaces(fileName, doc, pos) {
+  const params = { file: compilerPath(fileName), offset: codeOffset(doc, pos) };
+  const defs = (await askCompiler("display/definition", params)) || [];
+  const refs = (await askCompiler("display/references", params)) || [];
+  return { def: defs[0] || null, refs };
+}
+async function findReferences(fileName, v, pos) {
+  const { def, refs } = await symbolPlaces(fileName, v.state.doc, pos);
+  const seen = new Set(), places = [];
+  for (const p of (def ? [def] : []).concat(refs)) {
+    const key = p.file + ":" + p.range.start.line + ":" + p.range.start.character;
+    if (!seen.has(key)) { seen.add(key); places.push(p); }
+  }
+  if (!places.length) { status("no references found there"); return; }
+  const texts = new Map();
+  const textOf = async (file) => {
+    if (!texts.has(file)) texts.set(file, file.startsWith("/static/") && file.slice(8) in files ? files[file.slice(8)] : await libraryText(file));
+    return texts.get(file);
+  };
+  const items = [];
+  let name = null;
+  for (const p of places) {
+    const text = (await textOf(p.file)) || "", from = textPos(text, p.range.start), to = textPos(text, p.range.end);
+    const start = text.lastIndexOf("\n", from - 1) + 1, end = text.indexOf("\n", from);
+    if (p === def) name = text.slice(from, to);
+    items.push({ label: text.slice(start, end < 0 ? text.length : end).trim(), place: p,
+                 detail: `${placeName(p.file)}:${p.range.start.line + 1}` + (p === def ? " (definition)" : "") });
+  }
+  const uses = places.length - (def ? 1 : 0);
+  openPicker(`${uses} reference${uses === 1 ? "" : "s"}` + (name ? ` to ${name}` : ""), items, (it) => goToPlace(it.place));
+}
+
+// ---- Rename symbol: what's at the cursor, defined in the project, renamed at its
+// definition and every reference, in every file (each file's own undo takes it back). A
+// type that names its module renames its file too, and the imports of it (which the
+// compiler's references leave out) follow
+const HAXE_KEYWORDS = new Set(("abstract break case cast catch class continue default do dynamic else enum extends extern false final for function if " +
+  "implements import in inline interface macro new null operator overload override package private public return static super switch this throw " +
+  "true try typedef untyped using var while").split(" "));
+async function renameSymbol(fileName, v, pos) {
+  if (libraryView || current === null || !isCode(current)) throw new Error("only the project's own code can be renamed");
+  const { def, refs } = await symbolPlaces(fileName, v.state.doc, pos);
+  if (!def) { status("nothing to rename there"); return; }
+  if (!(def.file.startsWith("/static/") && def.file.slice(8) in files))
+    throw new Error(`that is defined in ${placeName(def.file)}: only the project's own code can be renamed`);
+  const textOf = (name) => name === current ? view.state.doc.toString() : files[name];
+  const defFile = def.file.slice(8), defText = textOf(defFile);
+  const defAt = textPos(defText, def.range.start), old = defText.slice(defAt, textPos(defText, def.range.end));
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(old)) throw new Error(`${old} cannot be renamed here`);
+  // a type: its module's own (its file's name), or another in the module
+  const lineStart = defText.lastIndexOf("\n", defAt - 1) + 1;
+  const isType = /\b(class|interface|enum|typedef|abstract)\s+$/.test(defText.slice(lineStart, defAt));
+  const moduleName = baseOf(defFile).replace(/\.hx$/, ""), ownModule = isType && moduleName === old;
+  // by file, the start of each name to change (a qualified use, game.Thing, changes its last part)
+  const edits = new Map(), wrong = [];
+  const add = (name, at) => { if (!edits.has(name)) edits.set(name, new Set()); edits.get(name).add(at); };
+  for (const p of [def].concat(refs)) {
+    if (!p.file.startsWith("/static/") || !(p.file.slice(8) in files)) continue;
+    const name = p.file.slice(8), text = textOf(name), from = textPos(text, p.range.start), to = textPos(text, p.range.end);
+    const said = text.slice(from, to);
+    if (said === old) add(name, from);
+    else if (said.endsWith("." + old)) add(name, to - old.length);
+    else wrong.push(`${name}:${p.range.start.line + 1} (${said})`);
+  }
+  if (wrong.length) throw new Error(`the compiler's places for ${old} are not all ${old} (${wrong.join(", ")}): nothing was renamed`);
+  // a type's imports and usings: pack.Thing, pack.Thing.Sub (pack.Module.Thing, for another type in a module)
+  if (isType) {
+    const pack = packageOf(defFile), path = [pack, ownModule ? null : moduleName, old].filter((x) => x).join(".");
+    const re = new RegExp(`^([ \\t]*(?:import|using)[ \\t]+)${path.replace(/\./g, "\\.")}(?=[.;\\s])`, "gm");
+    for (const name of names().filter(isCode)) {
+      const text = textOf(name);
+      for (const m of text.matchAll(re)) add(name, m.index + m[0].length - old.length);
+    }
+  }
+  const count = [...edits.values()].reduce((n, s) => n + s.size, 0), where = [...edits.keys()];
+  // the name elsewhere in those files, left as it is: a comment, a string, another symbol, or
+  // code this build doesn't compile (#if sys...: the compiler sees only the build's code), said
+  const others = [];
+  for (const name of where) {
+    const text = textOf(name), mine = edits.get(name);
+    for (const m of text.matchAll(new RegExp(`\\b${old}\\b`, "g"))) if (!mine.has(m.index)) others.push(`${name}:${text.slice(0, m.index).split("\n").length}`);
+  }
+  const newPath = (n) => (parentOf(defFile) ? parentOf(defFile) + "/" : "") + n + ".hx";
+  const answer = await askPerson({
+    title: `Rename ${old}`, value: old, ok: "Rename",
+    text: `${count} place${count === 1 ? "" : "s"} in ${where.length === 1 ? where[0] : where.length + " files"}.` +
+          (ownModule ? ` The file ${defFile} is renamed with it.` : "") +
+          (others.length ? ` Left as ${others.length === 1 ? "it is" : "they are"}, since the compiler did not find ${others.length === 1 ? "it" : "them"} in this build's code` +
+                           ` (a comment, a string, another ${old}, or code for another target): ${others.slice(0, 4).join(", ")}${others.length > 4 ? ` and ${others.length - 4} more` : ""}.` : ""),
+    check: (n) => n === old ? "That is its name already." : !/^[A-Za-z_][A-Za-z0-9_]*$/.test(n) ? "Not a Haxe name: letters, digits and _, not starting with a digit."
+      : HAXE_KEYWORDS.has(n) ? `${n} is a Haxe keyword.` : isType && !/^[A-Z]/.test(n) ? "A type's name starts with a capital letter."
+      : ownModule ? nameProblem(newPath(n)) : null,
+  });
+  if (!answer) return;
+  await flushWrites();
+  for (const [name, starts] of edits) {
+    const changes = [...starts].sort((a, b) => a - b).map((from) => ({ from, to: from + old.length, insert: answer }));
+    if (name === current) { view.dispatch({ changes, userEvent: "rename" }); continue; } // its listener keeps it
+    // another file: through its editor state if it has one (its undo takes it back)
+    const st = states.get(name);
+    if (st && st.doc.toString() === files[name]) { states.set(name, st.update({ changes }).state); files[name] = states.get(name).doc.toString(); }
+    else {
+      states.delete(name);
+      let text = files[name];
+      for (const c of changes.reverse()) text = text.slice(0, c.from) + c.insert + text.slice(c.to);
+      files[name] = text;
+    }
+    saved[name] = files[name];
+    await project.put(name, files[name]);
+  }
+  const did = `${old} is now ${answer} in ${count} place${count === 1 ? "" : "s"}`;
+  let r;
+  if (ownModule) { await flushWrites(); r = await movePath(defFile, newPath(answer)); }
+  else r = await save();
+  status(`${did}; ` + $("status").textContent);
+  return r;
+}
 // signature help: typing "(" or "," in a call shows the function's parameters above the
 // cursor, the one being typed in bold, and its documentation; ")" or Escape closes it
 let signatureField = null, setSignature = null;
@@ -1468,7 +1722,9 @@ async function checkNow() {
 function haxeNavigation(fileName) {
   return [
     haxeHover(fileName),
-    CM.keymap.of([{ key: "Ctrl-Alt-j", preventDefault: true, run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } }]),
+    CM.keymap.of([{ key: "Ctrl-Alt-j", preventDefault: true, run: (v) => { goToDefinition(fileName, v, v.state.selection.main.head); return true; } },
+                  { key: "Ctrl-Alt-o", preventDefault: true, run: (v) => { attempt(() => goToSymbol(fileName, v)); return true; } },
+                  { key: "Ctrl-Alt-r", preventDefault: true, run: (v) => { attempt(() => findReferences(fileName, v, v.state.selection.main.head)); return true; } }]),
     CM.EditorView.domEventHandlers({
       mousedown(e, v) {
         if (!(e.ctrlKey || e.metaKey) || e.button !== 0) return false;
@@ -1497,6 +1753,7 @@ function haxeIntelligence(fileName) {
     haxeNavigation(fileName),
     CM.keymap.of([
       { key: "Escape", run: (v) => { if (!v.state.field(signatureField, false)) return false; v.dispatch({ effects: setSignature.of(null) }); return true; } },
+      { key: "F2", preventDefault: true, run: (v) => { attempt(() => renameSymbol(fileName, v, v.state.selection.main.head)); return true; } },
     ]),
   ];
 }
@@ -2901,6 +3158,9 @@ editCommand("find", (v) => CM.openSearchPanel(v));
 editCommand("replace", (v) => { CM.openSearchPanel(v); const r = v.dom.querySelector(".cm-search [name=replace]"); if (r) r.focus(); });
 editCommand("goto-line", (v) => CM.gotoLine(v));
 editCommand("goto-definition", (v) => goToDefinition(libraryView ? libraryView.path : current, v, v.state.selection.main.head));
+editCommand("goto-symbol", (v) => goToSymbol(libraryView ? libraryView.path : current, v));
+editCommand("find-references", (v) => findReferences(libraryView ? libraryView.path : current, v, v.state.selection.main.head));
+editCommand("rename-symbol", (v) => renameSymbol(current, v, v.state.selection.main.head));
 editCommand("comment", (v) => CM.toggleComment(v));
 editCommand("indent", (v) => CM.indentMore(v));
 editCommand("outdent", (v) => CM.indentLess(v));
@@ -3740,6 +4000,73 @@ async function test() {
   files["src/Hello.hx"] = files["src/Hello.hx"].replace(' say(util.Welcome.greet("gone"));', "");
   const back = await save();
   step("and builds again without it", back.ok, back.ok ? null : back.r.stderr);
+
+  // ---- Go to symbol, Find references, Rename symbol
+  const pickerSays = (sel) => [...document.querySelectorAll("#picker-list li " + sel)].map((e) => e.textContent);
+  const selected = () => view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to);
+  show("src/Hello.hx");
+  await goToSymbol("src/Hello.hx", view);
+  const symbols = pickerSays("code");
+  step("Go to symbol: the file's types and fields, not its locals", !$("picker").hidden && symbols[0] === "Hello" && symbols.includes("onTick") && !symbols.includes("paths"), symbols.slice(0, 8));
+  $("picker-filter").value = "onti";
+  $("picker-filter").dispatchEvent(new Event("input"));
+  $("picker-filter").dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
+  step("typing filters it; Enter goes to the name", $("picker").hidden && selected() === "onTick" && /function onTick/.test(view.state.doc.lineAt(view.state.selection.main.from).text), selected());
+  const tickLine = files["src/Hello.hx"].slice(0, files["src/Hello.hx"].indexOf("function onTick")).split("\n").length;
+  show("src/Main.hx");
+  await findReferences("src/Main.hx", view, files["src/Main.hx"].indexOf("Hello.onTick") + 8);
+  const refsSaid = pickerSays(".what");
+  step("Find references: the definition, then each use in every file (an #else branch's too)", $("picker-title").textContent === "2 references to onTick"
+       && refsSaid.length === 3 && refsSaid[0] === `src/Hello.hx:${tickLine} (definition)` && refsSaid.slice(1).every((r) => r.startsWith("src/Main.hx:")), [$("picker-title").textContent, refsSaid]);
+  document.querySelector("#picker-list li").click();
+  step("a click goes there", $("picker").hidden && current === "src/Hello.hx" && selected() === "onTick");
+  // a rename's dialog, answered
+  const answerRename = async (name) => {
+    if (!(await until(() => $("dialog").open && /^Rename /.test($("dialog-title").textContent), 10000))) return null;
+    const said = $("dialog-text").textContent;
+    $("dialog-input").value = name;
+    $("dialog-ok").click();
+    return said;
+  };
+  const helloWas = files["src/Hello.hx"], mainWas = files["src/Main.hx"];
+  const ticking = lastTicks(frameLog(), "Howdy again");
+  // from a use in Main: the compiler finds Main's #else use too (code of another target, in the file asked about)
+  show("src/Main.hx");
+  const rt = renameSymbol("src/Main.hx", view, files["src/Main.hx"].indexOf("Hello.onTick") + 8);
+  const rtSaid = await answerRename("onTock");
+  const rtr = await rt;
+  step("Rename symbol: the definition and every use, in every file; it builds", rtSaid === "3 places in 2 files." && rtr && rtr.ok
+       && !/onTick/.test(files["src/Hello.hx"] + files["src/Main.hx"]) && (files["src/Main.hx"].match(/Hello\.onTock\(\)/g) || []).length === 2, [rtSaid, rtr && rtr.ok]);
+  const ticked = await until(() => { const t = lastTicks(frameLog(), "Howdy again"); return t && ticking && t.ticks > ticking.ticks + 2 ? t : null; }, 10000);
+  step("and the app goes on, calling it by its new name", ticked, ticked);
+  // from the definition: Main's #else use isn't this build's code, so it's said and left
+  show("src/Hello.hx");
+  const rb = renameSymbol("src/Hello.hx", view, files["src/Hello.hx"].indexOf("function onTock") + 10);
+  const rbSaid = await answerRename("onTick");
+  await rb;
+  const elseLine = mainWas.slice(0, mainWas.lastIndexOf("Hello.onTick")).split("\n").length;
+  step("from the definition: a use the build does not compile is named in the dialog, and left", /^2 places in 2 files\. Left as it is, .*: src\/Main\.hx:(\d+)\.$/.test(rbSaid || "")
+       && rbSaid.endsWith(`src/Main.hx:${elseLine}.`) && files["src/Hello.hx"] === helloWas && files["src/Main.hx"] === mainWas.replace(/Hello\.onTick\(\);(?![^]*Hello\.onTick)/, "Hello.onTock();"), rbSaid);
+  show("src/Main.hx");
+  files["src/Main.hx"] = mainWas;
+  await save();
+  // a class that names its module: its file and its imports too
+  await newFile("src/util/Thing.hx", "package util;\n\nclass Thing {\n\tpublic static function make():Thing\n\t\treturn new Thing();\n\n\tpublic function new() {}\n}\n");
+  show("src/Hello.hx");
+  files["src/Hello.hx"] = "import util.Thing;\n" + helloWas.replace('say("hello: reloaded ¡olé! ✓");', 'say("hello: reloaded ¡olé! ✓"); trace(Thing.make());');
+  const bt = await save();
+  const rc = renameSymbol("src/Hello.hx", view, files["src/Hello.hx"].indexOf("Thing.make") + 1);
+  const rcSaid = await answerRename("Gadget");
+  const rcr = await rc;
+  step("renaming a class renames its file, and imports of it follow", bt.ok && /^5 places in 2 files\. The file src\/util\/Thing\.hx is renamed with it\.$/.test(rcSaid || "")
+       && rcr && rcr.ok && "src/util/Gadget.hx" in files && !("src/util/Thing.hx" in files) && files["src/Hello.hx"].startsWith("import util.Gadget;\n")
+       && !/Thing/.test(files["src/Hello.hx"] + files["src/util/Gadget.hx"]), [rcSaid, rcr && rcr.ok, names().filter((n) => n.startsWith("src/util/"))]);
+  show("src/Hello.hx");
+  const stdName = await renameSymbol("src/Hello.hx", view, files["src/Hello.hx"].indexOf("text.trim()") + 6).then(() => null, (e) => e.message);
+  step("what the standard library defines is not renamed", /standard library.*only the project's own code/.test(stdName || "") && !$("dialog").open, stdName);
+  files["src/Hello.hx"] = helloWas;
+  await save();
+  await deleteFile("src/util/Gadget.hx");
 
   // ---- assets: a new one is served; a removed one isn't
   await newFile("assets/notes.txt", "a note");

@@ -347,7 +347,7 @@ isolation. On dev.whirlinggizmo.com, nginx writes it from the environment
 (`hosting/README.md`), and the app's site is run.whirlinggizmos.com: the same container
 under another name.
 
-## What the compiler knows: completion, hover, definition
+## What the compiler knows: completion, hover, definition, references, rename
 
 The IDE asks the compiler about the code as it's edited, with Haxe's display protocol (the
 same JSON requests editors make through haxe-language-server), sent to the resident
@@ -362,6 +362,15 @@ answers take tens of milliseconds:
   or Edit > Go to definition: the file at the declaration, centred. One in the standard
   library or a library opens read-only, with a bar saying which (its × goes back), and
   hover and go to definition work in it too.
+- **Go to symbol**: Ctrl+Alt+O, or Edit > Go to symbol…: the file's types and fields in a list
+  over the editor; typing filters it, Enter or a click goes to the name.
+- **Find references**: Ctrl+Alt+R, or Edit > Find references: the definition and every use of
+  what's at the cursor, in every file, each with its line, in the same list.
+- **Rename symbol**: F2, or Edit > Rename symbol…: what's at the cursor, if the project defines
+  it, at its definition and every use, in every file (each file's undo takes it back). A type
+  that names its module renames its file too, and the imports of it follow. The compiler
+  sees only the build's code, so a use inside `#if sys` (another target's code) can be
+  missed; the dialog names every other mention of the name in those files, left as it is.
 - **Signature help**: typing `(` or `,` in a call shows the function's parameters above the
   cursor, the one being typed highlighted; `)` or Escape closes it.
 - **Errors as you type**: a pause in typing (0.8 s) checks the code (a build with

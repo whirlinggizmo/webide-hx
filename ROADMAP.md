@@ -300,8 +300,12 @@ Two, for two kinds of use:
 - [x] The standard library in one download for the first build (web/std.json.gz, 0.5 MB,
       read from memory) instead of a request per file: the first build on dev went from
       ~23 s to ~3 s. 2026-10-19.
-- [ ] Outline, rename, find references (display/references, display/documentSymbols), the
-      same way.
+- [x] Go to symbol (the file's types and fields: the legacy `file@0@module-symbols`, as
+      Haxe 4.3 has no JSON method for it), Find references (display/references, with the
+      definition), Rename symbol (both, applied in every file; a module's type renames its
+      file, and imports follow, which the references leave out). The compiler sees only the
+      build's code: a use in another target's `#if` branch is found only from its own
+      file, so the rename's dialog names the mentions it leaves. 2026-10-21.
 - Not planned: porting `haxe-language-server` (vshaxe) to call the in-page compiler and
   connecting it with `@codemirror/lsp-client`. The direct route above does what the IDE
   needs; the port would matter only for its extras (code actions, formatting).
