@@ -11,9 +11,10 @@
 
 FROM ubuntu:24.04 AS build
 # xdot: opam checks system packages before it installs, and camlp5's build tool
-# (not-ocamlfind) lists it. Only this throwaway stage has it, not the image
+# (not-ocamlfind) lists it; ninja-build: binaryen-bin builds binaryen with it (the wasm
+# compiler's tools). Only this throwaway stage has them, not the image
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        build-essential cmake git curl ca-certificates unzip bzip2 m4 pkg-config patch rsync \
+        build-essential cmake ninja-build git curl ca-certificates unzip bzip2 m4 pkg-config patch rsync \
         libpcre2-dev zlib1g-dev python3 nodejs npm xdot \
     && rm -rf /var/lib/apt/lists/*
 # opam doesn't like running as root
