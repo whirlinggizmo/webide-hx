@@ -316,8 +316,15 @@ Two, for two kinds of use:
       compiler fails to start (the reason in the build's output). `?compiler=js|wasm`
       picks one. The Docker image builds it; nginx gzips the compilers (the .wasm to about
       a quarter). 2026-10-21.
-- [ ] Firefox: the wasm compiler is about half as fast as haxe.js there (BENCHMARKS.md).
-      Find out why (Firefox's Wasm GC, or something wasm_of_ocaml emits); Safari unmeasured.
+- [ ] Firefox: the wasm compiler is about half as fast as haxe.js there (BENCHMARKS.md);
+      Safari unmeasured. Profiled (Gecko profiler, 2026-10-21): about half the compiler's
+      time is in Firefox's runtime, not its code: throwing exceptions 18% (unwinding walks
+      the wasm frames one by one, so a throw costs more the deeper the stack; 3-4 times
+      V8's from 10 frames down, measured on its own), garbage collection 15% (mostly full
+      collections from the worker's idle-GC timer, which interrupts a running build), array
+      allocation through calls into C++ 7%. The newer exception instructions (Binaryen's
+      --translate-to-exnref on the module) don't help: the same in Brave, slower in Firefox.
+      Left to try: a report to Mozilla with the throw measurement.
 - [ ] The wasm compiler in the all-in-one extension (it uses haxe.js).
 
 ## 8. Hosting
