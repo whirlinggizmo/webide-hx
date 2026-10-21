@@ -231,6 +231,12 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   for (var w3 = 0; w3 < 60 && !added; w3++) { added = /format 3\.7\.0 added/.test(await ev("$('status').textContent")); if (!added) await sleep(250); }
   step("a release: lix's file written, -lib format in web-build.hxml, built", added && await ev("'haxe_libraries/format.hxml' in files && files['web-build.hxml'].split('\\n').includes('-lib format')"),
        await ev("$('status').textContent"));
+  var said = null;
+  for (var w5 = 0; w5 < 25 && !said; w5++) { said = await ev("$('dialog').open && /added/.test($('dialog-title').textContent) ? [$('dialog-title').textContent].concat([...$('dialog-list').children].map((li) => li.textContent)) : null"); if (!said) await sleep(200); }
+  step("and a dialog says so: source, files and size, what was written, the build", said && said[0] === "format 3.7.0 added"
+       && /^Source: /.test(said[1]) && /^Files: \d+, \d/.test(said[2]) && said[3] === "Written: haxe_libraries/format.hxml"
+       && said[4] === "Build file: -lib format in web-build.hxml" && said[said.length - 1] === "Build: succeeded" && !(await ev("$('dialog-cancel').hidden === false")), said);
+  await key("Enter");
   var shown = false;
   for (var w4 = 0; w4 < 25 && !shown; w4++) { shown = await ev("$('libs').open && /format 3\\.7\\.0/.test($('libs-cached').textContent)"); if (!shown) await sleep(200); }
   step("and Libraries… shows again, the library in its cached list", shown);
