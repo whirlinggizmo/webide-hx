@@ -317,7 +317,7 @@ Where from:
 | Source | How |
 |---|---|
 | `haxelib:/name#1.2.3`, `-lib name:1.2.3` | haxelib-files.haxe.org, if it ever lets pages read it (HaxeFoundation/haxelib#693); else this site's `haxelib/` relay (`serve.py`, or the mirror in `hosting/`); else a zip you download from lib.haxe.org and add with Project > Libraries… > Add library zip… |
-| `gh://github.com/owner/repo#commit` | jsDelivr, file by file: works on any hosting (Add library… takes only the library's part of the repository: its class path, haxelib.json and extraParams.hxml); the all-in-one extension gets GitHub's zip in one request |
+| `gh://github.com/owner/repo#commit` | jsDelivr, file by file, or GitHub itself when jsDelivr fails or takes over 10 s (its tree API for the list, raw.githubusercontent.com for the files): works on any hosting (Add library… takes only the library's part of the repository: its class path, haxelib.json and extraParams.hxml); the all-in-one extension gets GitHub's zip in one request |
 | `gitlab://gitlab.com/owner/repo#ref` | GitLab's archive |
 | `https://…` | a zip, as it is |
 

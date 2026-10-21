@@ -922,7 +922,7 @@ function parseHxml(file) {
         } else if (IN_EXTENSION) {
           // its newest release, asked of haxelib when the libraries are prepared
           cfg.libs.push({ name, unpinned: true, at: here, haxelib: true });
-        } else fail(here, `-lib ${name}: which version? Pin one (-lib ${name}:1.2.3), or add lix's haxe_libraries/${name}.hxml (Project > Libraries… > Add library…)`);
+        } else fail(here, `-lib ${name}: which version? The page needs one: pin a haxelib release (-lib ${name}:1.2.3), or add the library with Project > Libraries… > Add library… (a haxelib release, or a GitHub repository), which writes lix's haxe_libraries/${name}.hxml`);
       }
       else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
       else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: the page builds JavaScript (--js)`);
@@ -1008,8 +1008,9 @@ function zipFiles(bytes, haxelib) {
   for (const n of names) if (n.startsWith(root)) out[n.slice(root.length)] = entries[n];
   return out;
 }
-async function fetchBytes(url) {
-  const r = await fetch(url);
+async function fetchBytes(url, opts) {
+  // a refusal without CORS headers (a server that's down answers so) is only "Failed to fetch": said as what it is
+  const r = await fetch(url, opts).catch(() => { throw new Error(`${new URL(url).host} did not answer (${url}): it may be down, or it refused this page`); });
   if (!r.ok) throw new Error(`${url}: HTTP ${r.status}`);
   return new Uint8Array(await r.arrayBuffer());
 }
@@ -1120,24 +1121,42 @@ async function downloadLibrary(lib) {
       } else files = all;
       from = `GitHub (${owner}/${repo}@${ref})`;
     } else {
-      // a web page: jsDelivr, file by file (GitHub's zips can't be read by a page)
-      const listing = await (await fetch(`https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${ref}?structure=flat`)).json().catch(() => null);
-      if (!listing || !listing.files) throw new LibraryError(`${lib.name}: jsDelivr has no ${owner}/${repo} at ${ref}`, lib.at);
-      const fetchOne = (name) => fetchBytes(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${name}`);
-      let wanted = listing.files.filter((f) => f.size <= 4 << 20);
+      // a web page: file by file (GitHub's zips can't be read by a page), from jsDelivr; when
+      // it fails (its GitHub side can be down while the rest of it works, and then it hangs
+      // for minutes: it gets JSD_WAIT ms), from GitHub itself: the list from its tree API, the
+      // files from raw.githubusercontent.com (the first file jsDelivr fails on sends the rest there)
+      const JSD_WAIT = 10000;
+      const json = (url, opts) => fetch(url, opts).then((r) => r.ok ? r.json() : null, () => null).catch(() => null);
+      const jsd = await json(`https://data.jsdelivr.com/v1/packages/gh/${owner}/${repo}@${ref}?structure=flat`, { signal: AbortSignal.timeout(JSD_WAIT) });
+      let list = jsd && jsd.files ? jsd.files.map((f) => ({ name: f.name.slice(1), size: f.size })) : null;
+      if (!list) {
+        const tree = await json(`https://api.github.com/repos/${owner}/${repo}/git/trees/${ref}?recursive=1`);
+        if (tree && tree.tree) list = tree.tree.filter((e) => e.type === "blob").map((e) => ({ name: e.path, size: e.size }));
+      }
+      if (!list) throw new LibraryError(`${lib.name}: neither jsDelivr nor GitHub could list ${owner}/${repo} at ${ref.slice(0, 7)} (both may be down, or GitHub's hourly limit for this address was reached)`, lib.at);
+      let viaGitHub = false;
+      const path = (name) => name.split("/").map(encodeURIComponent).join("/");
+      const fetchOne = async (name) => {
+        if (!viaGitHub) {
+          try { return await fetchBytes(`https://cdn.jsdelivr.net/gh/${owner}/${repo}@${ref}/${path(name)}`, { signal: AbortSignal.timeout(JSD_WAIT) }); }
+          catch (e) { viaGitHub = true; }
+        }
+        return fetchBytes(`https://raw.githubusercontent.com/${owner}/${repo}/${ref}/${path(name)}`);
+      };
+      let wanted = list.filter((f) => f.size <= 4 << 20);
       if (lib.part) {
-        const at = lib.sub ? lib.sub + "/" : "", names = wanted.map((f) => f.name.slice(1));
-        const json = names.includes(at + "haxelib.json") ? new TextDecoder().decode(await fetchOne(at + "haxelib.json")) : null;
-        part = partOf(names, json);
-        wanted = wanted.filter((f) => part.keep(f.name.slice(1)));
+        const at = lib.sub ? lib.sub + "/" : "", names = wanted.map((f) => f.name);
+        const meta = names.includes(at + "haxelib.json") ? new TextDecoder().decode(await fetchOne(at + "haxelib.json")) : null;
+        part = partOf(names, meta);
+        wanted = wanted.filter((f) => part.keep(f.name));
       }
       for (let i = 0; i < wanted.length; i += 8)
         await Promise.all(wanted.slice(i, i + 8).map(async (f) => {
-          // jsDelivr won't serve some kinds of file (a .bat, say): fine, unless the compiler needs it
-          try { files[f.name.slice(1)] = await fetchOne(f.name.slice(1)); }
+          // a file that can't be had (jsDelivr won't serve a .bat, say): fine, unless the compiler needs it
+          try { files[f.name] = await fetchOne(f.name); }
           catch (e) { if (/\.(hx|hxml|json)$/.test(f.name)) throw new LibraryError(`${lib.name}: ${e.message}`, lib.at); }
         }));
-      from = `jsDelivr (${owner}/${repo}@${ref})`;
+      from = `${viaGitHub ? "GitHub" : "jsDelivr"} (${owner}/${repo}@${ref})`;
     }
     const names = Object.keys(files).sort();
     return { files, hash: await sha256(names.flatMap((n) => [new TextEncoder().encode(n + "\0"), files[n]])), from, part: part && part.cp, guessed: !!part && !part.meta && !lib.sub && part.cp === "src" };
@@ -3545,7 +3564,14 @@ async function addLibraryAsked() {
     text: (IN_EXTENSION ? "A haxelib library as name (its newest release) or name:version (format:3.7.0)" : "A haxelib release as name:version (format:3.7.0)") + ", or a GitHub repository as https://github.com/owner/repo (#ref for a branch, a tag or a commit; none: its default branch). A name before or after the address gives the library that name, and a haxelib git command works as typed. Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
     value: "", ok: "Add", check: librarySpecProblem });
   if (!spec) return;
-  const added = await addLibrary(spec, (file) => askPerson({ title: `Replace ${file}?`, text: "The project has this library already. Its file is written again for the version asked for.", ok: "Replace" }));
+  let added;
+  try {
+    added = await addLibrary(spec, (file) => askPerson({ title: `Replace ${file}?`, text: "The project has this library already. Its file is written again for the version asked for.", ok: "Replace" }));
+  } catch (e) {
+    status(e.message);
+    await askPerson({ title: "The library was not added", text: e.message, ok: "OK" });
+    return;
+  }
   if (!added) return;
   if (cfg.file) await putFile(cfg.file, withLib(files[cfg.file], added.lib.name));
   const r = await build();
@@ -4176,7 +4202,18 @@ async function test() {
   step("-lib format with lix's haxe_libraries/format.hxml: the GitHub commit, through jsDelivr", lx.ok && lx2.ok && await libHas(`format/3.7.0/github/${sha}`)
        && await until(() => frameLog().includes("adler again true"), 15000), lx.ok ? (lx2.ok ? frameLog().split("\n").slice(-3) : lx2.r.stderr) : lx.r.stderr);
   const marker = JSON.parse(await libText(`format/3.7.0/github/${sha}`, ".webide-hx.json"));
-  step("and says where it came from (jsDelivr; the extension, GitHub's zip)", (IN_EXTENSION ? /^GitHub/ : /jsDelivr/).test(marker.from) && marker.files > 100, marker);
+  step("and says where it came from (jsDelivr, or GitHub when jsDelivr fails; the extension, GitHub's zip)", (IN_EXTENSION ? /^GitHub/ : /^(jsDelivr|GitHub) /).test(marker.from) && marker.files > 100, marker);
+  if (!IN_EXTENSION) {
+    // jsDelivr down (its GitHub side was, 2026-10-21, while its npm side answered): GitHub itself
+    const realFetch = window.fetch;
+    window.fetch = (url, ...rest) => /jsdelivr\./.test(String(url)) ? Promise.reject(new TypeError("Failed to fetch")) : realFetch(url, ...rest);
+    let down;
+    try { down = await downloadLibrary({ name: "format", source: `gh://github.com/HaxeFoundation/format#${sha}`, part: true, at: null }); }
+    catch (e) { down = { error: e.message }; }
+    finally { window.fetch = realFetch; }
+    step("with jsDelivr down: the list from GitHub's API, the files from raw.githubusercontent.com", down.from === `GitHub (HaxeFoundation/format@${sha})`
+         && !!down.files && "haxelib.json" in down.files && Object.keys(down.files).some((n) => n.startsWith("format/")), down.error || [down.from, down.files && Object.keys(down.files).length]);
+  }
   show("src/UsesFormat.hx");
   await goToDefinition("src/UsesFormat.hx", view, view.state.doc.toString().indexOf("Adler32()") + 2);
   step("go to definition into a library: its file, read-only", libraryView && libraryView.path.startsWith(`/libcache/format/3.7.0/github/${sha}/`)
