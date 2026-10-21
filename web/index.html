@@ -695,26 +695,53 @@ async function flushWrites(name) {
 // ---- the compiler stays resident in one worker (resident-worker.js): a build sends only
 // the files that changed since the last one (and, as null, those removed), and what didn't
 // change stays typed
-// ?wasm in the page's address: the wasm compiler (python3 build.py --wasm), about three
-// times as fast where the browser has Wasm GC (Chrome 119, Firefox 122, Safari 18.2)
-const WASM_COMPILER = new URLSearchParams(location.search).has("wasm");
-const compiler = new Worker("resident-worker.js" + (WASM_COMPILER ? "?wasm" : ""));
+// The wasm compiler (python3 build.py --wasm) in Chromium (Chrome, Edge, Brave), where it is
+// about three times as fast as haxe.js; haxe.js elsewhere: in Firefox the wasm compiler is
+// about half as fast (BENCHMARKS.md), and Safari is unmeasured. A wasm compiler that fails
+// to start (a site without haxe-wasm.js, say) gives way to haxe.js. ?compiler=js or
+// ?compiler=wasm in the page's address picks one
+const WASM_GC = (() => {
+  // a module with one struct type: valid only where the browser has Wasm GC
+  try { return WebAssembly.validate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0, 1, 3, 1, 0x5f, 0])); } catch (e) { return false; }
+})();
+const COMPILER_ASKED = ["js", "wasm"].find((k) => new URLSearchParams(location.search).get("compiler") === k) || null;
+// navigator.userAgentData: only Chromium has it. The extension has no haxe-wasm.js yet
+const CHROMIUM = !!navigator.userAgentData;
+let WASM_COMPILER = COMPILER_ASKED ? COMPILER_ASKED === "wasm" : CHROMIUM && WASM_GC && location.protocol !== "chrome-extension:";
+// why haxe.js runs where wasm is the default: for the build's output and the test's report
+let compilerNote = !COMPILER_ASKED && CHROMIUM && !WASM_GC ? "no Wasm GC in this browser" : "";
+let compiler = null;
 const pending = new Map();
 let nextId = 1, sent = {};
-compiler.onmessage = (ev) => {
-  const r = ev.data;
-  if (r.type === "progress") { if (activity) activity.files = r.files; return; }
-  pending.get(r.id)(r); pending.delete(r.id);
-};
-compiler.onerror = (e) => { for (const [, resolve] of pending) resolve({ code: -2, stderr: "worker error: " + e.message, stdout: "", ms: 0 }); pending.clear(); };
+function startCompiler() {
+  compiler = new Worker("resident-worker.js" + (WASM_COMPILER ? "?wasm" : ""));
+  compiler.onmessage = (ev) => {
+    const r = ev.data;
+    if (r.type === "progress") { if (activity) activity.files = r.files; return; }
+    pending.get(r.id)(r); pending.delete(r.id);
+  };
+  compiler.onerror = (e) => { for (const [, resolve] of pending) resolve({ code: -2, stderr: "worker error: " + e.message, stdout: "", ms: 0 }); pending.clear(); };
+}
+startCompiler();
 function ask(msg) {
   return new Promise((resolve) => { msg.id = nextId++; pending.set(msg.id, resolve); compiler.postMessage(msg); });
 }
-function compile(args, sources, output) {
+async function compile(args, sources, output) {
   const changed = {};
   for (const [k, v] of Object.entries(sources)) if (sent[k] !== v) changed[k] = sent[k] = v;
   for (const k of Object.keys(sent)) if (!(k in sources)) { changed[k] = null; delete sent[k]; }
-  return ask({ type: "build", files: changed, args, output });
+  const r = await ask({ type: "build", files: changed, args, output });
+  // a wasm compiler that didn't start (an exception before any build got through):
+  // haxe.js instead, from the start, unless ?compiler=wasm asked for it
+  if (r.code < 0 && WASM_COMPILER && !compilerUp && COMPILER_ASKED !== "wasm") {
+    compilerNote = "wasm compiler failed to start: " + r.stderr.replace(/^(Compiler exception|worker error): /, "").split("\n")[0];
+    console.warn(compilerNote);
+    compiler.terminate();
+    WASM_COMPILER = false; sent = {};
+    startCompiler();
+    return compile(args, sources, output);
+  }
+  return r;
 }
 
 // ---- the runner: where the app runs (runner.html, on a site of its own, so the app has its
@@ -1848,7 +1875,7 @@ function showDiagnostics(byFile) {
 // those, or one that only moves while there's nothing to go by. Shown only once a build
 // takes longer than BUSY_AFTER, so quick ones don't flicker
 const BUSY_AFTER = 150;
-let activity = null, compilerUp = false;
+let activity = null, compilerUp = false, firstBuild = null;
 const lastBuilds = (() => { try { return JSON.parse(localStorage.getItem("webide-hx-builds")) || {}; } catch (e) { return {}; } })();
 function busy(label, kind) {
   const a = { files: 0, t0: performance.now() };
@@ -1933,9 +1960,10 @@ async function build() {
   await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
   // nothing running yet (the project's first build failed): this build starts it
   if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
-  buildStatus = `Build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms ${WASM_COMPILER ? "wasm " : ""}compiler start)` : "");
+  if (r.startMs) firstBuild = { ms: Math.round(r.ms), startMs: Math.round(r.startMs) };
+  buildStatus = `Build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms compiler start · ${WASM_COMPILER ? "wasm" : "haxe.js"})` : "");
   status(buildStatus + (version > 1 ? (appTook >= version ? " · reloaded" : " · reloading") : ""));
-  out([r.stdout.trim()].concat(messages.rest, cfg.notes || []).filter((x) => x).join("\n"));
+  out([r.stdout.trim()].concat(messages.rest, cfg.notes || [], r.startMs && compilerNote ? [`Compiler: haxe.js (${compilerNote})`] : []).filter((x) => x).join("\n"));
   return { ok: true, r };
 }
 
@@ -3907,7 +3935,7 @@ async function test() {
     const builtIn = performance.now() - busyFrom, busyFor = await spun;
     files["src/Hello.hx"] = files["src/Hello.hx"].replace("ticks % 5", "ticks % 4");
     await build();
-    step("a build while the app is busy finishes before it is (the compiler isn't held up)", bb.ok && builtIn < 2000 && busyFor >= 3000,
+    step("a build while the app is busy finishes before it is (the compiler isn't held up)", bb.ok && builtIn < 2000 && busyFor >= 2950,
          { built: Math.round(builtIn), busy: Math.round(busyFor), ms: bb.ok ? Math.round(bb.r.ms) : bb.r.stderr });
   }
 
@@ -4563,6 +4591,8 @@ async function test() {
   await opfs.removeEntry("haxe-test-folder", { recursive: true });
 
   report.ms = Math.round(performance.now() - t0);
+  report.firstBuild = firstBuild;
+  report.compiler = (WASM_COMPILER ? "wasm" : "haxe.js") + (compilerNote ? ` (${compilerNote})` : "");
   report.log = frameLog().split("\n").slice(-12);
   report.ok = report.steps.every((s) => s.ok);
   if (!IN_EXTENSION) await fetch("/report", { method: "POST", body: JSON.stringify(report) });

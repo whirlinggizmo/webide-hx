@@ -62,22 +62,6 @@ CA, as mkcert makes). `web/haxe.js` and `web/std/` are generated (ignored
 by git); `python3 build.py --hotreload ../hotreload-hx` makes
 them, see below.
 
-## What was measured
-
-Both browsers on the development box, in a Web Worker, standard library fetched on
-demand, 2026-10-18:
-
-| build | Brave 155 | Firefox | native Haxe | std files fetched |
-|---|---|---|---|---|
-| hello world (one class) | 0.64s | 0.66s (1.07s cold) | 0.05s | 72 |
-| parity program + hotreload build macro | 1.82s | 1.89s | 0.20s | 152 |
-
-With the library embedded in the bundle instead (`--embed-std`) the compiles are about
-0.1 to 0.3 s faster and the bundle is 7.8 MB instead of 3.8 MB. Output is byte-identical
-to native Haxe's in both cases. Every compile is a cold start of the compiler (no
-compilation server), and macro code is an interpreter running inside an interpreter, so
-the gap is widest there.
-
 ## How it's built
 
 `build.py` does all of this into `build/`:
@@ -100,23 +84,22 @@ the gap is widest there.
    The branch also carries the fork's Windows build workflow. It still builds a native
    compiler, and Haxe's interpreter unit tests pass on it (10,899 assertions, with the
    utest commit 4.3.7's CI pins). Once a clone exists, each build fetches the branch again.
-3. **dune** builds `haxe.bc`, 41 MB of bytecode.
-4. **js_of_ocaml** compiles it to `web/haxe.js` (3.8 MB) with `stubs.js` linked in.
+3. **dune** builds `haxe.bc`, the compiler as OCaml bytecode.
+4. **js_of_ocaml** compiles it to `web/haxe.js` with `stubs.js` linked in.
    The JS-relevant standard library (the root classes plus `haxe/`, `js/`, `sys/` and
    `eval/`, 1297 files) is copied to `web/std/` with a `manifest.json` listing it; the
    bundle fetches a file the first time the compiler opens it (below). `--embed-std`
-   embeds it in the bundle instead (7.8 MB, no server needed for it). `--embed SRC:DEST`
+   embeds it in the bundle instead (twice the size, no server needed for it). `--embed SRC:DEST`
    embeds other files; `--hotreload DIR` embeds hotreload-hx at `/lib/hotreload` for the
    page's parity test.
 
 `python3 build.py --wasm` also builds the compiler as WebAssembly, `web/haxe-wasm.js` and
-its `.wasm` (5.1 MB, 1.3 MB gzipped), with wasm_of_ocaml over the same bytecode (about 20
-seconds). The page uses it with `?wasm` in its address (`tests/page.py brave --wasm` runs
-the page's test with it); it needs Wasm GC, tail calls and exception handling (Chrome 119,
-Firefox 122, Safari 18.2). Measured in Brave on the example: the first build 0.43-0.57 s
-against `haxe.js`'s 1.6-1.7 s, a reload's build 32-45 ms against 75-118 ms; in node, a
-cold compile of `include('js.html')` 0.53 s against 1.8 s (native Haxe: 0.29 s). Its
-output is byte for byte `haxe.js`'s.
+its `.wasm`, with wasm_of_ocaml over the same bytecode (about 20 seconds). Its output is
+byte for byte `haxe.js`'s. In Chromium (Chrome 119 and later, Edge, Brave) it is about three
+times as fast, and the page uses it there; in Firefox it is about half as fast, so Firefox
+and the other browsers get `haxe.js`, as does a site without the wasm compiler or a browser
+where it fails to start. It needs Wasm GC, tail calls and exception handling. `?compiler=js`
+or `?compiler=wasm` in the page's address picks one (`tests/page.py brave --compiler js`).
 
 - **`stubs.wat`**, the C stubs as Wasm functions (wasm_of_ocaml takes no JS primitives
   directly), with **`stubs-wasm.js`** for what they ask of JavaScript: pcre2 on `RegExp`,
@@ -158,10 +141,9 @@ a Worker per compile is the design.
 ## The standard library on demand
 
 The IDE's worker downloads the whole standard library in one file first, `web/std.json.gz`
-(0.5 MB, made by build.py: each file's bytes, gzipped), and gives the compiler its files
-from memory (`HX_STD = {read, manifest}`). Fetching them one by one, a round trip each, made
-the first build over the internet take about 23 s on dev.whirlinggizmo.com; with the one
-download it's about 3 s. Without the file, or where it can't be had, the worker falls back
+(made by build.py: each file's bytes, gzipped), and gives the compiler its files from
+memory (`HX_STD = {read, manifest}`). Fetching them one by one, a round trip each, made the
+first build over the internet several times slower. Without the file, or where it can't be had, the worker falls back
 to fetching `std/` file by file, as below (the compiler check page still does).
 
 `/haxe/std/` in the bundle's filesystem is a device of its own (`hx_std_device` in
@@ -180,7 +162,7 @@ The IDE doesn't start the compiler for each build. Its worker
 `--wait stdio` with `HAXE_RESIDENT=1`, which the branch turns into a registered callback
 instead of a blocking loop. Each build is one request (`hx_request(hxml)`), after
 `hx_write_file` puts the changed sources in place with a new modification time. What
-didn't change stays parsed and typed, so a reload build takes about 0.1 s instead of 2.5.
+didn't change stays parsed and typed, so a reload build takes milliseconds, not seconds.
 `node tests/resident.js` drives it the same way.
 
 ## The editor
@@ -459,4 +441,6 @@ route later, binaryen (>= 119) and `wasm_of_ocaml-compiler` would be added.
 ## Next
 
 `ROADMAP.md` has the pieces in order with their status: a resident compiler, the
-in-page hot reload loop, the editor, a language server, wasm, hosting.
+in-page hot reload loop, the editor, a language server, wasm, hosting. `BENCHMARKS.md` has
+the sizes and times: the downloads, compiler start, first and reload builds, wasm against
+`haxe.js` against native Haxe.

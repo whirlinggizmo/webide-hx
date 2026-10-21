@@ -1,6 +1,6 @@
 # webide-hx as an image: the Haxe compiler, the IDE and its libraries built from source in a
-# throwaway stage (opam, OCaml, Haxe's libraries, js_of_ocaml: about twenty minutes the
-# first time), then only the site in nginx, with the haxelib mirror (hosting/).
+# throwaway stage (opam, OCaml, Haxe's libraries, js_of_ocaml, wasm_of_ocaml: about twenty
+# minutes the first time), then only the site in nginx, with the haxelib mirror (hosting/).
 #
 #     docker build -t webide-hx .
 #     docker run -p 8080:80 webide-hx                  then http://localhost:8080/
@@ -23,14 +23,14 @@ WORKDIR /home/builder/webide-hx
 
 # the toolchain first, on its own: it's the slow part, and it stays cached until build.py changes
 COPY --chown=builder build.py .
-RUN python3 build.py --toolchain
+RUN python3 build.py --toolchain --wasm
 
 # hotreload-hx, for its runtime and the example project the IDE starts with
 ARG HOTRELOAD_REF=main
 RUN git clone --depth 1 --branch "$HOTRELOAD_REF" https://github.com/whirlinggizmo/hotreload-hx.git /home/builder/hotreload-hx
 
 COPY --chown=builder . .
-RUN python3 build.py --hotreload /home/builder/hotreload-hx
+RUN python3 build.py --wasm --hotreload /home/builder/hotreload-hx
 
 FROM nginx:stable
 COPY --from=build /home/builder/webide-hx/web /usr/share/nginx/webide-hx

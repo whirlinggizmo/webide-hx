@@ -303,7 +303,7 @@ def main():
     ap.add_argument("--hotreload", metavar="DIR", help="embed hotreload-hx from DIR at /lib/hotreload")
     ap.add_argument("--embed-std", action="store_true", help="embed the standard library in the bundle instead of serving it from web/std")
     ap.add_argument("--toolchain", action="store_true", help="only install the toolchain (opam, OCaml, Haxe's libraries, js_of_ocaml, mbedtls) under build/")
-    ap.add_argument("--wasm", action="store_true", help="also the wasm compiler (web/haxe-wasm.js, by wasm_of_ocaml), which the page uses with ?wasm")
+    ap.add_argument("--wasm", action="store_true", help="also the wasm compiler (web/haxe-wasm.js, by wasm_of_ocaml), which the page uses where the browser has Wasm GC; with --toolchain, its tools")
     ap.add_argument("--extension", action="store_true", help="only assemble the all-in-one extension (experimental) in build/extension-ide/, from web/ as it's built")
     args = ap.parse_args()
     if args.extension:
@@ -311,7 +311,7 @@ def main():
         return
     if args.toolchain:
         os.makedirs(BUILD, exist_ok=True)
-        print("toolchain"); env = toolchain()
+        print("toolchain"); env = toolchain(args.wasm)
         print("mbedtls"); mbedtls(env)
         return
     if args.hotreload:

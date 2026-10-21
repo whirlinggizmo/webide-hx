@@ -34,6 +34,13 @@ server {
         alias /usr/share/nginx/webide-hx/;
         # checked each time (cheaply, by ETag), so a deploy shows at once
         add_header Cache-Control "no-cache" always;
+        # the compilers are most of the download: haxe.js 3.8 MB, 1.1 gzipped; the wasm
+        # compiler's .wasm 5.1 MB, 1.3 gzipped (std.json.gz is gzip already). Proxied too:
+        # on dev.whirlinggizmo.com, Apache passes requests on
+        gzip on;
+        gzip_proxied any;
+        gzip_comp_level 6;
+        gzip_types text/css application/javascript application/json application/wasm image/svg+xml;
     }
 
     location ~ ^${WEBIDE_PATH}haxelib/files/3\.0/([A-Za-z0-9_.+-]+-[0-9A-Za-z,+-]+\.zip)$ {

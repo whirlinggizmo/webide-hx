@@ -7,7 +7,9 @@ then stops the browser and the server (by PID).
     python3 tests/page.py brave [PORT]      Brave (/opt/brave.com/brave/brave, not the
                                             brave-browser wrapper, so the kill reaches it)
     python3 tests/page.py firefox [PORT]
-    ... --wasm                              with the wasm compiler (python3 build.py --wasm)
+    ... --compiler js|wasm                  ?compiler=js: haxe.js; ?compiler=wasm: the wasm
+                                            compiler, no falling back to haxe.js (by default,
+                                            wasm where the browser has Wasm GC and web/ has it)
     ... --root DIR                          serve another copy of web/ (one with a config.json,
                                             say: {"runner": "./"} runs the app on the IDE's own
                                             origin, as a server without a runner site does)
@@ -28,9 +30,11 @@ BROWSERS = {
 def main():
     args = sys.argv[1:]
     root = None
-    wasm = "--wasm" in args
-    if wasm:
-        args.remove("--wasm")
+    compiler = None
+    if "--compiler" in args:
+        i = args.index("--compiler")
+        compiler = args[i + 1]
+        del args[i:i + 2]
     if "--root" in args:
         i = args.index("--root")
         root = args[i + 1]
@@ -44,7 +48,7 @@ def main():
     time.sleep(1)
     profile = os.path.join(work, "profile")
     os.makedirs(profile)
-    b = subprocess.Popen(BROWSERS[browser](profile, f"http://127.0.0.1:{port}/?test" + ("&wasm" if wasm else "")), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    b = subprocess.Popen(BROWSERS[browser](profile, f"http://127.0.0.1:{port}/?test" + (f"&compiler={compiler}" if compiler else "")), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(360):
             if os.path.exists(report) and os.path.getsize(report):
@@ -63,6 +67,7 @@ def main():
         print(("  ok   " if s["ok"] else "  FAIL ") + s["name"] + detail)
     if r.get("error"):
         print("  ERROR", r["error"])
+    print("  compiler:", r.get("compiler"), "· first build:", r.get("firstBuild"))
     print("  all ok" if r["ok"] else "  NOT ok", f"({r.get('ms')} ms; reload builds {r.get('reloadMs')} ms; folder opened in {r.get('folderOpenMs')} ms)")
     return 0 if r["ok"] else 1
 

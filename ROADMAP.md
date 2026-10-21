@@ -22,30 +22,28 @@ changed.
       `development` by Simn (4413a0b94), so Haxe 5 has it. The 4.3.7 build here still
       carries it as a commit on the fork branch, since the 4.3 line is frozen. 2026-10-18.
 - [x] Standard library on demand: `web/std/` + `manifest.json`, fetched by synchronous
-      XHR from the worker the first time the compiler opens a file (72 files for hello
-      world, 152 for the parity program). Bundle 7.8 MB → 3.8 MB; compiles 0.1–0.3 s
-      slower than embedded, less once the HTTP cache is warm. No shared memory or
+      XHR from the worker the first time the compiler opens a file. The bundle
+      is half the size; compiles are a little slower than embedded, less once the HTTP
+      cache is warm. No shared memory or
       special headers needed after all. 2026-10-18. (Now the fallback: the first build reads
       the whole library from one pack, `web/std.json.gz`; see 6.)
 
 ## 2. A resident compiler
 
-- [x] Measured a cold hot-reload build of hello (2.4 s in node): startup 0.1 s, macros
-      0.84, parsing 0.75 (696 files), typing 0.53, the rest 0.26. Almost all of it is
-      redoing unchanged modules. 2026-10-18.
+- [x] Measured where a cold hot-reload build of hello spends its time (BENCHMARKS.md):
+      almost all of it is redoing unchanged modules. 2026-10-18.
 - [x] Haxe's compilation server, driven one request at a time: with `HAXE_RESIDENT=1`,
       `--wait stdio` registers its loop body as an OCaml callback and returns instead of
       blocking (a commit on the fork branch, server.ml). `stubs.js` adds `hx_request`, `hx_write_file`
       (with a modification time that only rises), and `Unix.stat` for the in-memory
       filesystem. `web/resident-worker.js` keeps one runtime alive; the IDE uses it and
-      warms the reload build's cache at start. Reload builds: 69–82 ms in Brave, 93–116 ms
-      in Firefox, from ~2.5–3 s. `node tests/resident.js` checks edits, a broken edit
+      warms the reload build's cache at start. Reload builds take tens of
+      milliseconds instead of seconds. `node tests/resident.js` checks edits, a broken edit
       and its fix. 2026-10-18.
 - [x] Memory over a long session, measured (`node --expose-gc tests/memory.js`): 600 edits,
-      each an errors-as-you-type check, a reload build and a hover, took the heap from 271
-      to 281 MB (about 17 KB an edit) at a steady ~200 ms a cycle. Nothing to do; the
-      server's own GC task is there if a bigger project says otherwise. The runtime
-      itself is large from the start (~270 MB heap, ~780 MB process in node). 2026-10-19.
+      each an errors-as-you-type check, a reload build and a hover, grew the heap by
+      about 17 KB an edit, at a steady pace (BENCHMARKS.md). Nothing to do; the server's
+      own GC task is there if a bigger project says otherwise. 2026-10-19.
 - [x] Built from `4.3-js_of_ocaml` on Rob's fork instead of the 4.3.7 tag and a patch:
       the server skip-reason fix (haxe#13058), the case tables (haxe#13067), resident
       mode and the bytecode build, one commit each, on 4.3.7. The branch still builds a
@@ -58,7 +56,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 
 - [x] Working in Brave, 2026-10-18: `web/index.html` (then play.html) + `web/sw.js` (a service worker plays the
       DevServer) edit, build and hot-reload hotreload-hx's examples/hello; `?test` checks it.
-      Firefox passes too (reload builds ~3 s there, ~2.5 s in Brave).
+      Firefox passes too.
 - [x] An in-page stand-in for the DevServer: after a compile, hand the swap the new
       bundle as a blob URL and signal it. Look at what `hotreload.Reloader` on JS polls
       (`/__hotreload`) and give it the same answers from the page.
@@ -123,7 +121,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       neither; ZenFS's own folder rename reads it all into memory, deletes, then writes.
       2026-10-18.
 - [x] ZenFS reads a folder on disk once, when it's opened; the page reads it again when it
-      sees an outside change (below), and before a folder-wide move or delete (~0.3 s).
+      sees an outside change (below), and before a folder-wide move or delete.
       2026-10-19.
 - [ ] Fix imports of a moved class in other files (needs the language server's view).
 - [x] The program out of the page (the App menu, was View: Embedded, Separate Window,
@@ -145,7 +143,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
 - [x] The project's files through ZenFS (`@zenfs/core` and `@zenfs/dom`, a node-like `fs`
       over swappable backends) instead of a hand-written store: IndexedDB for the
       browser's project, WebAccess for a folder. Bundled with fflate into
-      `web/vendor/fs.js` (328 KB, 95 KB gzipped). Files that aren't UTF-8 are kept,
+      `web/vendor/fs.js`. Files that aren't UTF-8 are kept,
       served and zipped as bytes, shown read-only in the editor. Hidden files,
       node_modules and top-level out/, bin/, build/, dump/ aren't part of the project.
       2026-10-18.
@@ -172,9 +170,8 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       one. The look is skipped, or thrown away, while the page changes the folder itself.
       FileSystemObserver could replace the polling where it exists. 2026-10-19.
 - [ ] Opening a folder walks every entry, ignored ones included (ZenFS reads the whole
-      tree's handles up front): fine for a project, slow for a huge tree. Measured: 300
-      extra files under out/ cost little (folder opened and built in 0.33 s in Brave, 0.65
-      s in Firefox).
+      tree's handles up front): fine for a project, slow for a huge tree. 300 extra
+      files under out/ cost little.
 - [x] The build from the project's hxml (Project > Select Build File…, or a click on the header's
       "hxml:"; build.hxml, else the first
       that builds JS, kept once picked): class paths (code, packages), --main, --js,
@@ -287,7 +284,7 @@ Two, for two kinds of use:
       itself, Haxe's display protocol (--display with JSON) through the resident
       compiler, like a build (its options, the editor's unsaved text, its cache):
       completion (CodeMirror's, from display/completion), hover (display/hover), go to
-      definition (display/definition; Ctrl-Alt-J beside go to line's Ctrl-Alt-G, Ctrl/Cmd-click; not F12, Ctrl-B or Ctrl-D, which browsers keep). 10-40 ms each. The reply is
+      definition (display/definition; Ctrl-Alt-J beside go to line's Ctrl-Alt-G, Ctrl/Cmd-click; not F12, Ctrl-B or Ctrl-D, which browsers keep). The reply is
       the compiler's message, not its output; offsets are code points (bytes were wrong
       after non-ASCII text). 2026-10-19.
 - [x] Signature help while typing a call's arguments (display/signatureHelp), a tooltip
@@ -297,9 +294,9 @@ Two, for two kinds of use:
 - [x] Go to Definition into the standard library or a library: the file opened read-only
       (std/ or the library cache), a bar saying which with a × back, hover and go to
       definition in it. 2026-10-19.
-- [x] The standard library in one download for the first build (web/std.json.gz, 0.5 MB,
-      read from memory) instead of a request per file: the first build on dev went from
-      ~23 s to ~3 s. 2026-10-19.
+- [x] The standard library in one download for the first build (web/std.json.gz, read
+      from memory) instead of a request per file, a round trip each: the first build over
+      the internet several times faster. 2026-10-19.
 - [x] Go to symbol (the file's types and fields: the legacy `file@0@module-symbols`, as
       Haxe 4.3 has no JSON method for it), Find References (display/references, with the
       definition), Rename symbol (both, applied in every file; a module's type renames its
@@ -312,12 +309,16 @@ Two, for two kinds of use:
 
 ## 7. WebAssembly (optional, for speed)
 
-- [~] The compiler as WebAssembly (`build.py --wasm`, the page with `?wasm`): wasm_of_ocaml,
-      `stubs.wat` for the C stubs, `web/hxfs.js` for its filesystem. The page's test passes
-      with it; about 3.3 times as fast for a first build (0.43-0.57 s against 1.6-1.7 s in
-      Brave), 2.3 times for a reload's (32-45 ms against 75-118 ms). Left: making it the
-      default where the browser has Wasm GC, with haxe.js the fallback; the hosting and the
-      Docker image building it; the extension. 2026-10-21.
+- [x] The compiler as WebAssembly (`build.py --wasm`): wasm_of_ocaml, `stubs.wat` for the
+      C stubs, `web/hxfs.js` for its filesystem. In Brave about three times as fast as
+      haxe.js for a first build, twice for a reload's, with the same output. 2026-10-21.
+- [x] The wasm compiler by default in Chromium; haxe.js elsewhere, and when the wasm
+      compiler fails to start (the reason in the build's output). `?compiler=js|wasm`
+      picks one. The Docker image builds it; nginx gzips the compilers (the .wasm to about
+      a quarter). 2026-10-21.
+- [ ] Firefox: the wasm compiler is about half as fast as haxe.js there (BENCHMARKS.md).
+      Find out why (Firefox's Wasm GC, or something wasm_of_ocaml emits); Safari unmeasured.
+- [ ] The wasm compiler in the all-in-one extension (it uses haxe.js).
 
 ## 8. Hosting
 
