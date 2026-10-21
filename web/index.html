@@ -695,7 +695,10 @@ async function flushWrites(name) {
 // ---- the compiler stays resident in one worker (resident-worker.js): a build sends only
 // the files that changed since the last one (and, as null, those removed), and what didn't
 // change stays typed
-const compiler = new Worker("resident-worker.js");
+// ?wasm in the page's address: the wasm compiler (python3 build.py --wasm), about three
+// times as fast where the browser has Wasm GC (Chrome 119, Firefox 122, Safari 18.2)
+const WASM_COMPILER = new URLSearchParams(location.search).has("wasm");
+const compiler = new Worker("resident-worker.js" + (WASM_COMPILER ? "?wasm" : ""));
 const pending = new Map();
 let nextId = 1, sent = {};
 compiler.onmessage = (ev) => {
@@ -1885,7 +1888,7 @@ async function build() {
   await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
   // nothing running yet (the project's first build failed): this build starts it
   if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
-  buildStatus = `build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the compiler)` : "");
+  buildStatus = `build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the ${WASM_COMPILER ? "wasm " : ""}compiler)` : "");
   status(buildStatus + (version > 1 ? (appTook >= version ? ", reloaded" : ", reloading") : ""));
   out([r.stdout.trim()].concat(messages.rest, cfg.notes || []).filter((x) => x).join("\n"));
   return { ok: true, r };

@@ -7,6 +7,7 @@ then stops the browser and the server (by PID).
     python3 tests/page.py brave [PORT]      Brave (/opt/brave.com/brave/brave, not the
                                             brave-browser wrapper, so the kill reaches it)
     python3 tests/page.py firefox [PORT]
+    ... --wasm                              with the wasm compiler (python3 build.py --wasm)
     ... --root DIR                          serve another copy of web/ (one with a config.json,
                                             say: {"runner": "./"} runs the app on the IDE's own
                                             origin, as a server without a runner site does)
@@ -27,6 +28,9 @@ BROWSERS = {
 def main():
     args = sys.argv[1:]
     root = None
+    wasm = "--wasm" in args
+    if wasm:
+        args.remove("--wasm")
     if "--root" in args:
         i = args.index("--root")
         root = args[i + 1]
@@ -40,7 +44,7 @@ def main():
     time.sleep(1)
     profile = os.path.join(work, "profile")
     os.makedirs(profile)
-    b = subprocess.Popen(BROWSERS[browser](profile, f"http://127.0.0.1:{port}/?test"), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    b = subprocess.Popen(BROWSERS[browser](profile, f"http://127.0.0.1:{port}/?test" + ("&wasm" if wasm else "")), stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         for _ in range(360):
             if os.path.exists(report) and os.path.getsize(report):

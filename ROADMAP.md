@@ -312,11 +312,12 @@ Two, for two kinds of use:
 
 ## 7. WebAssembly (optional, for speed)
 
-- [ ] wasm_of_ocaml compiles the same bytecode in 13 s, but takes no JS primitives
-      directly: each of the ~465 `//Provides` in `stubs.js` that is actually reached
-      needs a `.wat` import shim. Do it only if the JS build's speed is the problem,
-      and measure first; the macro path (an interpreter in an interpreter) is where
-      wasm would help most.
+- [~] The compiler as WebAssembly (`build.py --wasm`, the page with `?wasm`): wasm_of_ocaml,
+      `stubs.wat` for the C stubs, `web/hxfs.js` for its filesystem. The page's test passes
+      with it; about 3.3 times as fast for a first build (0.43-0.57 s against 1.6-1.7 s in
+      Brave), 2.3 times for a reload's (32-45 ms against 75-118 ms). Left: making it the
+      default where the browser has Wasm GC, with haxe.js the fallback; the hosting and the
+      Docker image building it; the extension. 2026-10-21.
 
 ## 8. Hosting
 

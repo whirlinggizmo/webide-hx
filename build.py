@@ -10,6 +10,8 @@ Builds web/haxe.js: the Haxe compiler as JavaScript, for a page or node.
                                              parity test needs it)
     python3 build.py --embed-std             the standard library inside the bundle (7.8 MB)
                                              instead of fetched on demand from web/std
+    python3 build.py --wasm                  also the wasm compiler, web/haxe-wasm.js (the page
+                                             uses it with ?wasm)
     python3 build.py --toolchain             only the toolchain below (the Dockerfile's
                                              first step, cached apart from the source)
     python3 build.py --extension             only the all-in-one extension (experimental), in
@@ -49,7 +51,7 @@ def run(cmd, cwd=None, env=None, quiet=False):
     return r
 
 
-def toolchain():
+def toolchain(wasm=False):
     """build/opam: an opam root of our own with OCaml and the libraries in it; the
     environment to build with. The PATH is only the system's and our own bin: a
     directory named `install` on the user's PATH (~/.bun has one) breaks `make install`"""
@@ -80,6 +82,13 @@ def toolchain():
         run(["opam", "install"] + HAXE_DEPS, env=env, quiet=True)
     if not os.path.exists(os.path.join(switch_bin, "js_of_ocaml")):
         run(["opam", "install"] + JSOO, env=env, quiet=True)
+    # the wasm build: wasm_of_ocaml (the same version) and binaryen's tools from opam
+    # (binaryen-bin: a system's package can be too old; wasm_of_ocaml's conf-binaryen is
+    # then told the switch has it)
+    if wasm and not os.path.exists(os.path.join(switch_bin, "wasm_of_ocaml")):
+        print("  installing wasm_of_ocaml and binaryen")
+        run(["opam", "install", "binaryen-bin"], env=env, quiet=True)
+        run(["opam", "install", "--assume-depexts", "wasm_of_ocaml-compiler"], env=env, quiet=True)
     return env
 
 
@@ -216,6 +225,30 @@ def bundle(src, bc, env, embeds, embed_std):
     print(f"  {out}: {os.path.getsize(out) / 1e6:.1f} MB")
 
 
+def wasm_bundle(bc, env, embeds):
+    """web/haxe-wasm.js and web/haxe-wasm.assets/: wasm_of_ocaml over the same bytecode,
+    with stubs.wat (and stubs-wasm.js, what it asks of JavaScript) for the C libraries. The
+    worker gives it its filesystem (web/hxfs.js); what the JS bundle embeds (--embed,
+    --hotreload) goes in web/haxe-wasm.files.json, path -> the file's bytes as latin1, for
+    the worker to put in it"""
+    out = os.path.join(HERE, "web", "haxe-wasm.js")
+    shutil.rmtree(os.path.join(HERE, "web", "haxe-wasm.assets"), ignore_errors=True)
+    run(["wasm_of_ocaml", "compile", os.path.join(HERE, "stubs-wasm.js"), os.path.join(HERE, "stubs.wat"), bc, "-o", out], env=env, quiet=True)
+    files = {}
+    for e in embeds:
+        s, _, d = e.partition(":")
+        s = os.path.abspath(os.path.expanduser(s))
+        pairs = [(s, d)] if os.path.isfile(s) else [(os.path.join(r, f), d.rstrip("/") + "/" + os.path.relpath(os.path.join(r, f), s).replace(os.sep, "/"))
+                                                   for r, _, fs in os.walk(s) for f in fs]
+        for path, dest in pairs:
+            with open(path, "rb") as f:
+                files[dest] = f.read().decode("latin1")
+    with open(os.path.join(HERE, "web", "haxe-wasm.files.json"), "w") as f:
+        json.dump(files, f, separators=(",", ":"), sort_keys=True)
+    code = glob.glob(os.path.join(HERE, "web", "haxe-wasm.assets", "*.wasm"))
+    print(f"  {out}: {sum(os.path.getsize(c) for c in code) / 1e6:.1f} MB of wasm; {len(files)} embedded files")
+
+
 def editor():
     """web/vendor/: the IDE's libraries, from editor/ (pinned in its package-lock.json),
     bundled with esbuild: codemirror.js (the editor) and fs.js (ZenFS and fflate, for the
@@ -243,7 +276,8 @@ def extension_ide():
     if not os.path.exists(os.path.join(web, "haxe.js")):
         sys.exit("web/ isn't built: run build.py (with --hotreload) first")
     shutil.rmtree(out, ignore_errors=True)
-    skip = shutil.ignore_patterns("runner.html", "sw.js", "app.html", "checks", "report*.json", "config.json")
+    skip = shutil.ignore_patterns("runner.html", "sw.js", "app.html", "checks", "report*.json", "config.json",
+                                  "haxe-wasm.js", "haxe-wasm.assets", "haxe-wasm.files.json", "hxfs.js")
     shutil.copytree(web, out, ignore=skip)
     page = open(os.path.join(out, "index.html"), encoding="utf-8").read()
     scripts = re.findall(r"<script>\n(.*?)</script>", page, re.S)
@@ -269,6 +303,7 @@ def main():
     ap.add_argument("--hotreload", metavar="DIR", help="embed hotreload-hx from DIR at /lib/hotreload")
     ap.add_argument("--embed-std", action="store_true", help="embed the standard library in the bundle instead of serving it from web/std")
     ap.add_argument("--toolchain", action="store_true", help="only install the toolchain (opam, OCaml, Haxe's libraries, js_of_ocaml, mbedtls) under build/")
+    ap.add_argument("--wasm", action="store_true", help="also the wasm compiler (web/haxe-wasm.js, by wasm_of_ocaml), which the page uses with ?wasm")
     ap.add_argument("--extension", action="store_true", help="only assemble the all-in-one extension (experimental) in build/extension-ide/, from web/ as it's built")
     args = ap.parse_args()
     if args.extension:
@@ -295,11 +330,13 @@ def main():
         with open(os.path.join(hello, "files.json"), "w") as f:
             json.dump(listing, f)
     os.makedirs(BUILD, exist_ok=True)
-    print("toolchain"); env = toolchain()
+    print("toolchain"); env = toolchain(args.wasm)
     print("mbedtls"); prefix = mbedtls(env)
     print("haxe source"); src = haxe_source(args)
     print("haxe bytecode"); bc = haxe_bytecode(src, env, prefix)
     print("bundle"); bundle(src, bc, env, args.embed, args.embed_std)
+    if args.wasm:
+        print("wasm"); wasm_bundle(bc, env, args.embed)
     print("editor"); editor()
     print("done: python3 tools/serve.py, then http://127.0.0.1:8765/")
 

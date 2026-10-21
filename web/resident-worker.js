@@ -73,6 +73,81 @@ function start(files, std) {
   startMs = performance.now() - t0;
 }
 
+// ---- the wasm compiler (resident-worker.js?wasm): haxe-wasm.js, by wasm_of_ocaml, about
+// three times as fast. Its runtime does files through node's fs, so the worker passes for
+// node: a process (the arguments, the environment, the working directory) and a require
+// that gives hxfs.js's filesystem, in memory, and fetches the .wasm. The compiler exits
+// once its request handler is registered, which is when it's ready
+var WASM = /[?&]wasm\b/.test(location.search);
+function syncText(url) {
+  var xhr = new XMLHttpRequest();
+  xhr.open("GET", url, false);
+  xhr.overrideMimeType("text/plain; charset=x-user-defined"); // bytes, as latin1 chars
+  xhr.send(null);
+  if (xhr.status !== 200) return null;
+  return xhr.responseText.replace(/[-]/g, function (c) { return String.fromCharCode(c.charCodeAt(0) & 0xff); });
+}
+async function startWasm(files, std) {
+  var t0 = performance.now();
+  importScripts("hxfs.js");
+  // what the JS bundle embeds (hotreload-hx, at /lib/hotreload), as bytes already; then the project's
+  var embedded = await fetch(new URL("haxe-wasm.files.json", location.href)).then(function (r) { return r.ok ? r.json() : {}; }, function () { return {}; });
+  var bytes = Object.assign({}, embedded);
+  for (var k in files) bytes[k] = toBytes(files[k]);
+  var stdUrl = new URL("std/", location.href).href;
+  var read = std
+    ? function (path) { return Object.prototype.hasOwnProperty.call(std, path) ? std[path] : null; }
+    : function (path) { return syncText(stdUrl + path); };
+  var cwd = "/static";
+  globalThis.hx_fs = hxfs.create({ files: bytes, cwd: function () { return cwd; }, std: {
+    manifest: std ? Object.keys(std) : JSON.parse(syncText(stdUrl + "manifest.json")),
+    read: function (path) { postMessage({ type: "progress", files: ++libraryFiles }); return read(path); },
+  } });
+  var exited;
+  var ready = new Promise(function (resolve, reject) {
+    exited = resolve;
+    self.addEventListener("unhandledrejection", function (e) { reject(e.reason); });
+  });
+  globalThis.process = {
+    versions: { node: "worker" }, platform: "linux",
+    argv: ["node", "haxe", "--wait", "stdio"], env: { HAXE_STD_PATH: "/haxe/std", HAXE_RESIDENT: "1" },
+    cwd: function () { return cwd; },
+    chdir: function (dir) {
+      var to = hxfs.normal(dir.charAt(0) === "/" ? dir : cwd + "/" + dir);
+      if (!globalThis.hx_fs.statSync(to).isDirectory()) throw Object.assign(new Error("ENOTDIR: not a directory, chdir '" + dir + "'"), { code: "ENOTDIR", errno: -20, syscall: "chdir" });
+      cwd = to;
+    },
+    exit: function (code) { exited(code); },
+  };
+  var base = new URL("./", location.href).href;
+  globalThis.require = function (m) {
+    switch (m) {
+      case "node:fs": return globalThis.hx_fs;
+      case "node:fs/promises": return { readFile: function (f) {
+        return fetch(f).then(function (r) { if (!r.ok) throw new Error(f + ": " + r.status); return r.arrayBuffer(); });
+      } };
+      case "node:path": return { dirname: function (p) { return p.replace(/[^\/]*$/, ""); }, join: function (a, b) { return a + b; } };
+      case "node:tty": return { isatty: function () { return false; } };
+      case "node:os": return { tmpdir: function () { return "/tmp"; } };
+    }
+    throw new Error("the wasm compiler asked for " + m + ", which a worker doesn't have");
+  };
+  globalThis.require.main = { filename: base + "haxe-wasm.js" };
+  importScripts("haxe-wasm.js");
+  var code = await ready, said = globalThis.hx_fs.takeOutput();
+  var why = " (it exited with " + code + (said.stderr || said.stdout ? ": " + (said.stderr || said.stdout).trim() : "") + ")";
+  if (!globalThis.hx_request) throw new Error("the wasm compiler has no resident request: rebuild it (python3 build.py --wasm)" + why);
+  var request = globalThis.hx_request;
+  globalThis.hx_request = function (hxml) {
+    try { return request(hxml); } catch (e) { throw new Error(e.message + why); }
+  };
+  globalThis.hx_read_file = function (name) { return globalThis.hx_fs.read(name); };
+  globalThis.hx_write_file = function (name, text) { globalThis.hx_fs.write(name, text); };
+  globalThis.hx_remove_file = function (name) { globalThis.hx_fs.remove(name); };
+  started = true;
+  startMs = performance.now() - t0;
+}
+
 function request(args) {
   var t0 = performance.now();
   libraryFiles = 0;
@@ -97,7 +172,8 @@ async function handle(msg) {
   var r;
   try {
     if (!started) {
-      start(msg.files || {}, await loadStd());
+      if (WASM) await startWasm(msg.files || {}, await loadStd());
+      else start(msg.files || {}, await loadStd());
     } else {
       for (var name in msg.files || {}) {
         if (msg.files[name] === null) globalThis.hx_remove_file(name);

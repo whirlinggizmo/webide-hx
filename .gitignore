@@ -1,5 +1,8 @@
 # generated: the compiler bundle (python3 build.py) and what the page reports
 web/haxe.js
+web/haxe-wasm.js
+web/haxe-wasm.assets/
+web/haxe-wasm.files.json
 web/report*.json
 build/
 __pycache__/

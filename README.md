@@ -109,9 +109,27 @@ the gap is widest there.
    embeds other files; `--hotreload DIR` embeds hotreload-hx at `/lib/hotreload` for the
    page's parity test.
 
-wasm_of_ocaml compiles the same bytecode in 13 seconds, but it doesn't take JavaScript
-primitives directly: each one needs a WebAssembly text shim importing the JS function.
-That's the same `stubs.js` behind a second layer, not done yet.
+`python3 build.py --wasm` also builds the compiler as WebAssembly, `web/haxe-wasm.js` and
+its `.wasm` (5.1 MB, 1.3 MB gzipped), with wasm_of_ocaml over the same bytecode (about 20
+seconds). The page uses it with `?wasm` in its address (`tests/page.py brave --wasm` runs
+the page's test with it); it needs Wasm GC, tail calls and exception handling (Chrome 119,
+Firefox 122, Safari 18.2). Measured in Brave on the example: the first build 0.43-0.57 s
+against `haxe.js`'s 1.6-1.7 s, a reload's build 32-45 ms against 75-118 ms; in node, a
+cold compile of `include('js.html')` 0.53 s against 1.8 s (native Haxe: 0.29 s). Its
+output is byte for byte `haxe.js`'s.
+
+- **`stubs.wat`**, the C stubs as Wasm functions (wasm_of_ocaml takes no JS primitives
+  directly), with **`stubs-wasm.js`** for what they ask of JavaScript: pcre2 on `RegExp`,
+  sha1, paths and the clock, and handing the resident compiler's request function to the
+  worker. Only what a build reaches is there; any other C primitive throws, naming itself.
+  `stubs-wasm.js` also mentions `caml_named_value("haxe_resident_request")`: wasm_of_ocaml
+  drops a `Callback.register` whose name no JS runtime file looks up.
+- **`web/hxfs.js`**, its filesystem: the runtime does files through node's `fs`, so the
+  worker passes for node (a `process`, a `require`) and gives it this one, synchronous and
+  in memory, the standard library read the first time a file is opened. What the JS
+  bundle embeds (hotreload-hx) is in `web/haxe-wasm.files.json`, which the worker puts in it.
+- OCaml's ints are 31 bits there (32 in `haxe.js`); Haxe's Int arithmetic, done with
+  Int32, gives the same results (checked on constants past 2^30, folded and in macros).
 
 ## stubs.js: the C libraries, in JavaScript
 
