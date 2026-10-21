@@ -2,7 +2,7 @@
 // DevTools protocol: by keyboard (arrows, Home, Escape) and pointer (click, moving across,
 // a click elsewhere), items and their dialogs (New file, Rename, Delete; Enter, Escape, a
 // name refused), folders (New folder, renaming one, a file dragged onto one, deleting one
-// with files and an empty one), the tree's context menu (right-click, the menu key, Shift+F10), Project > Select hxml…, Project > Libraries… > Add library…, App (Separate window: it hot-reloads there, Restart starts it over there, and it comes back,
+// with files and an empty one), the tree's context menu (right-click, the menu key, Shift+F10), Project > Select Build File…, Project > Libraries… > Add Library…, App (Separate Window: it hot-reloads there, Restart starts it over there, and it comes back,
 // Embedded, when the window closes), Project > Build, every Edit item on the editor, Preferences (applied
 // at once, to every file, kept for the next visit, Defaults), and items turned off when
 // they can't apply.
@@ -50,16 +50,16 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("moving onto File switches to it", await ev(openList) === "file-items", await ev(openList));
   await click(await box("#editor"));
   step("a click elsewhere closes it", await ev(openList) === "");
-  // an item and its dialog: File > New file…; a name that won't do is refused in the
+  // an item and its dialog: File > New File…; a name that won't do is refused in the
   // dialog, which stays open; Enter picks OK
   var typeInto = async function (text) { await ev("$('dialog-input').select()"); await send("Input.insertText", { text: text }); await sleep(80); };
   await click(await box("#file-menu"));
   await click(await box("#new"));
-  step("File > New file… opens the dialog, the menu closed, on the name after the folder", await ev("$('dialog').open") && await ev(openList) === ""
+  step("File > New File… opens the dialog, the menu closed, on the name after the folder", await ev("$('dialog').open") && await ev(openList) === ""
        && await ev("document.activeElement.id === 'dialog-input' && $('dialog-input').selectionStart === $('dialog-input').value.length"), await ev("$('dialog-input').value"));
   await typeInto("out/x.hx");
   await key("Enter");
-  step("a name that won't do: the dialog says why and stays open", await ev("$('dialog').open") && /wouldn't be part/.test(await ev("$('dialog-error').textContent")),
+  step("a name that won't do: the dialog says why and stays open", await ev("$('dialog').open") && /excluded from the project/.test(await ev("$('dialog-error').textContent")),
        await ev("$('dialog-error').textContent"));
   await typeInto("src/Menu.hx");
   await key("Enter");
@@ -83,11 +83,11 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("and Delete deletes it", !(await ev("'src/Menu.hx' in files")));
   // Project > Build
   await click(await box("#project-menu"));
-  step("Project's first items are Build and Select hxml…, then a separator", await ev("(() => { const l = $('project-items'); const first = l.querySelector('[role=menuitem]:not([hidden])'); return first.id === 'build-item' && first.nextElementSibling.id === 'build-file' && first.nextElementSibling.nextElementSibling.tagName === 'HR'; })()"));
+  step("Project's first items are Build and Select Build File…, then a separator", await ev("(() => { const l = $('project-items'); const first = l.querySelector('[role=menuitem]:not([hidden])'); return first.id === 'build-item' && first.nextElementSibling.id === 'build-file' && first.nextElementSibling.nextElementSibling.tagName === 'HR'; })()"));
   await click(await box("#build-item"));
   await sleep(1500);
-  step("and builds", /^build \d+/.test(await ev("$('status').textContent")), await ev("$('status').textContent"));
-  // ---- folders: New folder…, a rename that selects the folder's name, a file dragged
+  step("and builds", /^Build \d+/.test(await ev("$('status').textContent")), await ev("$('status').textContent"));
+  // ---- folders: New Folder…, a rename that selects the folder's name, a file dragged
   // onto a folder (its package line follows), Delete folder: asked when it has files, not
   // when it's empty
   await click(await box("#file-menu"));
@@ -95,7 +95,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await typeInto("src/ui");
   await key("Enter");
   await sleep(300);
-  step("File > New folder… makes it, selected in the tree", await ev("dirs.has('src/ui') && !!document.querySelector('#tree [data-dir=\"src/ui\"].on')"));
+  step("File > New Folder… makes it, selected in the tree", await ev("dirs.has('src/ui') && !!document.querySelector('#tree [data-dir=\"src/ui\"].on')"));
   await click(await box("#file-menu"));
   await click(await box("#rename"));
   step("Rename with a folder selected renames the folder, its name selected", await ev("$('dialog-title').textContent") === "Rename src/ui"
@@ -139,7 +139,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
        && at.items.join() === "tm-new,tm-new-folder,tm-rename,tm-delete" && await ev("document.querySelector('#tree [data-dir=\"src\"]').classList.contains('context') && current === 'src/Hello.hx' && selectedDir === null"), at);
   await shot("tree-menu");
   await click(await box("#tm-new"));
-  step("New file… there starts inside the folder", await ev("$('dialog').open && $('dialog-input').value === 'src/' && $('tree-menu').hidden && !document.querySelector('#tree .context')"), await ev("$('dialog-input').value"));
+  step("New File… there starts inside the folder", await ev("$('dialog').open && $('dialog-input').value === 'src/' && $('tree-menu').hidden && !document.querySelector('#tree .context')"), await ev("$('dialog-input').value"));
   await typeInto("src/Ctx.hx");
   await key("Enter");
   await sleep(1500);
@@ -158,12 +158,12 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await key("Escape");
   await rightClick(await box('#tree [data-name="src/Main.hx"]'));
   await click(await box("#tm-new-folder"));
-  step("New folder… on a file starts beside it", await ev("$('dialog-input').value") === "src/", await ev("$('dialog-input').value"));
+  step("New Folder… on a file starts beside it", await ev("$('dialog-input').value") === "src/", await ev("$('dialog-input').value"));
   await key("Escape");
   var empty = await ev("(() => { const r = $('tree').getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.bottom - 12 }; })()");
   await rightClick(empty);
   at = await ev(menuAt);
-  step("on the tree's empty space: New file… and New folder… only", at && at.items.join() === "tm-new,tm-new-folder", at);
+  step("on the tree's empty space: New File… and New Folder… only", at && at.items.join() === "tm-new,tm-new-folder", at);
   await click(await box("#tm-new"));
   step("starting at the project's top", await ev("$('dialog').open && $('dialog-input').value === ''"), await ev("$('dialog-input').value"));
   await key("Escape");
@@ -184,9 +184,9 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#editor"));
   step("a click elsewhere closes it", await ev("$('tree-menu').hidden && !document.querySelector('#tree .context')"));
 
-  // ---- Project > Open folder (local)…: always there; where the browser can't (headless Brave,
+  // ---- Project > Open Local Folder…: always there; where the browser can't (headless Brave,
   // without its flag), greyed, and saying how to have it
-  step("Open folder (local)… is there, greyed, its tooltip saying how to enable it", await ev("!$('folder').hidden && $('folder').getAttribute('aria-disabled') === 'true' && /chrome:\\/\\/flags\\/#file-system-access-api/.test($('folder').title)"),
+  step("Open Local Folder… is there, greyed, its tooltip saying how to enable it", await ev("!$('folder').hidden && $('folder').getAttribute('aria-disabled') === 'true' && /chrome:\\/\\/flags\\/#file-system-access-api/.test($('folder').title)"),
        await ev("[$('folder').textContent, $('folder').getAttribute('aria-disabled'), $('folder').title]"));
   await click(await box("#project-menu"));
   await click(await box("#folder"));
@@ -195,17 +195,17 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#dialog-ok"));
   await sleep(200);
 
-  // ---- Project > Select hxml…: the hxml files, those the page can't use shown and off
+  // ---- Project > Select Build File…: the hxml files, those the page can't use shown and off
   await click(await box("#project-menu"));
   await click(await box("#build-file"));
   var opts = JSON.parse(await ev("JSON.stringify([...$('dialog-select').options].map(o => [o.value, o.disabled]))"));
-  step("Select hxml… lists the hxml files, those it can't build from turned off, and No hxml file", await ev("$('dialog-select').value") === "web-build.hxml"
+  step("Select Build File… lists the hxml files, those it can't build from turned off, and No hxml file", await ev("$('dialog-select').value") === "web-build.hxml"
        && opts.some(function (o) { return o[0] === "web.hxml" && o[1]; }) && opts.some(function (o) { return o[0] === "" && !o[1]; })
-       && await ev("[...$('dialog-select').options].some(o => o.value === '' && o.textContent === 'No hxml file: src/ for code, Main as the main class')"), opts);
+       && await ev("[...$('dialog-select').options].some(o => o.value === '' && o.textContent === 'None (src/ as class path, Main as main class)')"), opts);
   await ev("$('dialog-select').value = ''");
   await click(await box("#dialog-ok"));
   await sleep(2500);
-  step("choosing No hxml file builds src/ with Main", /hxml: none/.test(await ev("$('where').textContent")) && /^build \d+/.test(await ev("$('status').textContent")),
+  step("choosing No hxml file builds src/ with Main", /hxml: none/.test(await ev("$('where').textContent")) && /^Build \d+/.test(await ev("$('status').textContent")),
        [await ev("$('where').textContent"), await ev("$('status').textContent")]);
   await click(await box("#project-menu"));
   await click(await box("#build-file"));
@@ -214,7 +214,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await sleep(2500);
   step("and web-build.hxml again", /web-build\.hxml/.test(await ev("$('where').textContent")));
 
-  // ---- Project > Libraries… > Add library…: not a library, refused in the dialog; a release, its lix
+  // ---- Project > Libraries… > Add Library…: not a library, refused in the dialog; a release, its lix
   // file written and -lib in the hxml, built with; then back as it was
   var hxml0 = await ev("files['web-build.hxml']");
   await click(await box("#project-menu"));
@@ -223,7 +223,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await click(await box("#libs-add"));
   await typeInto("format");
   await key("Enter");
-  step("Add library…: not a library, the dialog says what is and stays open", await ev("$('dialog').open") && /name:version/.test(await ev("$('dialog-error').textContent")),
+  step("Add Library…: not a library, the dialog says what is and stays open", await ev("$('dialog').open") && /name:version/.test(await ev("$('dialog-error').textContent")),
        await ev("$('dialog-error').textContent"));
   await typeInto("format:3.7.0");
   await click(await box("#dialog-ok"));
@@ -255,7 +255,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
     popup = (await (await fetch("http://127.0.0.1:" + port + "/json")).json()).find(function (t) { return t.type === "page" && /\/(app|runner)\.html/.test(t.url); });
     if (!popup) await sleep(250);
   }
-  step("App > Separate window opens it, checked, and the page gives the editor its room", popup && await ev("document.body.classList.contains('program-out') && (runners.get($('run').contentWindow) || {}).url === 'about:blank' && $('app-window').getAttribute('aria-checked') === 'true' && $('app-embedded').getAttribute('aria-checked') === 'false'"),
+  step("App > Separate Window opens it, checked, and the page gives the editor its room", popup && await ev("document.body.classList.contains('program-out') && (runners.get($('run').contentWindow) || {}).url === 'about:blank' && $('app-window').getAttribute('aria-checked') === 'true' && $('app-embedded').getAttribute('aria-checked') === 'false'"),
        popup && popup.url);
   if (popup) {
     // on the hosted site, the window is app.html, of the IDE's own site, which frames the
@@ -320,10 +320,10 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   await edit("paste");
   step("Edit > Paste puts it back", await ev(doc) === before, (await ev(doc)).slice(0, 12));
   await edit("select-all");
-  step("Edit > Select all", await ev("view.state.selection.main.from === 0 && view.state.selection.main.to === view.state.doc.length"));
+  step("Edit > Select All", await ev("view.state.selection.main.from === 0 && view.state.selection.main.to === view.state.doc.length"));
   await ev("view.dispatch({ selection: { anchor: 0 } })");
   await edit("comment");
-  step("Edit > Toggle comment comments the line", (await ev(doc)).startsWith("//"), (await ev(doc)).slice(0, 12));
+  step("Edit > Toggle Comment comments the line", (await ev(doc)).startsWith("//"), (await ev(doc)).slice(0, 12));
   await edit("comment");
   step("and again uncomments it", await ev(doc) === before);
   await edit("indent");
@@ -334,7 +334,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   step("Edit > Find… opens the search panel, focused", await ev("!!view.dom.querySelector('.cm-search') && document.activeElement.name === 'search'"));
   await ev("view.focus()"); await key("Escape");
   await edit("goto-line");
-  step("Edit > Go to line… asks for a line", await ev("!!view.dom.querySelector('.cm-panel input') && document.activeElement.tagName === 'INPUT'"));
+  step("Edit > Go to Line… asks for a line", await ev("!!view.dom.querySelector('.cm-panel input') && document.activeElement.tagName === 'INPUT'"));
   await key("Escape");
   await sleep(1500); // the program back in its frame, loaded
   // ---- Preferences: applied at once, kept for the next visit, Defaults
@@ -354,7 +354,7 @@ var fs = require("fs"), port = process.argv[2] || "9333", prefix = process.argv[
   // a reload: the old page marked, so its status (which can say "build 1" too) isn't taken for the new one's
   await ev("window.oldPage = true");
   await send("Page.reload");
-  for (var w = 0; w < 80 && !/^build 1/.test(await ev("!window.oldPage && typeof $ === 'function' && $('status').textContent") || ""); w++) await sleep(250);
+  for (var w = 0; w < 80 && !/^Build 1/.test(await ev("!window.oldPage && typeof $ === 'function' && $('status').textContent") || ""); w++) await sleep(250);
   var a3 = JSON.parse(await ev(applied));
   step("kept for the next visit", a3.font === "18px" && a3.wrap && !a3.numbers && a3.theme === "dark", a3);
   await ev("$('preferences').click()");

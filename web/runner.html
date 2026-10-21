@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>webide-hx app</title>
+<title>App · webide-hx</title>
 <style>
   html, body { margin: 0; height: 100%; background: #fff; }
   @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) body { background: #111; } }
@@ -76,7 +76,7 @@ function say(m) { if (ide && ideOrigin) ide.postMessage(m, ideOrigin); }
 $("app").addEventListener("load", () => { applyTheme(appDoc()); watchLog(); say({ type: "loaded", url: $("app").src }); });
 
 (async () => {
-  if (!ide) { document.body.textContent = "The app runs in webide-hx: open it from there."; return; }
+  if (!ide) { document.body.textContent = "No IDE connected. Open the app from webide-hx."; return; }
   const allowed = await allowedIdes();
   reg = await navigator.serviceWorker.register("sw.js", { scope: "./run/" });
   const sw = reg.installing || reg.waiting || reg.active;

@@ -127,7 +127,7 @@
   #tree .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #tree .count { margin-left: 6px; font-size: 11px; color: var(--error); }
   /* the tree's context menu: where it was asked for; the row it's for, outlined meanwhile */
-  /* a list to pick from, over the editor: Go to symbol, Find references */
+  /* a list to pick from, over the editor: Go to symbol, Find References */
   #picker { position: fixed; z-index: 20; display: flex; flex-direction: column; width: min(600px, calc(100vw - 32px)); max-height: 60vh;
             background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.18); }
   #picker[hidden] { display: none; }
@@ -215,8 +215,8 @@
     <div class="menu">
       <button class="menubutton" id="file-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="file-items">File</button>
       <div class="items" id="file-items" role="menu" aria-labelledby="file-menu" hidden>
-        <button role="menuitem" id="new" title="src/... for code, anything else is an asset">New file…</button>
-        <button role="menuitem" id="new-folder">New folder…</button>
+        <button role="menuitem" id="new" title="Code under src/; other paths are assets">New File…</button>
+        <button role="menuitem" id="new-folder">New Folder…</button>
         <hr role="separator">
         <button role="menuitem" id="rename">Rename…</button>
         <button role="menuitem" id="delete">Delete…</button>
@@ -231,17 +231,17 @@
         <button role="menuitem" id="cut">Cut<kbd class="mod">Ctrl+X</kbd></button>
         <button role="menuitem" id="copy">Copy<kbd class="mod">Ctrl+C</kbd></button>
         <button role="menuitem" id="paste">Paste<kbd class="mod">Ctrl+V</kbd></button>
-        <button role="menuitem" id="select-all">Select all<kbd class="mod">Ctrl+A</kbd></button>
+        <button role="menuitem" id="select-all">Select All<kbd class="mod">Ctrl+A</kbd></button>
         <hr role="separator">
         <button role="menuitem" id="find">Find…<kbd class="mod">Ctrl+F</kbd></button>
         <button role="menuitem" id="replace">Replace…</button>
-        <button role="menuitem" id="goto-line">Go to line…<kbd class="ctrlalt">Ctrl+Alt+G</kbd></button>
-        <button role="menuitem" id="goto-definition">Go to definition<kbd class="ctrlalt">Ctrl+Alt+J</kbd></button>
-        <button role="menuitem" id="goto-symbol" title="The types and fields of this file, to pick one">Go to symbol…<kbd class="ctrlalt">Ctrl+Alt+O</kbd></button>
-        <button role="menuitem" id="find-references" title="Every use of what is at the cursor, in every file">Find references<kbd class="ctrlalt">Ctrl+Alt+R</kbd></button>
-        <button role="menuitem" id="rename-symbol" title="What is at the cursor, renamed everywhere it is used">Rename symbol…<kbd>F2</kbd></button>
+        <button role="menuitem" id="goto-line">Go to Line…<kbd class="ctrlalt">Ctrl+Alt+G</kbd></button>
+        <button role="menuitem" id="goto-definition">Go to Definition<kbd class="ctrlalt">Ctrl+Alt+J</kbd></button>
+        <button role="menuitem" id="goto-symbol" title="Types and fields in this file">Go to Symbol…<kbd class="ctrlalt">Ctrl+Alt+O</kbd></button>
+        <button role="menuitem" id="find-references" title="All uses of the symbol at the cursor">Find References<kbd class="ctrlalt">Ctrl+Alt+R</kbd></button>
+        <button role="menuitem" id="rename-symbol" title="Rename the symbol at the cursor in all files">Rename Symbol…<kbd>F2</kbd></button>
         <hr role="separator">
-        <button role="menuitem" id="comment">Toggle comment<kbd class="mod">Ctrl+/</kbd></button>
+        <button role="menuitem" id="comment">Toggle Comment<kbd class="mod">Ctrl+/</kbd></button>
         <button role="menuitem" id="indent">Indent<kbd class="mod">Ctrl+]</kbd></button>
         <button role="menuitem" id="outdent">Outdent<kbd class="mod">Ctrl+[</kbd></button>
         <hr role="separator">
@@ -251,36 +251,36 @@
     <div class="menu">
       <button class="menubutton" id="app-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="app-items">App</button>
       <div class="items checks" id="app-items" role="menu" aria-labelledby="app-menu" hidden>
-        <button role="menuitemradio" id="app-embedded" aria-checked="true" title="The app in the IDE's pane">Embedded</button>
-        <button role="menuitemradio" id="app-window" aria-checked="false" title="The app in a window of its own, which can go on another screen">Separate window</button>
-        <button role="menuitemradio" id="app-floating" aria-checked="false">Floating window</button>
+        <button role="menuitemradio" id="app-embedded" aria-checked="true" title="App in the IDE pane">Embedded</button>
+        <button role="menuitemradio" id="app-window" aria-checked="false" title="App in a separate window, movable to another screen">Separate Window</button>
+        <button role="menuitemradio" id="app-floating" aria-checked="false" title="App in an always-on-top window">Floating Window</button>
         <hr role="separator">
         <button role="menuitem" id="app-restart">Restart</button>
         <hr role="separator">
-        <button role="menuitem" id="bp-toggle" hidden title="Stop the app on the line with the cursor (the webide-hx debugger extension)">Toggle breakpoint<kbd>F9</kbd></button>
-        <button role="menuitem" id="bp-clear" hidden>Remove all breakpoints</button>
-        <button role="menuitem" id="app-tab" title="Another copy of the app, in a new tab: it reloads with each build, and starts over when the tab is reloaded">Open in new tab</button>
+        <button role="menuitem" id="bp-toggle" hidden title="Pause the app at the cursor line (webide-hx debugger extension)">Toggle Breakpoint<kbd>F9</kbd></button>
+        <button role="menuitem" id="bp-clear" hidden>Remove All Breakpoints</button>
+        <button role="menuitem" id="app-tab" title="Another instance of the app in a new tab; reloads with each build">Open in New Tab</button>
       </div>
     </div>
     <div class="menu">
       <button class="menubutton" id="project-menu" aria-haspopup="menu" aria-expanded="false" aria-controls="project-items">Project</button>
       <div class="items" id="project-items" role="menu" aria-labelledby="project-menu" hidden>
         <button role="menuitem" id="build-item">Build<kbd class="mod">Ctrl+S</kbd></button>
-        <button role="menuitem" id="build-file" title="The hxml file used for builds">Select hxml…</button>
+        <button role="menuitem" id="build-file" title="hxml file used for builds">Select Build File…</button>
         <hr role="separator">
-        <button role="menuitem" id="folder">Open folder (local)…</button>
-        <button role="menuitem" id="import" title="A zip as the project stored in this browser, replacing it">Import zip…</button>
-        <button role="menuitem" id="export">Export zip</button>
+        <button role="menuitem" id="folder" title="Folder on this computer as the project">Open Local Folder…</button>
+        <button role="menuitem" id="import" title="Replace the stored project with a zip">Import Zip…</button>
+        <button role="menuitem" id="export" title="Project as a zip download">Export Zip</button>
         <hr role="separator">
-        <button role="menuitem" id="libraries" title="The libraries this project uses, and those downloaded in this browser">Libraries…</button>
+        <button role="menuitem" id="libraries" title="Project libraries and the library cache">Libraries…</button>
         <hr role="separator">
-        <button role="menuitem" id="reset" title="Back to the Example project, losing your changes">Reset to Example project…</button>
+        <button role="menuitem" id="reset" title="Discard changes and restore the Example project">Reset to Example Project…</button>
       </div>
     </div>
   </nav>
-  <button class="primary" id="build" title="Ctrl-S">Build</button>
+  <button class="primary" id="build" title="Build (Ctrl+S)">Build</button>
   <span class="spinner" aria-hidden="true"></span>
-  <span class="status" id="status" role="status">starting</span>
+  <span class="status" id="status" role="status">Starting…</span>
   <span class="where" id="where"><span id="where-project"></span> · <button id="where-build"></button></span>
   <input type="file" id="zipfile" accept=".zip,application/zip" hidden>
   <input type="file" id="libfile" accept=".zip,application/zip" hidden>
@@ -291,19 +291,19 @@
     <h2 id="prefs-title">Preferences</h2>
     <div class="grid">
       <label for="pref-theme">Theme</label>
-      <select id="pref-theme"><option value="system">As the system</option><option value="light">Light</option><option value="dark">Dark</option></select>
+      <select id="pref-theme"><option value="system">System</option><option value="light">Light</option><option value="dark">Dark</option></select>
       <label for="pref-fontSize">Font size</label>
       <input type="number" id="pref-fontSize" min="9" max="28" step="1">
       <label for="pref-tabSize">Tab width</label>
       <select id="pref-tabSize"><option value="2">2</option><option value="4">4</option><option value="8">8</option></select>
-      <label for="pref-indent">Indent with</label>
+      <label for="pref-indent">Indent using</label>
       <select id="pref-indent"><option value="tabs">Tabs</option><option value="spaces">Spaces</option></select>
     </div>
     <div class="checks">
       <label class="check"><input type="checkbox" id="pref-wrap"> Wrap long lines</label>
       <label class="check"><input type="checkbox" id="pref-lineNumbers"> Line numbers</label>
       <label class="check"><input type="checkbox" id="pref-folding"> Folding</label>
-      <label class="check"><input type="checkbox" id="pref-activeLine"> Highlight the current line</label>
+      <label class="check"><input type="checkbox" id="pref-activeLine"> Highlight current line</label>
       <label class="check"><input type="checkbox" id="pref-brackets"> Match brackets</label>
       <label class="check"><input type="checkbox" id="pref-closeBrackets"> Close brackets and quotes</label>
     </div>
@@ -316,15 +316,15 @@
 <dialog id="libs" aria-labelledby="libs-title">
   <form method="dialog">
     <h2 id="libs-title">Libraries</h2>
-    <h3 id="libs-used-h" title="The libraries this project's build uses: its -lib lines and haxe_libraries files">Project libraries</h3>
+    <h3 id="libs-used-h" title="-lib lines and haxe_libraries files of this build">Project Libraries</h3>
     <ul id="libs-used" class="libs" aria-labelledby="libs-used-h"></ul>
-    <div class="libs-head"><h3 id="libs-cached-h" title="The libraries downloaded in this browser, for every project">Cached libraries</h3>
-      <button type="button" id="libs-clear" title="Remove every library downloaded into this browser; the project's files are not touched">Remove all</button></div>
+    <div class="libs-head"><h3 id="libs-cached-h" title="Libraries downloaded in this browser, shared by all projects">Cached Libraries</h3>
+      <button type="button" id="libs-clear" title="Remove all cached libraries; project files are unchanged">Remove All</button></div>
     <ul id="libs-cached" class="libs" aria-labelledby="libs-cached-h"></ul>
     <div class="actions">
       <button value="ok" class="primary" id="libs-close">Close</button>
-      <button type="button" id="libs-add" title="A haxelib release or a GitHub repository: its haxe_libraries file, as lix writes it, and -lib in the build's hxml">Add library…</button>
-      <button type="button" id="libs-zip" title="A haxelib release's zip, from lib.haxe.org, for when the page cannot download it">Add library zip…</button>
+      <button type="button" id="libs-add" title="haxelib release or GitHub repository; writes haxe_libraries/&lt;name&gt;.hxml and adds -lib to the build file">Add Library…</button>
+      <button type="button" id="libs-zip" title="haxelib release zip from lib.haxe.org, when a download is not possible">Add Library Zip…</button>
     </div>
   </form>
 </dialog>
@@ -334,8 +334,8 @@
   <ul id="picker-list" role="listbox" aria-labelledby="picker-title"></ul>
 </div>
 <div class="items" id="tree-menu" role="menu" aria-label="File and folder actions" tabindex="-1" hidden>
-  <button role="menuitem" id="tm-new">New file…</button>
-  <button role="menuitem" id="tm-new-folder">New folder…</button>
+  <button role="menuitem" id="tm-new">New File…</button>
+  <button role="menuitem" id="tm-new-folder">New Folder…</button>
   <hr role="separator" id="tm-sep">
   <button role="menuitem" id="tm-rename">Rename…</button>
   <button role="menuitem" id="tm-delete">Delete…</button>
@@ -360,30 +360,30 @@
       <div class="files">
         <ul id="tree"></ul>
       </div>
-      <div class="split" id="split-tree" role="separator" aria-orientation="vertical" aria-label="The file tree's width" title="Drag to resize; double-click to fold the files away or back"><button class="fold left" id="fold-tree"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><button class="fold right" id="unfold-tree"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></div>
+      <div class="split" id="split-tree" role="separator" aria-orientation="vertical" aria-label="File tree width" title="Drag to resize; double-click to fold"><button class="fold left" id="fold-tree"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><button class="fold right" id="unfold-tree"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></div>
       <div class="edit">
-        <div id="viewing" hidden><span id="viewing-what"></span><button id="viewing-close" title="back to the project file">×</button></div>
+        <div id="viewing" hidden><span id="viewing-what"></span><button id="viewing-close" title="Back to project file">×</button></div>
         <div id="editor"></div>
         <pre id="out"></pre>
       </div>
     </div>
   </section>
-  <div class="split" id="split-app" role="separator" aria-orientation="vertical" aria-label="The editor's and the app's widths" title="Drag to resize; double-click to fold the app away or back"><button class="fold left" id="fold-left"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><button class="fold right" id="fold-right"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></div>
+  <div class="split" id="split-app" role="separator" aria-orientation="vertical" aria-label="Editor and app widths" title="Drag to resize; double-click to fold the app"><button class="fold left" id="fold-left"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 3.5 5.5 8l4.5 4.5"/></svg></button><button class="fold right" id="fold-right"><svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5 10.5 8 6 12.5"/></svg></button></div>
   <section id="program-pane">
-    <iframe id="run" title="the running program"></iframe>
+    <iframe id="run" title="Running app"></iframe>
     <div id="debug" hidden>
       <div class="hsplit" id="dbg-height" role="separator" aria-orientation="horizontal" title="Drag to resize"></div>
       <div class="bar">
-        <button id="dbg-collapse" class="icon caret" title="Hide the call stack and variables" aria-expanded="true" aria-controls="dbg-body">▾</button>
+        <button id="dbg-collapse" class="icon caret" title="Hide Call Stack and Variables" aria-expanded="true" aria-controls="dbg-body">▾</button>
         <span id="dbg-state">Debugger</span>
         <button id="dbg-continue" class="icon" title="Continue (F8)" aria-label="Continue"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3v10"/><path d="M6.5 3.2v9.6L13 8z" fill="currentColor" stroke="none"/></svg></button>
         <button id="dbg-pause" class="icon" title="Pause (F8)" aria-label="Pause"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 3.5v9M10.5 3.5v9" stroke-width="2.2"/></svg></button>
-        <button id="dbg-over" class="icon" title="Step over (F10)" aria-label="Step over"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 9a5.5 5.5 0 0 1 10.6-2"/><path d="M13.5 3.5v3.6H9.9"/><circle cx="8" cy="12.5" r="1.6" fill="currentColor" stroke="none"/></svg></button>
-        <button id="dbg-into" class="icon" title="Step into (F11)" aria-label="Step into"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v7"/><path d="M5 5.8 8 8.8l3-3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
-        <button id="dbg-out" class="icon" title="Step out (Shift+F11)" aria-label="Step out"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9V2"/><path d="M5 4.8 8 1.8l3 3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+        <button id="dbg-over" class="icon" title="Step Over (F10)" aria-label="Step Over"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 9a5.5 5.5 0 0 1 10.6-2"/><path d="M13.5 3.5v3.6H9.9"/><circle cx="8" cy="12.5" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+        <button id="dbg-into" class="icon" title="Step Into (F11)" aria-label="Step Into"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v7"/><path d="M5 5.8 8 8.8l3-3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
+        <button id="dbg-out" class="icon" title="Step Out (Shift+F11)" aria-label="Step Out"><svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M8 9V2"/><path d="M5 4.8 8 1.8l3 3"/><circle cx="8" cy="12.8" r="1.6" fill="currentColor" stroke="none"/></svg></button>
       </div>
       <div class="body" id="dbg-body" hidden>
-        <div class="dpart"><h3 id="dbg-stack-h">Call stack</h3><ol id="dbg-stack" aria-labelledby="dbg-stack-h"></ol></div>
+        <div class="dpart"><h3 id="dbg-stack-h">Call Stack</h3><ol id="dbg-stack" aria-labelledby="dbg-stack-h"></ol></div>
         <div class="vsplit" id="dbg-split" role="separator" aria-orientation="vertical" title="Drag to resize"></div>
         <div class="dpart"><h3 id="dbg-vars-h">Variables</h3><ul id="dbg-vars" aria-labelledby="dbg-vars-h"></ul></div>
       </div>
@@ -539,7 +539,7 @@ const project = {
   },
   // the browser's project only: a folder on disk is never emptied
   async clear() {
-    if (this.folder) throw new Error("a folder isn't cleared");
+    if (this.folder) throw new Error("A local folder cannot be cleared");
     for (const e of await FS.fs.promises.readdir(this.root)) await FS.fs.promises.rm(this.path(e), { recursive: true, force: true });
   },
 };
@@ -619,8 +619,8 @@ async function folderWriteOk(name, data) {
   const disk = asData(await f.arrayBuffer());
   if (sameData(disk, data)) { stamps.set(name, f.lastModified); return false; }
   const which = await askPerson({ title: `${name} changed on disk`, ok: "Keep",
-    text: "Another program changed this file after the page read it, and the page has edits to it that are not written yet. Which version should the file keep?",
-    choices: [{ value: "disk", label: "The version on disk (the page's edits are dropped)" }, { value: "page", label: "The page's version (the change on disk is overwritten)" }],
+    text: "Unwritten edits conflict with a newer version on disk.",
+    choices: [{ value: "disk", label: "Version on disk (discard edits)" }, { value: "page", label: "Edited version (overwrite disk)" }],
     value: "disk" });
   if (which === null) { heldWrites.add(name); return false; } // not answered: nothing written; the next write asks again
   heldWrites.delete(name);
@@ -645,7 +645,7 @@ async function takeFromDisk(changed, added, removed) {
   if (current !== null && (current in changed || removed.length)) show(current);
   else if (current === null) view.setState(CM.EditorState.create({ doc: "" }));
   const all = Object.keys(changed).concat(removed);
-  status(`changed on disk: ${all.slice(0, 3).join(", ")}${all.length > 3 ? ` and ${all.length - 3} more` : ""}`);
+  status(`Changed on disk: ${all.slice(0, 3).join(", ")}${all.length > 3 ? ` and ${all.length - 3} more` : ""}`);
   if (Object.keys(assets).length) await tellAssets(assets, true);
   if (all.some(builds)) return build();
 }
@@ -673,7 +673,7 @@ async function lookAtFolder() {
     await project.refresh(); // ZenFS's view of the folder, for what the page does next
     await takeFromDisk(changed, added, removed);
   } catch (e) {
-    status(`couldn't look at the folder: ${e.message}`);
+    status(`Folder not readable: ${e.message}`);
   } finally { folderLooking = false; }
 }
 setInterval(lookAtFolder, 2000);
@@ -770,7 +770,7 @@ function fromRunner(e) {
   // the app took the latest build: the status says it reloaded (if it still says reloading)
   else if (m.type === "took" && w === program.target()) {
     appTook = m.version;
-    if (m.version === version && $("status").textContent === buildStatus + ", reloading") status(buildStatus + ", reloaded");
+    if (m.version === version && $("status").textContent === buildStatus + " · reloading") status(buildStatus + " · reloaded");
   }
   else if (m.type === "log") r.log = m.text;
   else if (m.type === "themed") r.theme = m.theme;
@@ -855,7 +855,7 @@ setInterval(() => { for (const [w, r] of runners) catchUp(w, r); }, 1000);
 async function connectRunner() {
   await findRunner();
   $("run").src = RUNNER;
-  if (!(await runnerUp($("run").contentWindow, 30000))) throw new Error(`the app's runner (${RUNNER}) didn't start`);
+  if (!(await runnerUp($("run").contentWindow, 30000))) throw new Error(`App runner did not start: ${RUNNER}`);
 }
 // for the test: a fetch by the app's page, and how its output follows the end
 async function runnerFetch(path) {
@@ -863,7 +863,7 @@ async function runnerFetch(path) {
   return { ok: m.ok, status: m.status, contentType: m.contentType, body: m.body, text: () => new TextDecoder().decode(m.body) };
 }
 
-// ---- the build: from one of the project's hxml files (Project > Select hxml…), or else
+// ---- the build: from one of the project's hxml files (Project > Select Build File…), or else
 // src/ and Main. The page reads the hxml itself, and the ones it includes: its class
 // paths say which .hx files are code, its --main and --js what to build, and the rest
 // goes to the compiler as it is (relative paths work: the compiler's directory is the
@@ -883,7 +883,7 @@ function parseHxml(file) {
   // class paths are the library's (in the cache), not the project's
   const read = (f, at, stack, lib) => {
     if (stack.includes(f)) return fail(at, `${f} includes itself`);
-    if (!(f in files) || !isText(files[f])) return fail(at, `there's no ${f} in the project`);
+    if (!(f in files) || !isText(files[f])) return fail(at, `${f} not found in the project`);
     files[f].split(/\r?\n/).forEach((raw, i) => {
       const l = raw.trim(), here = { file: f, line: i + 1 };
       if (cfg.error || !l || l.startsWith("#")) return;
@@ -922,12 +922,12 @@ function parseHxml(file) {
         } else if (IN_EXTENSION) {
           // its newest release, asked of haxelib when the libraries are prepared
           cfg.libs.push({ name, unpinned: true, at: here, haxelib: true });
-        } else fail(here, `-lib ${name}: no version. Pin a haxelib release (-lib ${name}:1.2.3), or add it with Project > Libraries… > Add library… (haxelib release or GitHub repository; writes haxe_libraries/${name}.hxml)`);
+        } else fail(here, `-lib ${name}: no version. Pin a haxelib release (-lib ${name}:1.2.3), or add it with Project > Libraries… > Add Library… (haxelib release or GitHub repository; writes haxe_libraries/${name}.hxml)`);
       }
-      else if (long === "--run") fail(here, `--run: ${f} runs ${arg || "a program"}, it doesn't build one for the page`);
-      else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: the page builds JavaScript (--js)`);
-      else if (long === "--next" || long === "--each") fail(here, `${opt}: the page builds one program; give each build its own hxml file`);
-      else if (long === "--cwd" || opt === "-C") fail(here, `${opt}: the page builds in the project's own directory`);
+      else if (long === "--run") fail(here, `--run: not supported (${arg || "a program"} runs instead of building JavaScript)`);
+      else if (OTHER_TARGETS.includes(long)) fail(here, `${opt}: not supported; builds target JavaScript (--js)`);
+      else if (long === "--next" || long === "--each") fail(here, `${opt}: not supported; one build per hxml file`);
+      else if (long === "--cwd" || opt === "-C") fail(here, `${opt}: not supported; builds run in the project directory`);
       else if (!LEFT_OUT.includes(long)) cfg.args.push(...(arg === null ? [opt] : [opt, arg]));
     });
   };
@@ -1027,12 +1027,12 @@ async function haxelibNewest(name, at) {
   try {
     const r = await fetch(HAXELIB_API, { method: "POST", headers: { "X-Haxe-Remoting": "1", "Content-Type": "application/x-www-form-urlencoded" }, body: "__x=" + encodeURIComponent(call) });
     text = await r.text();
-  } catch (e) { throw new LibraryError(`${name}: haxelib couldn't be reached for its newest version`, at); }
+  } catch (e) { throw new LibraryError(`${name}: haxelib not reachable (newest version unknown)`, at); }
   let info;
   try { if (!text.startsWith("hxr")) throw new Error(); info = hxUnserialize(text.slice(3)); }
-  catch (e) { throw new LibraryError(`${name}: haxelib's answer couldn't be read`, at); }
-  if (info && info.__exception !== undefined) throw new LibraryError(`${name}: haxelib says ${info.__exception}`, at);
-  if (!info || !info.curversion) throw new LibraryError(`${name}: haxelib has no release of it`, at);
+  catch (e) { throw new LibraryError(`${name}: unreadable answer from haxelib`, at); }
+  if (info && info.__exception !== undefined) throw new LibraryError(`${name}: haxelib: ${info.__exception}`, at);
+  if (!info || !info.curversion) throw new LibraryError(`${name}: no release on haxelib`, at);
   newestVersions.set(name, info.curversion);
   return info.curversion;
 }
@@ -1108,12 +1108,12 @@ async function downloadFrom(lib, progress) {
       try { const bytes = await fetchBytes(url); return { files: zipFiles(bytes, true), hash: await sha256([bytes]), from: url }; }
       catch (e) { tried.push(url); }
     }
-    if (IN_EXTENSION) throw new LibraryError(`${m[1]} ${m[2]}: haxelib has no such release (or it couldn't be reached)`, lib.at);
-    throw new LibraryError(`${m[1]} ${m[2]}: the page couldn't download it (haxelib doesn't let pages read its files, and this site has no haxelib relay). Download it from https://lib.haxe.org/p/${m[1]}/${m[2]}/download/ and add it with Project > Libraries… > Add library zip…`, lib.at);
+    if (IN_EXTENSION) throw new LibraryError(`${m[1]} ${m[2]}: release not found on haxelib, or haxelib not reachable`, lib.at);
+    throw new LibraryError(`${m[1]} ${m[2]}: download not possible here (haxelib blocks web pages; no haxelib relay on this site). Download https://lib.haxe.org/p/${m[1]}/${m[2]}/download/, then use Project > Libraries… > Add Library Zip…`, lib.at);
   }
   if ((m = /^gh:\/\/github\.com\/([^/]+)\/([^/#]+?)(?:\.git)?#(.+)$/.exec(src))) {
     const [, owner, repo, ref] = m;
-    // only the library, when Add library… asks (lib.part: true): its class path (haxelib.json's,
+    // only the library, when Add Library… asks (lib.part: true): its class path (haxelib.json's,
     // within the subdirectory lib.sub; else the subdirectory; else src/ when there is one, or
     // everything) and its haxelib.json and extraParams.hxml: a repository can be much more
     // than its library (helix: 767 files, its library a fraction of them)
@@ -1192,19 +1192,19 @@ async function downloadFrom(lib, progress) {
     return { files: zipFiles(bytes, false), hash: await sha256([bytes]), from: url };
   }
   if (/^https:\/\//.test(src)) {
-    const bytes = await fetchBytes(src).catch((e) => { throw new LibraryError(`${lib.name}: ${e.message} (or the server doesn't let pages read it)`, lib.at); });
+    const bytes = await fetchBytes(src).catch((e) => { throw new LibraryError(`${lib.name}: ${e.message} (or the server blocks web pages)`, lib.at); });
     return { files: zipFiles(bytes, false), hash: await sha256([bytes]), from: src };
   }
-  throw new LibraryError(`${lib.name}: the page can't download from ${src}`, lib.at);
+  throw new LibraryError(`${lib.name}: unsupported source ${src}`, lib.at);
 }
 // files into the cache, the hash checked against the first download's
-let lastStored = null; // the library cache's last download (Add library… says whether it downloaded)
+let lastStored = null; // the library cache's last download (Add Library… says whether it downloaded)
 async function storeLibrary(lib, got) {
   let hashes = {};
   try { hashes = JSON.parse(localStorage.getItem(libHashesKey)) || {}; } catch (e) {}
   const key = lib.source + (got.part !== undefined && got.part !== null ? " " + got.part : "");
   if (hashes[key] && hashes[key] !== got.hash)
-    throw new LibraryError(`${lib.name}: what was downloaded (${got.from}) isn't what was downloaded before for ${lib.source}; refused`, lib.at);
+    throw new LibraryError(`${lib.name}: download from ${got.from} differs from the earlier download of ${lib.source}; refused`, lib.at);
   for (const [rel, data] of Object.entries(got.files)) {
     const p = libPath(lib.dir, rel);
     await FS.fs.promises.mkdir(p.slice(0, p.lastIndexOf("/")), { recursive: true });
@@ -1231,7 +1231,7 @@ async function prepareLibraries(cfg) {
       const v = await haxelibNewest(lib.name, lib.at);
       Object.assign(lib, { version: v, source: `haxelib:/${lib.name}#${v}`, dir: `${lib.name}/${v}/haxelib` });
     }
-    cfg.notes.push(`${lib.name}: haxelib's newest, ${lib.version} (pin it: -lib ${lib.name}:${lib.version}, or Project > Libraries… > Add library…)`);
+    cfg.notes.push(`${lib.name}: haxelib's newest, ${lib.version} (pin it: -lib ${lib.name}:${lib.version}, or Project > Libraries… > Add Library…)`);
   }
   const queue = cfg.libs.slice(), done = new Set(), args = [], dirs = [];
   while (queue.length) {
@@ -1239,7 +1239,7 @@ async function prepareLibraries(cfg) {
     if (done.has(lib.dir)) continue;
     done.add(lib.dir); dirs.push(lib.dir);
     if (!(await libHas(lib.dir))) {
-      status(`${lib.name}: downloading (${lib.source})`);
+      status(`${lib.name}: downloading ${lib.source}`);
       await storeLibrary(lib, await downloadLibrary(lib));
     }
     if (!lib.haxelib) continue;
@@ -1256,7 +1256,7 @@ async function prepareLibraries(cfg) {
     }
     for (const [dep, v] of Object.entries(meta.dependencies || {})) {
       if (LIBRARIES[dep] || cfg.libs.some((x) => x.name === dep)) continue;
-      if (!v && !IN_EXTENSION) throw new LibraryError(`${lib.name} ${lib.version} needs ${dep}, with no version: pin one in the hxml (-lib ${dep}:1.2.3)`, lib.at);
+      if (!v && !IN_EXTENSION) throw new LibraryError(`${lib.name} ${lib.version} needs ${dep}, with no version. Pin one in the hxml (-lib ${dep}:1.2.3)`, lib.at);
       const dv = v || await haxelibNewest(dep, lib.at); // no version: haxelib's newest (the extension only)
       if (!v) cfg.notes.push(`${dep} (for ${lib.name}): haxelib's newest, ${dv}`);
       queue.push({ name: dep, version: dv, source: `haxelib:/${dep}#${dv}`, dir: `${dep}/${dv}/haxelib`, at: lib.at, haxelib: true });
@@ -1393,7 +1393,7 @@ function haxeHover(fileName) {
 async function goToDefinition(fileName, view, pos) {
   const res = await askCompiler("display/definition", { file: compilerPath(fileName), offset: codeOffset(view.state.doc, pos) });
   const at = res && res[0];
-  if (!at) { status("no definition found there"); return false; }
+  if (!at) { status("No definition found"); return false; }
   return goToPlace(at);
 }
 // a place of the compiler's ({file, range}): its file shown, the range selected
@@ -1407,7 +1407,7 @@ async function goToPlace(at) {
     view.focus();
     status(`${target}:${line}`);
   } else if (!(await showLibraryFile(at.file, at.range))) {
-    status(`defined in ${at.file}:${line}, which the page can't open`);
+    status(`Defined in ${at.file}:${line} (not viewable)`);
   }
   return true;
 }
@@ -1473,7 +1473,7 @@ function leaveLibraryFile() {
   $("viewing").hidden = true;
 }
 
-// ---- a list to pick from, over the editor (Go to symbol, Find references): typing filters
+// ---- a list to pick from, over the editor (Go to symbol, Find References): typing filters
 // it, the arrows move in it, Enter or a click goes to the one picked, Escape goes back
 let picker = { items: [], shown: [], at: 0, go: null };
 function openPicker(title, items, go) {
@@ -1513,7 +1513,7 @@ function filterPicker() {
   if (!picker.shown.length) {
     const li = document.createElement("li");
     li.className = "none";
-    li.textContent = "Nothing matches";
+    li.textContent = "No matches";
     $("picker-list").append(li);
   }
   markPicker();
@@ -1560,10 +1560,10 @@ async function fileSymbols(fileName) {
 }
 async function goToSymbol(fileName, v) {
   const symbols = await fileSymbols(fileName);
-  if (!symbols) { status("the compiler could not list this file's symbols (after a first build, it can)"); return; }
+  if (!symbols) { status("Symbols available after the first build"); return; }
   const items = symbols.filter((s) => SYMBOL_KINDS[s.kind] && s.kind !== 10 && s.kind !== 11 && s.kind !== 17)
     .map((s) => ({ label: s.name, detail: SYMBOL_KINDS[s.kind], depth: TYPE_SYMBOLS.has(s.kind) ? 0 : 1, range: s.range }));
-  if (!items.length) { status("no symbols in this file"); return; }
+  if (!items.length) { status("No symbols in this file"); return; }
   openPicker(`Symbols in ${baseOf(fileName)}`, items, (it) => {
     // the declaration's range starts at its keyword (or its metadata): the name in it is selected
     const doc = v.state.doc, from = docPos(doc, it.range.start), to = docPos(doc, it.range.end);
@@ -1574,7 +1574,7 @@ async function goToSymbol(fileName, v) {
   });
 }
 
-// ---- Find references: the definition and every use of what's at the cursor, in the
+// ---- Find References: the definition and every use of what's at the cursor, in the
 // picker, each with its line; the compiler finds them (display/references, all of the
 // class paths, typed where the name appears)
 // a {line, character} of the compiler's in a text (code points, as it counts): the index
@@ -1598,7 +1598,7 @@ async function findReferences(fileName, v, pos) {
     const key = p.file + ":" + p.range.start.line + ":" + p.range.start.character;
     if (!seen.has(key)) { seen.add(key); places.push(p); }
   }
-  if (!places.length) { status("no references found there"); return; }
+  if (!places.length) { status("No references found"); return; }
   const texts = new Map();
   const textOf = async (file) => {
     if (!texts.has(file)) texts.set(file, file.startsWith("/static/") && file.slice(8) in files ? files[file.slice(8)] : await libraryText(file));
@@ -1625,15 +1625,15 @@ const HAXE_KEYWORDS = new Set(("abstract break case cast catch class continue de
   "implements import in inline interface macro new null operator overload override package private public return static super switch this throw " +
   "true try typedef untyped using var while").split(" "));
 async function renameSymbol(fileName, v, pos) {
-  if (libraryView || current === null || !isCode(current)) throw new Error("only the project's own code can be renamed");
+  if (libraryView || current === null || !isCode(current)) throw new Error("Rename works on project code only");
   const { def, refs } = await symbolPlaces(fileName, v.state.doc, pos);
-  if (!def) { status("nothing to rename there"); return; }
+  if (!def) { status("Nothing to rename at the cursor"); return; }
   if (!(def.file.startsWith("/static/") && def.file.slice(8) in files))
-    throw new Error(`that is defined in ${placeName(def.file)}: only the project's own code can be renamed`);
+    throw new Error(`Defined in ${placeName(def.file)}; rename works on project code only`);
   const textOf = (name) => name === current ? view.state.doc.toString() : files[name];
   const defFile = def.file.slice(8), defText = textOf(defFile);
   const defAt = textPos(defText, def.range.start), old = defText.slice(defAt, textPos(defText, def.range.end));
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(old)) throw new Error(`${old} cannot be renamed here`);
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(old)) throw new Error(`${old} cannot be renamed`);
   // a type: its module's own (its file's name), or another in the module
   const lineStart = defText.lastIndexOf("\n", defAt - 1) + 1;
   const isType = /\b(class|interface|enum|typedef|abstract)\s+$/.test(defText.slice(lineStart, defAt));
@@ -1649,7 +1649,7 @@ async function renameSymbol(fileName, v, pos) {
     else if (said.endsWith("." + old)) add(name, to - old.length);
     else wrong.push(`${name}:${p.range.start.line + 1} (${said})`);
   }
-  if (wrong.length) throw new Error(`the compiler's places for ${old} are not all ${old} (${wrong.join(", ")}): nothing was renamed`);
+  if (wrong.length) throw new Error(`Rename cancelled: unexpected text at ${wrong.join(", ")}`);
   // a type's imports and usings: pack.Thing, pack.Thing.Sub (pack.Module.Thing, for another type in a module)
   if (isType) {
     const pack = packageOf(defFile), path = [pack, ownModule ? null : moduleName, old].filter((x) => x).join(".");
@@ -1671,11 +1671,10 @@ async function renameSymbol(fileName, v, pos) {
   const answer = await askPerson({
     title: `Rename ${old}`, value: old, ok: "Rename",
     text: `${count} place${count === 1 ? "" : "s"} in ${where.length === 1 ? where[0] : where.length + " files"}.` +
-          (ownModule ? ` The file ${defFile} is renamed with it.` : "") +
-          (others.length ? ` Left as ${others.length === 1 ? "it is" : "they are"}, since the compiler did not find ${others.length === 1 ? "it" : "them"} in this build's code` +
-                           ` (a comment, a string, another ${old}, or code for another target): ${others.slice(0, 4).join(", ")}${others.length > 4 ? ` and ${others.length - 4} more` : ""}.` : ""),
-    check: (n) => n === old ? "That is its name already." : !/^[A-Za-z_][A-Za-z0-9_]*$/.test(n) ? "Not a Haxe name: letters, digits and _, not starting with a digit."
-      : HAXE_KEYWORDS.has(n) ? `${n} is a Haxe keyword.` : isType && !/^[A-Z]/.test(n) ? "A type's name starts with a capital letter."
+          (ownModule ? ` Also renames ${defFile}.` : "") +
+          (others.length ? ` Unchanged (comments, strings, other symbols, or code outside this build): ${others.slice(0, 4).join(", ")}${others.length > 4 ? ` and ${others.length - 4} more` : ""}.` : ""),
+    check: (n) => n === old ? "Name unchanged." : !/^[A-Za-z_][A-Za-z0-9_]*$/.test(n) ? "Not a Haxe identifier: letters, digits and _, not starting with a digit."
+      : HAXE_KEYWORDS.has(n) ? `${n} is a Haxe keyword.` : isType && !/^[A-Z]/.test(n) ? "Type names start with an uppercase letter."
       : ownModule ? nameProblem(newPath(n)) : null,
   });
   if (!answer) return;
@@ -1695,11 +1694,11 @@ async function renameSymbol(fileName, v, pos) {
     saved[name] = files[name];
     await project.put(name, files[name]);
   }
-  const did = `${old} is now ${answer} in ${count} place${count === 1 ? "" : "s"}`;
+  const did = `${old} renamed to ${answer} (${count} place${count === 1 ? "" : "s"})`;
   let r;
   if (ownModule) { await flushWrites(); r = await movePath(defFile, newPath(answer)); }
   else r = await save();
-  status(`${did}; ` + $("status").textContent);
+  status(`${did} · ` + $("status").textContent);
   return r;
 }
 // signature help: typing "(" or "," in a call shows the function's parameters above the
@@ -1912,21 +1911,21 @@ async function build() {
   if (cfg.error || libError) {
     const e = cfg.error || libError;
     showDiagnostics(new Map([[e.file, [{ line: e.line, from: null, to: null, lastLine: null, severity: "error", message: e.message }]]]));
-    status(`build failed: ${e.file} can't be built here`);
+    status(`Build failed: ${e.file} not supported here`);
     out(`${e.file}:${e.line}: ${e.message}`);
     return { ok: false, r: { code: 1, stderr: `${e.file}:${e.line}: ${e.message}`, stdout: "", ms: 0 } };
   }
   const args = buildArgs(version > 0);
   // a first build starts the compiler and reads the library; after it, a whole build or a reload's
-  const done = busy(compilerUp ? "building" : "starting the compiler and building", !compilerUp ? "first" : version > 0 ? "reload" : "whole");
-  status("building");
+  const done = busy(compilerUp ? "Building" : "Starting compiler and building", !compilerUp ? "first" : version > 0 ? "reload" : "whole");
+  status("Building…");
   const r = await compile(args, sources, outPath(cfg));
   done();
   if (r.code >= 0) compilerUp = true;
   const messages = parseMessages(r.stderr);
   showDiagnostics(messages.byFile);
   if (r.code !== 0 || !r.output) {
-    status("build failed; the program keeps what it has");
+    status("Build failed · app keeps the last build");
     out((r.stderr || r.stdout || "no output").trim());
     return { ok: false, r };
   }
@@ -1934,8 +1933,8 @@ async function build() {
   await tell({ type: "build", name: baseOf(cfg.out), version, js: r.output });
   // nothing running yet (the project's first build failed): this build starts it
   if (program.url === "about:blank" && !startingProgram) { program.start("run/?start=" + ++starts); showView(); }
-  buildStatus = `build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms to start the ${WASM_COMPILER ? "wasm " : ""}compiler)` : "");
-  status(buildStatus + (version > 1 ? (appTook >= version ? ", reloaded" : ", reloading") : ""));
+  buildStatus = `Build ${version}: ${Math.round(r.ms)} ms` + (r.startMs ? ` (+${Math.round(r.startMs)} ms ${WASM_COMPILER ? "wasm " : ""}compiler start)` : "");
+  status(buildStatus + (version > 1 ? (appTook >= version ? " · reloaded" : " · reloading") : ""));
   out([r.stdout.trim()].concat(messages.rest, cfg.notes || []).filter((x) => x).join("\n"));
   return { ok: true, r };
 }
@@ -1959,7 +1958,7 @@ async function save() {
   if (isCode(current)) return build();
   await tellAssets({ [current]: files[current] }, true);
   if (builds(current)) return build();
-  status(`${current} saved; the program reads it again`);
+  status(`${current} saved · reloaded by the app`);
   return { ok: true };
 }
 
@@ -1983,9 +1982,9 @@ function validName(name) {
   return /^[A-Za-z0-9_.\-]+(\/[A-Za-z0-9_.\-]+)*$/.test(name) && !name.split("/").some((p) => p === "." || p === "..");
 }
 function checkName(name) {
-  if (!validName(name)) throw new Error(`not a file name: ${name}`);
-  if (SKIP.test(name)) throw new Error(`${name} wouldn't be part of the project (hidden, node_modules, or a build output)`);
-  if (name in files || dirs.has(name)) throw new Error(`${name} is there already`);
+  if (!validName(name)) throw new Error(`Not a valid file name: ${name}`);
+  if (SKIP.test(name)) throw new Error(`${name}: excluded from the project (hidden, node_modules, or build output)`);
+  if (name in files || dirs.has(name)) throw new Error(`${name} already exists`);
   for (let d = parentOf(name); d; d = parentOf(d)) if (d in files) throw new Error(`${d} is a file, not a folder`);
 }
 // a .hx file's package, from its folder under src/
@@ -2023,7 +2022,7 @@ async function newFile(name, text) {
   if (isCode(name)) return build();
   await tellAssets({ [name]: files[name] }, true);
   if (builds(name)) return build();
-  status(`${name} added`);
+  status(`${name} created`);
   return { ok: true };
 }
 async function newFolder(name) {
@@ -2033,15 +2032,15 @@ async function newFolder(name) {
   collapsed.delete(name);
   selectedDir = name;
   renderTree();
-  status(`${name}/ added`);
+  status(`${name}/ created`);
   return { ok: true };
 }
 // a file or a folder (with everything in it) to a new path: a rename, or a move. A .hx
 // file whose package changes gets its package line changed
 async function movePath(from, to) {
   const isDir = dirs.has(from);
-  if (!isDir && !(from in files)) throw new Error(`no file or folder ${from}`);
-  if (isDir && (to === from || inside(to, from))) throw new Error(`${from} can't go inside itself`);
+  if (!isDir && !(from in files)) throw new Error(`Not found: ${from}`);
+  if (isDir && (to === from || inside(to, from))) throw new Error(`${from} cannot move into itself`);
   checkName(to);
   syncEditor();
   await flushWrites();
@@ -2067,18 +2066,18 @@ async function movePath(from, to) {
   renderTree();
   if (current !== null) show(current);
   if (Object.keys(assets).length) await tellAssets(assets, true);
-  const note = repackaged.length ? `; the package line changed in ${repackaged.join(", ")}` : "";
+  const note = repackaged.length ? ` · package line updated in ${repackaged.join(", ")}` : "";
   if (moved.some(builds) || moved.map(renamed).some(builds)) {
     const r = await build();
-    if (r.ok) status(`${from} is now ${to}${note}; ` + $("status").textContent);
+    if (r.ok) status(`${from} renamed to ${to}${note} · ` + $("status").textContent);
     return r;
   }
-  status(`${from} is now ${to}${note}`);
+  status(`${from} renamed to ${to}${note}`);
   return { ok: true };
 }
 const renameFile = movePath;
 async function deleteFile(name) {
-  if (!(name in files)) throw new Error(`no file ${name}`);
+  if (!(name in files)) throw new Error(`File not found: ${name}`);
   delete files[name]; delete saved[name];
   states.delete(name); diagnostics.delete(name);
   await project.remove(name);
@@ -2087,12 +2086,12 @@ async function deleteFile(name) {
   if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
   if (!isCode(name)) await tellAssets({ [name]: null }, true);
   if (builds(name)) return build();
-  status(`${name} removed`);
+  status(`${name} deleted`);
   return { ok: true };
 }
 // a folder and everything in it, including what the page doesn't show
 async function deleteFolder(dir) {
-  if (!dirs.has(dir)) throw new Error(`no folder ${dir}`);
+  if (!dirs.has(dir)) throw new Error(`Folder not found: ${dir}`);
   await flushWrites();
   await project.removeDir(dir);
   const gone = names().filter((n) => inside(n, dir));
@@ -2108,7 +2107,7 @@ async function deleteFolder(dir) {
   if (current !== null) show(current); else view.setState(CM.EditorState.create({ doc: "" }));
   if (Object.keys(assets).length) await tellAssets(assets, true);
   if (gone.some(builds)) return build();
-  status(`${dir}/ removed`);
+  status(`${dir}/ deleted`);
   return { ok: true };
 }
 
@@ -2227,9 +2226,9 @@ function breakpointSetup() {
     toDOM() {
       const d = document.createElement("div");
       d.className = "bp bp-" + this.kind;
-      d.title = this.kind === "hint" ? "Click to set a breakpoint"
-        : this.kind === "bad" ? "No statement starts on this line, so the app cannot stop here (click to remove)"
-        : this.kind === "checking" ? "Checking the line" : "Breakpoint: the app pauses here when DevTools is open (F12). Click to remove";
+      d.title = this.kind === "hint" ? "Set breakpoint"
+        : this.kind === "bad" ? "No statement on this line; the app cannot pause here (click to remove)"
+        : this.kind === "checking" ? "Checking line…" : "Breakpoint; pauses the app when DevTools is open (F12). Click to remove";
       return d;
     }
   }
@@ -2329,7 +2328,7 @@ function toggleBreakpoint(v, pos) {
   v.dispatch({ effects: BP.toggle.of(pos) });
   const n = v.state.doc.lineAt(pos).number, set = breakLines(v.state).has(n);
   if (set) dbg.cancelled = false;
-  status(`${name}:${n}: breakpoint ${set ? "set" : "removed"}`);
+  status(`Breakpoint ${set ? "set" : "removed"}: ${name}:${n}`);
   return dbgSync();
 }
 // ---- the debugger, when the webide-hx debugger extension (extensions/debugger/) is installed. Its
@@ -2467,9 +2466,9 @@ async function dbgSync() {
         else dbgAdd("t:" + t.tabId, t.tabId, null);
       }
       for (let i = 0; i < 50 && !dbg.targets.size; i++) await new Promise((r) => setTimeout(r, 40));
-      if (!dbg.targets.size) throw new Error("the app's runner wasn't found (it needs the app on a site of its own)");
+      if (!dbg.targets.size) throw new Error("App runner not found (requires the app on a separate site)");
       await Promise.all([...dbg.targets.values()].map((t) => t.enabled));
-    } catch (e) { status("debugger: " + e.message); }
+    } catch (e) { status("Debugger: " + e.message); }
     finally { dbg.attaching = null; }
   })();
   await dbg.attaching;
@@ -2608,7 +2607,7 @@ async function dbgFrame(i) {
     const line = view.state.doc.line(Math.min(at.line, view.state.doc.lines));
     view.dispatch({ effects: [setPaused.of(line.from), CM.EditorView.scrollIntoView(line.from, { y: "center" })] });
     dbg.at = `${at.path.replace(/^\/static\//, "")}:${at.line}`;
-    status(`stopped at ${dbg.at}` + (p.reason && p.reason !== "other" ? ` (${p.reason})` : ""));
+    status(`Paused at ${dbg.at}` + (p.reason && p.reason !== "other" ? ` (${p.reason})` : ""));
   } else dbg.at = null;
   dbgShow();
   // its variables: each scope (but the global one), and `this`
@@ -2676,15 +2675,15 @@ function dbgShow() {
   $("dbg-height").hidden = !dbg.paused || dbgLayout.collapsed;
   $("dbg-collapse").textContent = dbgLayout.collapsed ? "▸" : "▾";
   $("dbg-collapse").setAttribute("aria-expanded", String(!dbgLayout.collapsed));
-  $("dbg-collapse").title = dbgLayout.collapsed ? "Show the call stack and variables" : "Hide the call stack and variables";
+  $("dbg-collapse").title = dbgLayout.collapsed ? "Show Call Stack and Variables" : "Hide Call Stack and Variables";
   const stopped = !!dbg.paused, on = dbg.attached && dbg.targets.size > 0;
   $("dbg-continue").disabled = !stopped;
   $("dbg-pause").disabled = stopped;
   for (const id of ["dbg-over", "dbg-into", "dbg-out"]) $(id).disabled = !stopped;
   $("dbg-state").classList.toggle("resume", dbg.cancelled);
-  $("dbg-state").title = dbg.cancelled ? "Click to debug again" : "";
-  $("dbg-state").textContent = dbg.cancelled ? "Debugger stopped from the browser's bar: click here to debug again"
-    : stopped ? "Stopped" + (dbg.at ? " at " + dbg.at : "") : on ? "Debugging" : "Debugger: set a breakpoint (F9) or Pause";
+  $("dbg-state").title = dbg.cancelled ? "Resume debugging" : "";
+  $("dbg-state").textContent = dbg.cancelled ? "Debugging stopped from the browser bar · click to resume"
+    : stopped ? "Paused" + (dbg.at ? " at " + dbg.at : "") : on ? "Debugging" : "Debugger ready · set a breakpoint (F9) or pause";
   for (const id of ["bp-toggle", "bp-clear"]) $(id).hidden = !dbg.present;
 }
 // the panel's layout, kept per browser: its lists' height, the stack's share of the width,
@@ -2736,8 +2735,8 @@ function applyLayout() {
   document.body.classList.toggle("edit-folded", layout.editFolded);
   document.body.classList.toggle("app-folded", layout.appFolded);
   const titled = (id, t) => { $(id).title = t; $(id).setAttribute("aria-label", t); };
-  titled("fold-left", layout.appFolded ? "Bring the app back" : "Fold the editor away");
-  titled("fold-right", layout.editFolded ? "Bring the editor back" : "Fold the app away");
+  titled("fold-left", layout.appFolded ? "Show App" : "Fold Editor");
+  titled("fold-right", layout.editFolded ? "Show Editor" : "Fold App");
   if (dbg.present && view) dbgShow(); // (not while the page starts: it shows the panel itself then)
 }
 const saveLayout = () => { try { localStorage.setItem(LAYOUT, JSON.stringify(layout)); } catch (e) {} };
@@ -2875,7 +2874,7 @@ let runnerLoads = 0;
 const program = {
   kind: null, win: null, frame: null, watch: null,
   url: "about:blank",
-  tabs: new Set(), // runners in tabs of their own (Open in new tab): each runs the app too
+  tabs: new Set(), // runners in tabs of their own (Open in New Tab): each runs the app too
   // a window or a tab of the app's: its runner (app.html's frame, where there's app.html)
   runnerOf(w) {
     if (!w || !APP_PAGE) return w;
@@ -2918,7 +2917,7 @@ const program = {
       try { at = JSON.parse(localStorage.getItem(PROGRAM_WINDOW)) || {}; } catch (e) {}
       const features = ["popup", `width=${at.w || 640}`, `height=${at.h || 480}`].concat(at.x !== undefined ? [`left=${at.x}`, `top=${at.y}`] : []);
       const win = window.open(APP_PAGE || RUNNER, "haxe-program", features.join(","));
-      if (!win) throw new Error("the browser blocked the window: allow pop-ups for this page");
+      if (!win) throw new Error("Window blocked by the browser; allow pop-ups for this site");
       this.win = win;
       // closed by the person: back into the page; app.html's place read here (it's of this
       // site; the extension's runner says where it is)
@@ -2929,7 +2928,7 @@ const program = {
     } else {
       const pip = await documentPictureInPicture.requestWindow({ width: 480, height: 360 });
       const f = pip.document.createElement("iframe");
-      pip.document.title = "Haxe program";
+      pip.document.title = "App";
       pip.document.body.style.cssText = "margin: 0; overflow: hidden;";
       f.style.cssText = "border: 0; width: 100vw; height: 100vh; display: block;";
       pip.document.body.append(f);
@@ -2957,7 +2956,7 @@ const program = {
     if (!quiet) { this.start(this.url === "about:blank" ? this.url : "run/?start=" + ++starts); showView(); }
   },
 };
-// the App menu: where the app shows, checked; Floating window greyed where the browser
+// the App menu: where the app shows, checked; Floating Window greyed where the browser
 // can't (picture-in-picture is Chromium's)
 function showView() {
   $("app-embedded").setAttribute("aria-checked", String(!program.kind));
@@ -2965,10 +2964,10 @@ function showView() {
   $("app-floating").setAttribute("aria-checked", String(program.kind === "pip"));
   const floats = "documentPictureInPicture" in window;
   $("app-floating").setAttribute("aria-disabled", String(!floats));
-  $("app-floating").title = "The app in a small window that stays on top" + (floats ? "" : " (not supported in this browser)");
+  $("app-floating").title = "App in an always-on-top window" + (floats ? "" : " (not supported in this browser)");
   const built = program.url !== "about:blank";
   $("app-restart").setAttribute("aria-disabled", String(!built));
-  $("app-restart").title = built ? "Start the app over from the latest build: its state is lost" : "Start the app over (nothing has built yet)";
+  $("app-restart").title = built ? "Restart the app from the latest build (state is reset)" : "Restart the app (no build yet)";
   if (dbg.present) { dbgShow(); dbgSync(); }
 }
 async function startProgram() {
@@ -2982,10 +2981,10 @@ async function startProgram() {
   showView();
   if (!first.ok) return first;
   // a reload's build has its own defines, so its own cache: make it now, not at the first save
-  const done = busy("build 1 running; warming the compiler for reloads", "warm");
+  const done = busy("Build 1 running · warming compiler for reloads", "warm");
   const warm = await ask({ type: "warm", files: {}, args: buildArgs(true) });
   done();
-  status(`build 1 running; the compiler is warm (${Math.round(warm.ms)} ms)`);
+  status(`Build 1 running · compiler warm (${Math.round(warm.ms)} ms)`);
   return first;
 }
 // the page's files become `loaded` (project.load()'s): the tree and the editor
@@ -3007,7 +3006,7 @@ async function switchTo(loaded) {
   await stampAll();
   showProject(loaded);
   const first = await startProgram();
-  if (loaded.skipped.length) out(`left out, over ${MAX_BYTES >> 20} MB: ${loaded.skipped.join(", ")}`);
+  if (loaded.skipped.length) out(`Excluded (over ${MAX_BYTES >> 20} MB): ${loaded.skipped.join(", ")}`);
   return first;
 }
 function showWhere() {
@@ -3015,11 +3014,11 @@ function showWhere() {
   // where the project is (browsers tell a page a local folder's name, never its path), and
   // what it builds from
   $("where-project").textContent = project.folder ? `[ Local Folder: ${project.folder.name} ]` : IN_EXTENSION ? "[ Extension Hosted ]" : "[ Browser Hosted ]";
-  $("where-project").title = project.folder ? `The project is stored on this computer, in the folder ${project.folder.name}`
-    : (IN_EXTENSION ? "The project is stored in this extension, in this browser" : "The project is stored in this browser") + (storageKept ? ", which keeps it until the site's data is cleared" : ", which may delete it when space runs low (Export zip keeps a copy)");
+  $("where-project").title = project.folder ? `Stored on this computer, in the folder ${project.folder.name}`
+    : (IN_EXTENSION ? "Stored in this extension" : "Stored in this browser") + (storageKept ? "; kept until site data is cleared" : "; may be removed when storage runs low (Export Zip keeps a copy)");
   $("where-build").textContent = "hxml: " + (cfg.file || "none");
-  $("where-build").title = cfg.file ? "The hxml file used for builds" : "No hxml file: builds use src/ and the class Main";
-  $("folder").textContent = project.folder ? "Close folder (local)" : reopen ? `Reopen ${reopen.name} (local)…` : "Open folder (local)…";
+  $("where-build").title = cfg.file ? "hxml file used for builds" : "No hxml file; builds use src/ and the class Main";
+  $("folder").textContent = project.folder ? "Close Local Folder" : reopen ? `Reopen ${reopen.name}…` : "Open Local Folder…";
   // always shown; where the browser can't open folders, greyed, saying why and how to have it
   const can = !!project.folder || !!reopen || folderPicker();
   $("folder").setAttribute("aria-disabled", String(!can));
@@ -3038,14 +3037,14 @@ async function keepStorage() {
   showWhere();
   return storageKept;
 }
-// Open folder (local): the File System Access API, which only Chromium browsers have, and
+// Open Local Folder: the File System Access API, which only Chromium browsers have, and
 // which Brave turns off unless its flag is on
-const FOLDER_ABOUT = "Open a folder local to this computer";
+const FOLDER_ABOUT = "Folder on this computer as the project";
 const FOLDER_FLAG = "chrome://flags/#file-system-access-api";
 const folderPicker = () => "showDirectoryPicker" in window;
 // why it can't, in the tooltip's brackets
 function folderUnavailable() {
-  return navigator.brave ? `enable the experimental flag in your browser to allow access: ${FOLDER_FLAG}` : "not supported in this browser";
+  return navigator.brave ? `requires the browser flag ${FOLDER_FLAG}` : "not supported in this browser";
 }
 async function openFolder(handle) {
   await flushWrites();
@@ -3200,7 +3199,7 @@ editCommand("cut", async (v) => { await navigator.clipboard.writeText(selectedTe
 editCommand("copy", (v) => navigator.clipboard.writeText(selectedText(v.state)));
 editCommand("paste", async (v) => {
   let text;
-  try { text = await navigator.clipboard.readText(); } catch (e) { throw new Error(`the browser didn't let the menu paste; ${$("paste").querySelector("kbd").textContent} does`); }
+  try { text = await navigator.clipboard.readText(); } catch (e) { throw new Error(`Paste from the menu blocked by the browser; use ${$("paste").querySelector("kbd").textContent}`); }
   v.dispatch(v.state.replaceSelection(text));
 });
 editCommand("select-all", (v) => CM.selectAll(v));
@@ -3256,11 +3255,11 @@ $("app-embedded").onclick = () => { if (program.kind) program.back(); };
 $("app-window").onclick = () => attempt(async () => { if (program.kind !== "window") await program.out("window"); });
 $("app-floating").onclick = () => attempt(async () => {
   if ($("app-floating").getAttribute("aria-disabled") === "true")
-    return askPerson({ title: "Floating window", ok: "OK", text: "A floating window is not supported in this browser. Consider switching to a Chromium-based browser such as Chrome, Edge or Brave." });
+    return askPerson({ title: "Floating Window", ok: "OK", cancel: false, text: "Not supported in this browser. Requires Document Picture-in-Picture (Chrome, Edge, Brave)." });
   if (program.kind !== "pip") await program.out("pip");
 });
 $("bp-toggle").onclick = () => attempt(async () => {
-  if (current === null || !isCode(current) || libraryView) { status("open a .hx file of the project to set a breakpoint in it"); return; }
+  if (current === null || !isCode(current) || libraryView) { status("Breakpoints require an open .hx file of the project"); return; }
   view.focus();
   await toggleBreakpoint(view, view.state.selection.main.head);
 });
@@ -3269,7 +3268,7 @@ $("bp-clear").onclick = () => attempt(async () => {
   breakpoints.clear(); saveBreakpoints();
   for (const [f, st] of states) if (isCode(f) && f !== current) states.set(f, st.update({ effects: BP.all.of(new Map()) }).state);
   if (current !== null && isCode(current)) view.dispatch({ effects: BP.all.of(new Map()) });
-  status("breakpoints removed");
+  status("All breakpoints removed");
   if (had) return dbgSync();
 });
 $("dbg-continue").onclick = dbgDo("Debugger.resume");
@@ -3301,9 +3300,9 @@ $("build-item").onclick = () => save();
 $("build-file").onclick = () => attempt(async () => {
   const all = names().filter((n) => !n.includes("/") && n.endsWith(".hxml"));
   const choices = all.map((n) => { const e = parseHxml(n).error; return { value: n, label: e ? `${n}: ${e.message}` : n, disabled: !!e }; })
-    .concat([{ value: "", label: "No hxml file: src/ for code, Main as the main class" }]);
+    .concat([{ value: "", label: "None (src/ as class path, Main as main class)" }]);
   const now = buildConfig().file || "";
-  const answer = await askPerson({ title: "Select hxml", text: "The hxml file used for builds (its class paths, --main, --js and options; hotreload-hx comes with the page).",
+  const answer = await askPerson({ title: "Select Build File", text: "hxml file for builds: class paths, --main, --js and options. hotreload-hx is included.",
                                    choices, value: now, ok: "Select" });
   if (answer === null || answer === now) return;
   try { localStorage.setItem(buildChoiceKey(), answer); } catch (e) {}
@@ -3317,25 +3316,25 @@ function hereDir() {
 // File's items, and the tree's context menu's: asked about a path. `dir` ("src/game/", or ""
 // for the project's top) is where a new file or folder starts out
 async function newFileAsked(dir) {
-  const name = await askPerson({ title: "New file", text: "A path in the project: src/... for code, anything else is an asset.",
+  const name = await askPerson({ title: "New File", text: "Path in the project. Code under src/; other paths are assets.",
                                  value: dir, select: [dir.length, dir.length], ok: "Create", check: nameProblem });
   if (name) await newFile(name);
 }
 async function newFolderAsked(dir) {
-  const name = await askPerson({ title: "New folder", text: "A path in the project; under src/, a folder is a package.",
+  const name = await askPerson({ title: "New Folder", text: "Path in the project. Folders under src/ are packages.",
                                  value: dir, select: [dir.length, dir.length], ok: "Create", check: (n) => nameProblem(n.replace(/\/$/, "")) });
   if (name) await newFolder(name.replace(/\/$/, ""));
 }
 async function renameAsked(from, folder) {
   const what = folder ? "folder" : "file";
   const name = await askPerson({ title: `Rename ${from}`, value: from, select: what === "file" ? baseRange(from) : [parentOf(from) ? parentOf(from).length + 1 : 0, from.length],
-                                 text: `A new name, or a new path to move it${what === "folder" ? " and everything in it" : ""}.` +
-                                       (from.startsWith("src/") ? " A .hx file whose package changes gets its package line changed." : ""),
-                                 ok: "Rename", check: (n) => n === from ? "That's its name already." : dirs.has(from) && inside(n, from) ? "A folder can't go inside itself." : nameProblem(n) });
+                                 text: "New name or path." + (what === "folder" ? " Contents move with the folder." : "") +
+                                       (from.startsWith("src/") ? " Package lines of moved .hx files are updated." : ""),
+                                 ok: "Rename", check: (n) => n === from ? "Name unchanged." : dirs.has(from) && inside(n, from) ? "A folder cannot move into itself." : nameProblem(n) });
   if (name) await movePath(from, name);
 }
 async function deleteAsked(path, folder) {
-  const onDisk = project.folder ? " They're deleted from the folder on disk, not moved to the trash." : "";
+  const onDisk = project.folder ? " Deleted from disk permanently, not moved to the trash." : "";
   if (folder) {
     const dir = path;
     // an empty folder goes without asking; one with anything in it (shown or not) asks
@@ -3344,14 +3343,13 @@ async function deleteAsked(path, folder) {
       const shown = names().filter((n) => inside(n, dir)), hidden = all.files.length - shown.length;
       const count = (n, what) => `${n} ${what}${n === 1 ? "" : "s"}`;
       const sure = await askPerson({ title: `Delete ${dir}/?`, ok: "Delete", danger: true, list: shown.slice(0, 200),
-        text: `It has ${count(shown.length, "file")}` + (hidden ? ` and ${count(hidden, "file")} the page doesn't show (hidden, or build output)` : "") +
-              "." + onDisk.replace("They're", "All of it is") });
+        text: count(shown.length, "file") + (hidden ? `, plus ${count(hidden, "file")} not shown (hidden or build output)` : "") + "." + onDisk });
       if (!sure) return;
     }
     return deleteFolder(dir);
   }
   const name = path;
-  const sure = await askPerson({ title: `Delete ${name}?`, ok: "Delete", danger: true, text: onDisk.replace("They're", "It's").trim() });
+  const sure = await askPerson({ title: `Delete ${name}?`, ok: "Delete", danger: true, text: onDisk.trim() });
   if (sure) await deleteFile(name);
 }
 $("new").onclick = () => attempt(() => newFileAsked(hereDir()));
@@ -3426,16 +3424,16 @@ document.querySelector(".files").addEventListener("contextmenu", (e) => {
   $("tree").addEventListener("scroll", closeTreeMenu);
 }
 $("reset").onclick = () => attempt(async () => {
-  if (!await askPerson({ title: "Reset to the Example project?", text: "The project stored in this browser goes back to the Example project. Your changes to it are lost.",
+  if (!await askPerson({ title: "Reset to Example Project?", text: "Changes to the stored project will be lost.",
                          ok: "Reset", danger: true })) return;
   await project.clear();
   location.reload();
 });
 $("folder").onclick = () => attempt(async () => {
   if ($("folder").getAttribute("aria-disabled") === "true")
-    return askPerson({ title: "Open folder (local)", ok: "OK", text: navigator.brave
-      ? `To open a folder local to this computer, enable the experimental flag in your browser: navigate to ${FOLDER_FLAG}. A browser restart is required.`
-      : "Local folder access is not supported in this browser. Consider switching to a Chromium-based browser such as Chrome, Edge or Brave." });
+    return askPerson({ title: "Open Local Folder", ok: "OK", cancel: false, text: navigator.brave
+      ? `Local folder access requires a browser flag: ${FOLDER_FLAG} (enable it, then restart the browser).`
+      : "Not supported in this browser. Requires the File System Access API (Chrome, Edge, Brave)." });
   if (project.folder) return closeFolder();
   if (reopen) {
     if (await reopen.requestPermission({ mode: "readwrite" }) !== "granted") return;
@@ -3450,11 +3448,11 @@ $("zipfile").onchange = () => attempt(async () => {
   const file = $("zipfile").files[0];
   $("zipfile").value = "";
   if (!file) return;
-  if (!await askPerson({ title: `Import ${file.name}?`, text: "Its files replace the project kept in this browser." + (project.folder ? " The open folder is closed, and left as it is." : ""),
+  if (!await askPerson({ title: `Import ${file.name}?`, text: "Replaces the stored project." + (project.folder ? " The open folder is closed and left unchanged." : ""),
                          ok: "Import", danger: !project.folder })) return;
   return importZip(new Uint8Array(await file.arrayBuffer()));
 });
-// ---- Add library…: what `lix install` does, in the page. A haxelib release (name:version)
+// ---- Add Library…: what `lix install` does, in the page. A haxelib release (name:version)
 // or a GitHub repository at a ref (made a commit): downloaded into the library cache, and
 // haxe_libraries/<name>.hxml written as lix writes it (its define, where it comes from, its
 // dependencies' -lib, its class path, its extraParams.hxml), for each dependency with a
@@ -3463,7 +3461,7 @@ const LIB_SPEC = /^(?:haxelib:\/)?([A-Za-z0-9_.-]+)[:#]([0-9][^\s:#]*)$/;
 const NAME_SPEC = /^(?:haxelib:\/)?([A-Za-z0-9_.-]+)$/; // the extension only: haxelib's newest
 const GH_SPEC = /^(?:gh:\/\/|https:\/\/)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+?)(?:\.git)?\/?(?:#(\S+))?$/;
 const LIB_NAME = /^[A-Za-z0-9_.-]+$/;
-// a GitHub library, as Add library… takes it: a repository's address (#ref: a branch, a tag
+// a GitHub library, as Add Library… takes it: a repository's address (#ref: a branch, a tag
 // or a commit; none, its default branch), and a name to give it (else its haxelib.json's,
 // else the repository's) before or after; or a haxelib git command as it's typed, name
 // first: `haxelib git <name> <url> [branch] [subdirectory]` (the subdirectory: where the
@@ -3490,14 +3488,14 @@ function gitSpec(spec) {
 }
 function librarySpecProblem(spec) {
   if (LIB_SPEC.test(spec) || gitSpec(spec) || (IN_EXTENSION && NAME_SPEC.test(spec))) return null;
-  return (IN_EXTENSION ? "not a library: a haxelib library as name (its newest) or name:version (format:3.7.0)" : "not a library: a haxelib release as name:version (format:3.7.0)")
-    + ", or a GitHub repository (https://github.com/owner/repo, #ref for a branch, a tag or a commit; a name before or after to give it), or a haxelib git command";
+  return (IN_EXTENSION ? "Not a library. Expected: name or name:version (format:3.7.0)" : "Not a library. Expected: name:version (format:3.7.0)")
+    + ", https://github.com/owner/repo[#ref], or a haxelib git command";
 }
 // a ref (a branch, a tag, a commit; none: the default branch) as its commit, from GitHub's API
 async function githubCommit(owner, repo, ref) {
   if (ref && /^[0-9a-f]{40}$/.test(ref)) return ref;
   const r = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${encodeURIComponent(ref || "HEAD")}`, { headers: { Accept: "application/vnd.github.sha" } });
-  if (!r.ok) throw new Error(`${owner}/${repo}: GitHub has no ${ref || "such repository"} there (HTTP ${r.status})`);
+  if (!r.ok) throw new Error(`${owner}/${repo}: ${ref ? ref + " not found" : "repository not found"} on GitHub (HTTP ${r.status})`);
   return (await r.text()).trim();
 }
 // a library in the cache: its haxelib.json and extraParams.hxml
@@ -3547,10 +3545,10 @@ async function addLibrary(spec, replace) {
     lib = { name: m[1], version: m[2], source: `haxelib:/${m[1]}#${m[2]}`, dir: `${m[1]}/${m[2]}/haxelib`, at: null };
   } else if ((m = gitSpec(spec))) {
     const { owner, repo, ref, sub } = m;
-    status(`${owner}/${repo}: finding ${ref || "its default branch"}`);
+    status(`${owner}/${repo}: resolving ${ref || "default branch"}`);
     const sha = await githubCommit(owner, repo, ref);
     const source = `gh://github.com/${owner}/${repo}#${sha}`;
-    status(`${owner}/${repo}: downloading (${source})`);
+    status(`${owner}/${repo}: downloading ${source}`);
     // its name and version are in its haxelib.json (in the subdirectory, if one was given),
     // which the cache's folder is named by; a name given is the one it gets
     const got = await downloadLibrary({ name: repo, source, at: null, sub, part: true });
@@ -3565,7 +3563,7 @@ async function addLibrary(spec, replace) {
   } else throw new Error(librarySpecProblem(spec));
   const file = `haxe_libraries/${lib.name}.hxml`;
   if (file in files && !(await replace(file))) return null;
-  status(`${lib.name} ${lib.version}: downloading (${lib.source})`);
+  status(`${lib.name} ${lib.version}: downloading ${lib.source}`);
   const { meta, extra } = await cachedLibrary(lib);
   const wrote = [file], needs = [];
   // dependencies: each with a version gets its file (one the project has is kept); one
@@ -3588,13 +3586,13 @@ $("libs-add").onclick = () => attempt(async () => {
 });
 async function addLibraryAsked() {
   const cfg = buildConfig();
-  const spec = await askPerson({ title: "Add library",
-    text: (IN_EXTENSION ? "A haxelib library as name (its newest release) or name:version (format:3.7.0)" : "A haxelib release as name:version (format:3.7.0)") + ", or a GitHub repository as https://github.com/owner/repo (#ref for a branch, a tag or a commit; none: its default branch). A name before or after the address gives the library that name, and a haxelib git command works as typed. Its haxe_libraries file is written as lix writes it" + (cfg.file ? `, and -lib goes in ${cfg.file}.` : "; add -lib to your hxml to use it."),
+  const spec = await askPerson({ title: "Add Library",
+    text: (IN_EXTENSION ? "haxelib library: name (newest release) or name:version (format:3.7.0)." : "haxelib release: name:version (format:3.7.0).") + " GitHub repository: https://github.com/owner/repo, with an optional #branch, tag or commit; a name before or after sets the library name. haxelib git commands are accepted." + ` Writes haxe_libraries/<name>.hxml` + (cfg.file ? ` and adds -lib to ${cfg.file}.` : "; -lib goes in an hxml by hand."),
     value: "", ok: "Add", check: librarySpecProblem });
   if (!spec) return;
   let added;
   try {
-    added = await addLibrary(spec, (file) => askPerson({ title: `Replace ${file}?`, text: "The project has this library already. Its file is written again for the version asked for.", ok: "Replace" }));
+    added = await addLibrary(spec, (file) => askPerson({ title: `Replace ${file}?`, text: "Rewritten for the requested version.", ok: "Replace" }));
   } catch (e) {
     status(e.message);
     await askPerson({ title: "Library not added", text: e.message, ok: "OK", cancel: false });
@@ -3605,7 +3603,7 @@ async function addLibraryAsked() {
   if (cfg.file) await putFile(cfg.file, withLib(files[cfg.file], added.lib.name));
   const r = await build();
   const { name, version } = added.lib;
-  status(`${name} ${version} added (${added.wrote.join(", ")})` + (added.lib.guessed ? `; it has no haxelib.json: its class path is taken to be src/` : "") + (added.needs.length ? `; it needs ${added.needs.join(", ")} too, with a version: Add library… for each` : "") + (r.ok ? "" : "; the build failed"));
+  status(`${name} ${version} added (${added.wrote.join(", ")})` + (added.lib.guessed ? " · class path src/ (no haxelib.json)" : "") + (added.needs.length ? ` · needs ${added.needs.join(", ")}` : "") + (r.ok ? "" : " · build failed"));
   // and in a dialog: where it came from, its size in the cache, what changed in the project
   let marker = {};
   try { marker = JSON.parse(await libText(added.lib.dir, ".webide-hx.json")) || {}; } catch (e) {}
@@ -3617,7 +3615,7 @@ async function addLibraryAsked() {
     `Written: ${added.wrote.join(", ")}`,
     cfg.file ? `Build file: -lib ${name} in ${cfg.file}` : `Build file: none; add -lib ${name} to an hxml`,
     ...(added.lib.guessed ? ["Class path: src/ (no haxelib.json)"] : []),
-    ...(added.needs.length ? [`Needs: ${added.needs.join(", ")} (add each with Add library…)`] : []),
+    ...(added.needs.length ? [`Needs: ${added.needs.join(", ")} (add each with Add Library…)`] : []),
     `Build: ${r.ok ? "succeeded" : "failed (errors marked in the editor)"}`,
   ] });
   return r;
@@ -3628,11 +3626,11 @@ async function addLibraryZip(bytes) {
   const files = zipFiles(bytes, true);
   let meta = null;
   try { meta = JSON.parse(new TextDecoder().decode(files["haxelib.json"])); } catch (e) {}
-  if (!meta || !meta.name || !meta.version) throw new Error("that zip has no haxelib.json with a name and version: is it a haxelib release?");
+  if (!meta || !meta.name || !meta.version) throw new Error("Not a haxelib release: no haxelib.json with a name and version");
   const lib = { name: meta.name, version: meta.version, source: `haxelib:/${meta.name}#${meta.version}`, dir: `${meta.name}/${meta.version}/haxelib` };
   await storeLibrary(lib, { files, hash: await sha256([bytes]), from: "a zip added by hand" });
   libFiles.delete(lib.dir);
-  status(`${meta.name} ${meta.version} added to the libraries`);
+  status(`${meta.name} ${meta.version} added to the library cache`);
   return lib;
 }
 $("libs-zip").onclick = () => { $("libs").close(); $("libfile").click(); };
@@ -3676,20 +3674,20 @@ function libFrom(source) {
   if ((m = /^gitlab:\/\/gitlab\.com\/([^#]+)#(.+)$/.exec(source))) return `GitLab ${m[1]}@${m[2].slice(0, 7)}`;
   return source;
 }
-// a cached library into the project: lix's file for it (as Add library… writes it) and -lib
+// a cached library into the project: lix's file for it (as Add Library… writes it) and -lib
 // in the build's hxml; nothing downloaded
 async function useCachedLibrary(c) {
   const lib = { name: c.name, version: c.version, source: c.source, dir: c.dir, cp: c.part !== undefined ? c.part : null };
   const { meta, extra } = await cachedLibrary(lib);
   const file = `haxe_libraries/${lib.name}.hxml`, text = lixFile(lib, meta, extra);
   if (file in files && files[file] !== text && !(await askPerson({ title: `Replace ${file}?`, ok: "Replace",
-      text: `The project has ${lib.name} already, as another version or from another place. Its file is written again for ${lib.version} (${libFrom(lib.source)}).` }))) return null;
+      text: `Rewritten for ${lib.version} (${libFrom(lib.source)}).` }))) return null;
   await putFile(file, text);
   const cfg = buildConfig();
   if (cfg.file) await putFile(cfg.file, withLib(files[cfg.file], lib.name));
   const missing = Object.keys(meta.dependencies || {}).filter((d) => !LIBRARIES[d] && !(`haxe_libraries/${d}.hxml` in files));
   const r = await build();
-  status(`${lib.name} ${lib.version} in the project` + (missing.length ? `; it needs ${missing.join(", ")} too (Add library…)` : "") + (r.ok ? "" : "; the build failed"));
+  status(`${lib.name} ${lib.version} added to the project` + (missing.length ? ` · needs ${missing.join(", ")}` : "") + (r.ok ? "" : " · build failed"));
   return r;
 }
 async function showLibraries() {
@@ -3704,19 +3702,19 @@ async function showLibraries() {
     const got = l.dir && cached.some((c) => c.dir === l.dir);
     const version = l.version || (l.dir ? l.dir.split("/")[1] : ""); // a lix file's: its cache folder's name says it
     used.push(item("", span("lib-name", l.name + (version ? " " + version : "")),
-      span("lib-about", (l.unpinned && !l.version ? "no version: haxelib's newest, when it builds" : libFrom(l.source)) + " · " + (got ? "downloaded" : "not downloaded yet: the next build gets it"))));
+      span("lib-about", (l.unpinned && !l.version ? "no version (haxelib's newest at build)" : libFrom(l.source)) + " · " + (got ? "cached" : "not cached (downloaded at the next build)"))));
   }
   $("libs-used").replaceChildren(...(used.length ? used : [item("none", cfg.error ? "(the build file can't be read: " + cfg.error.message + ")" : "None (hotreload-hx comes with the page)")]));
   // what's in the cache
   const rows = cached.map((c) => {
     const here = inUse.has(c.dir);
-    const use = button("Use", here ? "This project uses it" : `Add ${c.name} ${c.version} to this project: lix's file and -lib, no download`,
+    const use = button("Use", here ? "In use by this project" : `Add ${c.name} ${c.version} to this project (no download)`,
       () => attempt(async () => { $("libs").close(); await useCachedLibrary(c); }));
     use.disabled = here;
-    const remove = button("Remove", `Remove ${c.name} ${c.version} from this browser's library cache; a build that needs it downloads it again`,
+    const remove = button("Remove", `Remove ${c.name} ${c.version} from the library cache`,
       () => attempt(async () => {
         if (!(await askPerson({ title: `Remove ${c.name} ${c.version}?`, ok: "Remove", danger: true,
-          text: `It goes from the libraries downloaded in this browser (${sizeText(c.bytes)}). The project's files are not touched; a build that needs it downloads it again.` }))) return showLibraries();
+          text: `${sizeText(c.bytes)} in the library cache. Project files are unchanged; a build that needs it downloads it again.` }))) return showLibraries();
         await FS.fs.promises.rm(libPath(c.dir), { recursive: true, force: true });
         libFiles.delete(c.dir);
         status(`${c.name} ${c.version} removed from the library cache`);
@@ -3764,10 +3762,10 @@ async function clearLibraryCacheAsked() {
   const use = await libraryCacheUsage();
   if (!use.libraries) return;
   const size = use.bytes >= 1 << 20 ? `${(use.bytes / (1 << 20)).toFixed(1)} MB` : `${Math.ceil(use.bytes / 1024)} KB`;
-  if (!await askPerson({ title: "Remove all cached libraries?", ok: "Remove all", danger: true,
-    text: `The ${use.libraries === 1 ? "library" : use.libraries + " libraries"} downloaded into this browser (${size}) are removed. The project's files are not touched, in this browser or in a local folder. A library is downloaded again by the next build that uses it.` })) return;
+  if (!await askPerson({ title: "Remove All Cached Libraries?", ok: "Remove All", danger: true,
+    text: `${use.libraries === 1 ? "1 library" : use.libraries + " libraries"}, ${size}. Project files are unchanged. A library is downloaded again by the next build that needs it.` })) return;
   await clearLibraryCache();
-  status(`library cache cleared (${use.libraries === 1 ? "1 library" : use.libraries + " libraries"}, ${size})`);
+  status(`Library cache cleared (${use.libraries === 1 ? "1 library" : use.libraries + " libraries"}, ${size})`);
 }
 $("libfile").onchange = () => attempt(async () => {
   const file = $("libfile").files[0];
@@ -3882,7 +3880,7 @@ async function test() {
   storageKept = true; showWhere();
   const keptTip = $("where-project").title;
   storageKept = false; showWhere();
-  step("the header says whether the browser keeps the project", /keeps it until the site's data is cleared/.test(keptTip) && /may delete it.*Export zip/.test($("where-project").title), [keptTip, $("where-project").title]);
+  step("the header says whether the browser keeps the project", /kept until site data is cleared/.test(keptTip) && /may be removed.*Export Zip/.test($("where-project").title), [keptTip, $("where-project").title]);
   // the program's output follows the end while you're at the end; scrolled up, it stays put
   // (tried by the runner, whose page the app's is)
   const fol = (await askRunner(program.target(), { type: "follow" })).result || {};
@@ -3922,7 +3920,7 @@ async function test() {
   report.reloadMs = [Math.round(b2.r.ms)];
   const after = await until(() => lastTicks(frameLog(), "Hello again"), 15000);
   step("v2 runs the new code", after, after);
-  step("the status says it reloaded, once the app took the build", await until(() => /^build \d+: \d+ ms, reloaded$/.test($("status").textContent), 5000), $("status").textContent);
+  step("the status says it reloaded, once the app took the build", await until(() => /^Build \d+: \d+ ms · reloaded$/.test($("status").textContent), 5000), $("status").textContent);
   step("ticks carried over (@:hot)", after && before && after.ticks > before.ticks, { before, after });
   step("since-reload started over (plain static)", after && before && after.since < after.ticks, { before, after });
   const log = frameLog();
@@ -4074,7 +4072,7 @@ async function test() {
   const back = await save();
   step("and builds again without it", back.ok, back.ok ? null : back.r.stderr);
 
-  // ---- Go to symbol, Find references, Rename symbol
+  // ---- Go to symbol, Find References, Rename symbol
   const pickerSays = (sel) => [...document.querySelectorAll("#picker-list li " + sel)].map((e) => e.textContent);
   const selected = () => view.state.sliceDoc(view.state.selection.main.from, view.state.selection.main.to);
   show("src/Hello.hx");
@@ -4089,7 +4087,7 @@ async function test() {
   show("src/Main.hx");
   await findReferences("src/Main.hx", view, files["src/Main.hx"].indexOf("Hello.onTick") + 8);
   const refsSaid = pickerSays(".what");
-  step("Find references: the definition, then each use in every file (an #else branch's too)", $("picker-title").textContent === "2 references to onTick"
+  step("Find References: the definition, then each use in every file (an #else branch's too)", $("picker-title").textContent === "2 references to onTick"
        && refsSaid.length === 3 && refsSaid[0] === `src/Hello.hx:${tickLine} (definition)` && refsSaid.slice(1).every((r) => r.startsWith("src/Main.hx:")), [$("picker-title").textContent, refsSaid]);
   document.querySelector("#picker-list li").click();
   step("a click goes there", $("picker").hidden && current === "src/Hello.hx" && selected() === "onTick");
@@ -4118,7 +4116,7 @@ async function test() {
   const rbSaid = await answerRename("onTick");
   await rb;
   const elseLine = mainWas.slice(0, mainWas.lastIndexOf("Hello.onTick")).split("\n").length;
-  step("from the definition: a use the build does not compile is named in the dialog, and left", /^2 places in 2 files\. Left as it is, .*: src\/Main\.hx:(\d+)\.$/.test(rbSaid || "")
+  step("from the definition: a use the build does not compile is named in the dialog, and left", /^2 places in 2 files\. Unchanged \(.*\): src\/Main\.hx:(\d+)\.$/.test(rbSaid || "")
        && rbSaid.endsWith(`src/Main.hx:${elseLine}.`) && files["src/Hello.hx"] === helloWas && files["src/Main.hx"] === mainWas.replace(/Hello\.onTick\(\);(?![^]*Hello\.onTick)/, "Hello.onTock();"), rbSaid);
   show("src/Main.hx");
   files["src/Main.hx"] = mainWas;
@@ -4131,12 +4129,12 @@ async function test() {
   const rc = renameSymbol("src/Hello.hx", view, files["src/Hello.hx"].indexOf("Thing.make") + 1);
   const rcSaid = await answerRename("Gadget");
   const rcr = await rc;
-  step("renaming a class renames its file, and imports of it follow", bt.ok && /^5 places in 2 files\. The file src\/util\/Thing\.hx is renamed with it\.$/.test(rcSaid || "")
+  step("renaming a class renames its file, and imports of it follow", bt.ok && /^5 places in 2 files\. Also renames src\/util\/Thing\.hx\.$/.test(rcSaid || "")
        && rcr && rcr.ok && "src/util/Gadget.hx" in files && !("src/util/Thing.hx" in files) && files["src/Hello.hx"].startsWith("import util.Gadget;\n")
        && !/Thing/.test(files["src/Hello.hx"] + files["src/util/Gadget.hx"]), [rcSaid, rcr && rcr.ok, names().filter((n) => n.startsWith("src/util/"))]);
   show("src/Hello.hx");
   const stdName = await renameSymbol("src/Hello.hx", view, files["src/Hello.hx"].indexOf("text.trim()") + 6).then(() => null, (e) => e.message);
-  step("what the standard library defines is not renamed", /standard library.*only the project's own code/.test(stdName || "") && !$("dialog").open, stdName);
+  step("what the standard library defines is not renamed", /standard library.*project code only/.test(stdName || "") && !$("dialog").open, stdName);
   files["src/Hello.hx"] = helloWas;
   await save();
   await deleteFile("src/util/Gadget.hx");
@@ -4151,7 +4149,7 @@ async function test() {
   const codeServed = await runnerFetch("src/Hello.hx").then((r) => r.status);
   step("code isn't served as a file (it's in the bundle)", codeServed === 404, codeServed);
   const badName = await newFile("../x.hx").then(() => "made", (e) => e.message);
-  step("a bad file name is refused", /not a file name/.test(badName), badName);
+  step("a bad file name is refused", /Not a valid file name/.test(badName), badName);
 
   // ---- folders: new (empty), a file in it, moved (its package line follows), deleted
   await newFolder("src/game");
@@ -4170,7 +4168,7 @@ async function test() {
   const own = movedPackage("package somewhere.else;\nclass X {}\n", "src/a/X.hx", "src/b/X.hx");
   step("a package line that didn't follow the folder is left alone", own === null);
   const into = await movePath("src/core", "src/core/inner").then(() => "moved", (e) => e.message);
-  step("a folder can't move inside itself", /inside itself/.test(into), into);
+  step("a folder can't move inside itself", /cannot move into itself/.test(into), into);
   await deleteFolder("src/core");
   step("Delete folder: it and what's in it go", !dirs.has("src/core") && !dirs.has("src/core/game") && !(await project.load()).dirs.includes("src/core"));
   await deleteFile("src/Board.hx");
@@ -4179,7 +4177,7 @@ async function test() {
   await deleteFolder("assets/more");
 
   const skipName = await newFile("out/x.txt").then(() => "made", (e) => e.message);
-  step("a name outside the project (a build output) is refused", /wouldn't be part/.test(skipName), skipName);
+  step("a name outside the project (a build output) is refused", /excluded from the project/.test(skipName), skipName);
 
   // ---- the build file: the example's web-build.hxml (the one that builds JavaScript)
   step("the build comes from web-build.hxml, the hxml that builds JavaScript", buildConfig().file === "web-build.hxml"
@@ -4268,10 +4266,10 @@ async function test() {
   const nv = await save();
   const nvd = diagnostics.get("web-build.hxml") || [];
   // (the extension asks haxelib for the newest, which hasn't this one)
-  step("-lib without a version, nor a lix file: asked to pin one (in the extension, haxelib's answer), on its line", !nv.ok && nvd.length === 1 && (IN_EXTENSION ? /haxelib says No such Project/ : /no version\. Pin/).test(nvd[0].message), nvd);
+  step("-lib without a version, nor a lix file: asked to pin one (in the extension, haxelib's answer), on its line", !nv.ok && nvd.length === 1 && (IN_EXTENSION ? /haxelib: No such Project/ : /no version\. Pin/).test(nvd[0].message), nvd);
   files["web-build.hxml"] = base + "-lib nosuchlib:9.9.9\n";
   const nd = await save();
-  step("a release that can't be downloaded: said, with what to do", !nd.ok && (IN_EXTENSION ? /haxelib has no such release/ : /couldn't download it.*Add library zip/).test((diagnostics.get("web-build.hxml") || [{}])[0].message || ""),
+  step("a release that can't be downloaded: said, with what to do", !nd.ok && (IN_EXTENSION ? /release not found on haxelib/ : /download not possible here.*Add Library Zip/).test((diagnostics.get("web-build.hxml") || [{}])[0].message || ""),
        (diagnostics.get("web-build.hxml") || [{}])[0].message);
   // the hash: a different download for the same source is refused
   const pinned = await storeLibrary({ name: "x", source: "haxelib:/format#3.7.0", dir: "x/0/test", at: null }, { files: {}, hash: "something else", from: "a test" }).then(() => "stored", (e) => e.message);
@@ -4280,7 +4278,7 @@ async function test() {
   const zip = new Uint8Array(await (await fetch(IN_EXTENSION ? HAXELIB_FILES + "format-3,7,0.zip" : "haxelib/files/3.0/format-3,7,0.zip")).arrayBuffer());
   const added = await addLibraryZip(zip);
   step("Add library zip: a haxelib release, into the library cache", added.dir === "format/3.7.0/haxelib" && await libHas(added.dir), added.dir);
-  // Add library…: lix's files written, as lix writes them; -lib in the build's hxml
+  // Add Library…: lix's files written, as lix writes them; -lib in the build's hxml
   await deleteFolder("haxe_libraries");
   const enc0 = new TextEncoder();
   const fake = FS.zipSync({ "haxelib.json": enc0.encode(JSON.stringify({ name: "webidetestlib", version: "1.0.0", classPath: "src/", dependencies: { format: "3.7.0", tink_core: "" } })),
@@ -4288,7 +4286,7 @@ async function test() {
   await addLibraryZip(fake);
   const ad = await addLibrary("webidetestlib:1.0.0", async () => false);
   const L = "${HAXE_LIBCACHE}";
-  step("Add library…: lix's file, with its dependencies' -lib, class path and extraParams", ad && files["haxe_libraries/webidetestlib.hxml"] ===
+  step("Add Library…: lix's file, with its dependencies' -lib, class path and extraParams", ad && files["haxe_libraries/webidetestlib.hxml"] ===
        `-D webidetestlib=1.0.0\n# @install: lix --silent download "haxelib:/webidetestlib#1.0.0" into webidetestlib/1.0.0/haxelib\n-lib format\n-lib tink_core\n-cp ${L}/webidetestlib/1.0.0/haxelib/src\n--macro define('webidetestlib_on')\n`,
        files["haxe_libraries/webidetestlib.hxml"]);
   // (one without a version: said on the web; in the extension, haxelib's newest, with its file)
@@ -4311,7 +4309,7 @@ async function test() {
   // from GitHub: a branch, made a commit (GitHub's API), through jsDelivr
   const gh = await addLibrary("gh://github.com/HaxeFoundation/format#master", async () => true).catch((e) => e.message);
   const ghSha = gh && gh.lib ? gh.lib.source.split("#")[1] : "", ghDir = gh && gh.lib ? gh.lib.dir : "";
-  step("Add library… from GitHub: the branch made a commit, lix's file for it", gh && gh.lib && /^[0-9a-f]{40}$/.test(ghSha) && ghDir === `format/${gh.lib.version}/github/${ghSha}` && await libHas(ghDir)
+  step("Add Library… from GitHub: the branch made a commit, lix's file for it", gh && gh.lib && /^[0-9a-f]{40}$/.test(ghSha) && ghDir === `format/${gh.lib.version}/github/${ghSha}` && await libHas(ghDir)
        && files["haxe_libraries/format.hxml"].includes(`download "gh://github.com/HaxeFoundation/format#${ghSha}" into ${ghDir}\n`), gh && gh.lib ? files["haxe_libraries/format.hxml"] : gh);
   // GitHub, as haxelib git takes it: the default branch, a name given, the command itself
   const forms = [["https://github.com/o/r", { owner: "o", repo: "r", ref: null, name: null, sub: null }],
@@ -4348,13 +4346,13 @@ async function test() {
     const newest = await haxelibNewest("format", null).catch((e) => e.message);
     step("haxelib's newest release of a library (its API)", /^\d+\.\d+\.\d+/.test(newest), newest);
     const unknown = await haxelibNewest("nosuchlib-webide", null).then(() => "found", (e) => e.message);
-    step("one haxelib doesn't have: said", /haxelib says No such Project/.test(unknown), unknown);
+    step("one haxelib doesn't have: said", /haxelib: No such Project/.test(unknown), unknown);
     await deleteFile("haxe_libraries/format.hxml");
     await putFile("web-build.hxml", base + "-lib format\n");
     const un = await build();
     step("-lib format with no version: built with the newest, and the output says so", un.ok && $("out").textContent.includes(`format: haxelib's newest, ${newest}`), un.ok ? [$("out").textContent, buildConfig().notes] : un.r.stderr);
     const bare = await addLibrary("format", async () => true).catch((e) => e.message);
-    step("Add library… with a name alone: the newest, pinned in lix's file", bare && bare.lib && files["haxe_libraries/format.hxml"].startsWith(`-D format=${newest}\n`), bare && bare.lib ? files["haxe_libraries/format.hxml"].split("\n")[0] : bare);
+    step("Add Library… with a name alone: the newest, pinned in lix's file", bare && bare.lib && files["haxe_libraries/format.hxml"].startsWith(`-D format=${newest}\n`), bare && bare.lib ? files["haxe_libraries/format.hxml"].split("\n")[0] : bare);
   }
   // back as it was
   await deleteFolder("haxe_libraries");
@@ -4372,7 +4370,7 @@ async function test() {
   const before0 = JSON.stringify((await project.load()).files), use0 = await libraryCacheUsage();
   await showLibraries();
   $("libs-clear").click();
-  if (await until(() => $("dialog").open && /Remove all cached libraries/.test($("dialog-title").textContent), 5000)) $("dialog-ok").click();
+  if (await until(() => $("dialog").open && /Remove All Cached Libraries/.test($("dialog-title").textContent), 5000)) $("dialog-ok").click();
   await until(() => $("libs-clear").disabled && /None yet/.test($("libs-cached").textContent), 5000);
   const use1 = await libraryCacheUsage();
   step("Remove all (in Libraries…): the downloaded libraries go, the list says so", use0.libraries >= 3 && use1.libraries === 0 && use1.bytes === 0 && !(await libHas("format/3.7.0/haxelib"))
@@ -4392,7 +4390,7 @@ async function test() {
   const same = (a, b) => a.length === b.length && a.every((x, i) => x === b[i]);
   const enc = new TextEncoder(), dec = new TextDecoder();
   const zipped = FS.unzipSync(exportZip());
-  step("Export zip holds every file, as it is", JSON.stringify(Object.keys(zipped).sort()) === JSON.stringify(names())
+  step("Export Zip holds every file, as it is", JSON.stringify(Object.keys(zipped).sort()) === JSON.stringify(names())
        && names().every((f) => dec.decode(zipped[f]) === files[f]), Object.keys(zipped));
   const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0xff, 0xfe]);
   const helloText = files["src/Hello.hx"];
@@ -4450,7 +4448,7 @@ async function test() {
   step("Open folder: its files, without hidden files and build outputs", of.ok &&
        JSON.stringify(names()) === JSON.stringify(["assets/greeting.txt", "notes/readme.md", "src/Hello.hx", "src/Main.hx"]), names());
   step("the folder's program runs", await until(() => lastTicks(frameLog(), "Hey from the folder"), 15000), frameLog().split("\n").slice(-2));
-  step("Reset is hidden for a folder", $("reset").hidden && $("folder").textContent === "Close folder (local)");
+  step("Reset is hidden for a folder", $("reset").hidden && $("folder").textContent === "Close Local Folder");
   show("src/Hello.hx");
   files["src/Hello.hx"] = files["src/Hello.hx"].replace("from the folder", "from the disk");
   const fe = await save();

@@ -34,7 +34,7 @@ function step(name, ok, detail) {
 // the line of Hello.hx that holds `text`, from 1
 var lineOf = function (text) { return "(files['src/Hello.hx'].split('\\n').findIndex((l) => l.includes(" + JSON.stringify(text) + ")) + 1)"; };
 var toggle = function (lineExpr) { return ev("(async () => { show('src/Hello.hx'); await toggleBreakpoint(view, view.state.doc.line(" + lineExpr + ").from); return breakLines(view.state).size; })()"); };
-var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped at ' + dbg.at && dbg.at";
+var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Paused at ' + dbg.at && dbg.at";
 
 (async function () {
   var targets = await (await fetch("http://127.0.0.1:" + port + "/json")).json();
@@ -45,7 +45,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   ws.onmessage = function (e) { var m = JSON.parse(e.data); if (m.id && waiting.has(m.id)) { waiting.get(m.id)(m.result || m); waiting.delete(m.id); } };
   await new Promise(function (r) { ws.onopen = r; });
   await send("Emulation.setDeviceMetricsOverride", { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false }); // a desktop's window
-  await until("typeof $ === 'function' && /^build 1/.test($('status').textContent)", 30000);
+  await until("typeof $ === 'function' && /^Build 1/.test($('status').textContent)", 30000);
   await sleep(500);
 
   step("the extension is found: the gutter, the panel, the breakpoint items", await ev("dbg.present && !!document.querySelector('.cm-breakpoints') && !$('debug').hidden && !$('bp-toggle').hidden"));
@@ -78,7 +78,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   step("a class's statics in the variables (Closure > Hello > ticks)", statics.length === 1, statics);
   var ticks = await ev("(async () => (await dbgSend('Debugger.evaluateOnCallFrame', { callFrameId: dbg.paused.params.callFrames[0].callFrameId, expression: 'Hello.ticks', returnByValue: true })).result.value)()");
   step("an expression in the stopped frame (Hello.ticks)", typeof ticks === "number", ticks);
-  step("the lists have headers", await ev("$('dbg-stack-h').textContent === 'Call stack' && $('dbg-vars-h').textContent === 'Variables' && !$('dbg-body').hidden"));
+  step("the lists have headers", await ev("$('dbg-stack-h').textContent === 'Call Stack' && $('dbg-vars-h').textContent === 'Variables' && !$('dbg-body').hidden"));
   var folded = await ev("(() => { $('dbg-collapse').click(); const hid = $('dbg-body').hidden; $('dbg-collapse').click(); return hid && !$('dbg-body').hidden && JSON.parse(localStorage.getItem('webide-hx-debug-layout')).collapsed === false; })()");
   step("the caret folds the lists away, and back", folded);
   var sized = await ev("(() => { dbgLayout.height = 150; dbgLayout.split = 30; dbgApplyLayout(); const b = $('dbg-body').getBoundingClientRect(), s = $('dbg-stack').parentNode.getBoundingClientRect(); const got = { height: Math.round(b.height), share: Math.round(s.width / b.width * 100) }; dbgLayout.height = null; dbgLayout.split = null; dbgApplyLayout(); return got; })()");
@@ -125,7 +125,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   await until("dbg.attached && dbg.targets.size > 0", 5000);
   await ev("(async () => { await dbgCall('detach'); dbgEvent('detached', { reason: 'canceled_by_user' }, null); })()");
   await sleep(2500);
-  step("the bar closed: not attached again by itself", await ev("!dbg.attached && dbg.cancelled && /click here to debug again/.test($('dbg-state').textContent)"), await ev("$('dbg-state').textContent"));
+  step("the bar closed: not attached again by itself", await ev("!dbg.attached && dbg.cancelled && /click to resume/.test($('dbg-state').textContent)"), await ev("$('dbg-state').textContent"));
   await ev("$('dbg-state').click()");
   step("a click on the panel's line: debugging again (and the app stops at the breakpoint)", await until("dbg.attached && !dbg.cancelled && dbg.paused && dbg.at", 10000), await ev("$('dbg-state').textContent"));
   await toggle(n);
@@ -149,7 +149,7 @@ var stoppedAt = "dbg.paused && dbg.at && $('dbg-state').textContent === 'Stopped
   await ev("program.win.close()");
   await until("program.kind === null && (runners.get($('run').contentWindow) || {}).ready", 15000);
   step("back in the pane: the panel too", await ev("$('debug').parentNode === $('program-pane')"));
-  // a tab of its own (Open in new tab): stopped there too
+  // a tab of its own (Open in New Tab): stopped there too
   await ev("$('app-tab').click()");
   await until("[...program.tabs].some((t) => runners.get(program.runnerOf(t)) && runners.get(program.runnerOf(t)).ready)", 15000);
   await toggle(w);

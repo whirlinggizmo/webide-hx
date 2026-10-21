@@ -126,8 +126,8 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       sees an outside change (below), and before a folder-wide move or delete (~0.3 s).
       2026-10-19.
 - [ ] Fix imports of a moved class in other files (needs the language server's view).
-- [x] The program out of the page (the App menu, was View: Embedded, Separate window,
-      Floating window, Open in new tab): a window of its own (remembered where it was;
+- [x] The program out of the page (the App menu, was View: Embedded, Separate Window,
+      Floating Window, Open in New Tab): a window of its own (remembered where it was;
       closing it brings the program back), picture-in-picture (Chromium; Rob tried it in
       Brave, 2026-10-19: works), or a new tab. It works because the program only talks to
       the service worker, which serves every client the same builds. 2026-10-18.
@@ -149,7 +149,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       served and zipped as bytes, shown read-only in the editor. Hidden files,
       node_modules and top-level out/, bin/, build/, dump/ aren't part of the project.
       2026-10-18.
-- [x] Open folder (local) (File System Access, so Chromium; always in the Project menu,
+- [x] Open Local Folder (File System Access, so Chromium; always in the Project menu,
       greyed where there's no picker, its tooltip and a click saying why: Brave until
       `chrome://flags/#file-system-access-api` is on, Firefox and Safari not at all):
       the page edits the files on disk, new/rename/delete happen there, and the handle is
@@ -158,7 +158,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       private file system (OPFS), the same kind of handle, so it runs in Firefox too.
       2026-10-18.
 - [x] Import zip (replaces the browser's project; a single top folder, as GitHub's zips
-      have, is taken off) and Export zip. 2026-10-18.
+      have, is taken off) and Export Zip. 2026-10-18.
 - [x] The browser's project kept: the page asks for persistent storage (Chromium decides by
       engagement, Firefox asks), and the header's tooltip says whether the browser keeps it
       or may delete it when space runs low. Remove all (in Project > Libraries…) empties the
@@ -175,7 +175,7 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       tree's handles up front): fine for a project, slow for a huge tree. Measured: 300
       extra files under out/ cost little (folder opened and built in 0.33 s in Brave, 0.65
       s in Firefox).
-- [x] The build from the project's hxml (Project > Select hxml…, or a click on the header's
+- [x] The build from the project's hxml (Project > Select Build File…, or a click on the header's
       "hxml:"; build.hxml, else the first
       that builds JS, kept once picked): class paths (code, packages), --main, --js,
       includes, other options passed on; another target, --run, --next/--each, --cwd and
@@ -187,14 +187,14 @@ way to learn a new one exists. Nothing here needs a resident compiler.
       downloaded once per browser into a shared cache (IndexedDB at /libcache), hashed and
       pinned. haxelib releases: haxelib-files.haxe.org once it allows it (haxelib#693,
       opened), else the site's haxelib/ relay (serve.py locally; `hosting/`'s nginx mirror on a
-      server), else Add library zip… (Project > Libraries…). Git: jsDelivr (GitHub), GitLab's archive. The page test builds with
+      server), else Add Library Zip… (Project > Libraries…). Git: jsDelivr (GitHub), GitLab's archive. The page test builds with
       format 3.7.0 both ways. 2026-10-18.
 - [~] Unpinned `-lib name`: the newest version needs haxelib's API (Haxe remoting on
       lib.haxe.org, no CORS). Done in the all-in-one extension (2026-10-20: the newest, said
       in each build's output with how to pin it; dependencies without a version too; Add
       library… with a name alone). On the web it still asks for a version or a lix file; the
       mirror could pass the API through.
-- [x] Add library… (now in Project > Libraries…): `lix install` in the page. name:version (haxelib) or
+- [x] Add Library… (now in Project > Libraries…): `lix install` in the page. name:version (haxelib) or
       gh://github.com/owner/repo#ref (made a commit by GitHub's API); lix's file for it
       and for each dependency with a version, then -lib in the build's hxml. Dependencies
       without a version are named for the person to add. Tests: the page test (lix's text
@@ -294,14 +294,14 @@ Two, for two kinds of use:
       that follows the call; `)` or Escape closes it. 2026-10-19.
 - [x] Errors as you type: a --no-output build 0.8 s after the last keystroke, its errors
       marked as a build's are (no write, no reload). 2026-10-19.
-- [x] Go to definition into the standard library or a library: the file opened read-only
+- [x] Go to Definition into the standard library or a library: the file opened read-only
       (std/ or the library cache), a bar saying which with a × back, hover and go to
       definition in it. 2026-10-19.
 - [x] The standard library in one download for the first build (web/std.json.gz, 0.5 MB,
       read from memory) instead of a request per file: the first build on dev went from
       ~23 s to ~3 s. 2026-10-19.
 - [x] Go to symbol (the file's types and fields: the legacy `file@0@module-symbols`, as
-      Haxe 4.3 has no JSON method for it), Find references (display/references, with the
+      Haxe 4.3 has no JSON method for it), Find References (display/references, with the
       definition), Rename symbol (both, applied in every file; a module's type renames its
       file, and imports follow, which the references leave out). The compiler sees only the
       build's code: a use in another target's `#if` branch is found only from its own
@@ -328,7 +328,7 @@ Two, for two kinds of use:
       up` at the top runs it. 2026-10-19.
 - [ ] GitHub Pages, or any static file server: `web/` as it is, with no special headers
       (nothing needs cross-origin isolation). Without the mirror, haxelib releases come
-      from Add library zip… until haxelib#693.
+      from Add Library Zip… until haxelib#693.
 
 ## Known gaps, not planned
 

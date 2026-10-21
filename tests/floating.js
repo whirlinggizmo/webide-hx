@@ -1,4 +1,4 @@
-// Checks the app in a floating window (App > Floating window: picture-in-picture, Chromium's),
+// Checks the app in a floating window (App > Floating Window: picture-in-picture, Chromium's),
 // in a Chromium-based browser with the IDE open:
 //     brave --headless=new --remote-debugging-port=9333 --user-data-dir=TMP URL/
 //     node tests/floating.js 9333
@@ -45,7 +45,7 @@ var paneLog = "(runners.get($('run').contentWindow) || { log: '' }).log";
 
   await ev("$('app-floating').click(); true");
   var runs = await until("program.kind === 'pip' && (() => { const t = lastTicks(" + floatLog + ", 'Hello'); return t && t.ticks >= 8 ? t : null; })()", 20000);
-  step("App > Floating window: the app runs there", runs, runs);
+  step("App > Floating Window: the app runs there", runs, runs);
   var pane = await ev(paneLog);
   await sleep(1500);
   step("and not in the page meanwhile", (await ev(paneLog)) === pane);

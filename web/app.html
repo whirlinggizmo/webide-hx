@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Haxe program</title>
+<title>App · webide-hx</title>
 <style>
   html, body { margin: 0; height: 100%; overflow: hidden; background: #fff; }
   @media (prefers-color-scheme: dark) { html, body { background: #111; } }
@@ -22,7 +22,7 @@
 const webide = () => { try { return window.opener && window.opener.webide; } catch (e) { return null; } };
 if (!webide()) {
   const p = document.createElement("p");
-  p.textContent = "The app runs in webide-hx: open it from there.";
+  p.textContent = "No IDE connected. Open the app from webide-hx.";
   document.body.append(p);
 } else {
   const f = document.createElement("iframe");

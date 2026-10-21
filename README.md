@@ -200,21 +200,21 @@ the app, which keeps running), and a double-click folds it away or brings it bac
 are kept per browser. In a narrow window the views stack instead.
 
 The header's **File** menu has New file, New folder, Rename and Delete; a right-click in the file tree (or the menu key, or Shift+F10, on a row) has them for that file or folder (a new one beside the file or inside the folder; on the empty space, at the project's top). **Edit** has the editor's
-commands with their shortcuts (Undo, Redo, Cut, Copy, Paste, Select all, Find, Replace,
-Go to line, Toggle comment, Indent, Outdent) and **Preferences**: the theme (the page's,
+commands with their shortcuts (Undo, Redo, Cut, Copy, Paste, Select All, Find, Replace,
+Go to line, Toggle Comment, Indent, Outdent) and **Preferences**: the theme (the page's,
 the editor's and the program's frame), font size, tab width, tabs or spaces, wrapping,
 line numbers, folding, the current line, bracket matching and closing, kept per browser.
 **App** says where the running app shows, checked: **Embedded** (in the IDE's pane),
-**Separate window** (its own window, which can go on another screen and is remembered where
-it was), or **Floating window** (small and always on top; picture-in-picture, Chromium
+**Separate Window** (its own window, which can go on another screen and is remembered where
+it was), or **Floating Window** (small and always on top; picture-in-picture, Chromium
 only). **Restart** starts the app over from the latest build, wherever it is: a new page, so
-`@:hot` state starts over too (nothing carries it across a page load); **Open in new tab** opens another copy. The app needs nothing from the editor but
+`@:hot` state starts over too (nothing carries it across a page load); **Open in New Tab** opens another copy. The app needs nothing from the editor but
 the service worker, so it hot-reloads wherever it is; a window the page opened also starts
 over when the project changes, and closing it makes it Embedded again. The editor's page
 has to stay open: it's the compiler.
-**Project** has Build (also the button, and Ctrl-S), Select hxml… (which of the project's
-hxml files the page builds from; see below), Open folder (local)…, Import zip…, Export zip,
-Libraries… and Reset to Example project… (menus that work by keyboard too:
+**Project** has Build (also the button, and Ctrl-S), Select Build File… (which of the project's
+hxml files the page builds from; see below), Open Local Folder…, Import Zip…, Export Zip,
+Libraries… and Reset to Example Project… (menus that work by keyboard too:
 arrows, Home, End, Escape). Names, and every delete or replacement, are asked in the page's
 own dialog; a name that won't do is refused there, with the reason.
 
@@ -234,10 +234,10 @@ bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs
 - In the browser (IndexedDB) by default. The page asks the browser to keep it
   (`navigator.storage.persist()`); otherwise browsers may delete a site's storage when space
   runs low. Chromium decides by itself (a bookmarked or often-used site gets it), Firefox
-  asks. The header's tooltip says which it is; Export zip keeps a copy either way.
+  asks. The header's tooltip says which it is; Export Zip keeps a copy either way.
   It's seeded from the Example project (hotreload-hx's
   hello, in `web/example/`); Project > Reset to Example project goes back to it.
-- **Open folder (local)** works on a folder on this computer through the File System
+- **Open Local Folder** works on a folder on this computer through the File System
   Access API ("local", as against the project's own folders). It's in the Project menu in
   every browser; where it can't work it's greyed, and its tooltip, or a click, says how
   to have it: Chrome and Edge have it; Brave turns it off unless
@@ -250,7 +250,7 @@ bundled with [fflate](https://github.com/101arrowz/fflate) (zip) from `editor/fs
   than writing over either. The page remembers the
   folder and opens it again next time, asking first if the browser wants permission.
   **Close folder (local)** goes back to the browser's project.
-- **Import zip** replaces the browser's project with a zip's files; **Export zip** saves
+- **Import zip** replaces the browser's project with a zip's files; **Export Zip** saves
   the project.
 - Hidden files, `node_modules`, and `out/`, `bin/`, `build/`, `dump/` at the top aren't
   part of the project, nor files over 8 MB. Files that aren't UTF-8 text (images,
@@ -293,7 +293,7 @@ by every project in it (each version downloaded once):
   version nor a lix file is refused, asking for one: the page can't ask haxelib for the
   newest.
 
-**Add library…** (in Project > Libraries…) does what `lix install` does: give it a haxelib release as
+**Add Library…** (in Project > Libraries…) does what `lix install` does: give it a haxelib release as
 `name:version` (`format:3.7.0`), or a GitHub repository as `gh://github.com/owner/repo#ref`
 (a branch, a tag or a commit; it's pinned to the commit). It downloads the library, writes
 `haxe_libraries/<name>.hxml` as lix writes it (the define, where it comes from, its
@@ -316,8 +316,8 @@ Where from:
 
 | Source | How |
 |---|---|
-| `haxelib:/name#1.2.3`, `-lib name:1.2.3` | haxelib-files.haxe.org, if it ever lets pages read it (HaxeFoundation/haxelib#693); else this site's `haxelib/` relay (`serve.py`, or the mirror in `hosting/`); else a zip you download from lib.haxe.org and add with Project > Libraries… > Add library zip… |
-| `gh://github.com/owner/repo#commit` | jsDelivr, file by file, or GitHub itself when jsDelivr fails or takes over 10 s (its tree API for the list, raw.githubusercontent.com for the files): works on any hosting (Add library… takes only the library's part of the repository: its class path, haxelib.json and extraParams.hxml); the all-in-one extension gets GitHub's zip in one request |
+| `haxelib:/name#1.2.3`, `-lib name:1.2.3` | haxelib-files.haxe.org, if it ever lets pages read it (HaxeFoundation/haxelib#693); else this site's `haxelib/` relay (`serve.py`, or the mirror in `hosting/`); else a zip you download from lib.haxe.org and add with Project > Libraries… > Add Library Zip… |
+| `gh://github.com/owner/repo#commit` | jsDelivr, file by file, or GitHub itself when jsDelivr fails or takes over 10 s (its tree API for the list, raw.githubusercontent.com for the files): works on any hosting (Add Library… takes only the library's part of the repository: its class path, haxelib.json and extraParams.hxml); the all-in-one extension gets GitHub's zip in one request |
 | `gitlab://gitlab.com/owner/repo#ref` | GitLab's archive |
 | `https://…` | a zip, as it is |
 
@@ -375,16 +375,16 @@ answers take tens of milliseconds:
 - **Completion**: after a `.`, as a name is typed, or on Ctrl-Space: fields, types, locals
   and keywords, each with its type, and its documentation beside the list.
 - **Hover**: a name's type and documentation.
-- **Go to definition**: Ctrl+Alt+J, beside go to line's Ctrl+Alt+G, on every platform (on a Mac,
+- **Go to Definition**: Ctrl+Alt+J, beside go to line's Ctrl+Alt+G, on every platform (on a Mac,
   Control+Option; browsers keep F12, Ctrl+B and Ctrl+D for themselves), Ctrl/Cmd-click,
-  or Edit > Go to definition: the file at the declaration, centred. One in the standard
+  or Edit > Go to Definition: the file at the declaration, centred. One in the standard
   library or a library opens read-only, with a bar saying which (its × goes back), and
   hover and go to definition work in it too.
-- **Go to symbol**: Ctrl+Alt+O, or Edit > Go to symbol…: the file's types and fields in a list
+- **Go to symbol**: Ctrl+Alt+O, or Edit > Go to Symbol…: the file's types and fields in a list
   over the editor; typing filters it, Enter or a click goes to the name.
-- **Find references**: Ctrl+Alt+R, or Edit > Find references: the definition and every use of
+- **Find References**: Ctrl+Alt+R, or Edit > Find References: the definition and every use of
   what's at the cursor, in every file, each with its line, in the same list.
-- **Rename symbol**: F2, or Edit > Rename symbol…: what's at the cursor, if the project defines
+- **Rename symbol**: F2, or Edit > Rename Symbol…: what's at the cursor, if the project defines
   it, at its definition and every use, in every file (each file's undo takes it back). A type
   that names its module renames its file too, and the imports of it follow. The compiler
   sees only the build's code, so a use inside `#if sys` (another target's code) can be
